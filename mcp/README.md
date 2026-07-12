@@ -36,9 +36,10 @@ start but the bot will fail to join.
 
 After Workstream A has the server up:
 
-1. Start Codex/Claude from the repo so it sees `.mcp.json`.
-2. Confirm the `minecraft` MCP server is connected.
-3. Ask the bot for its position.
-4. Ask it to move a short distance, dig one vanilla block, and send a chat message.
+1. Run `node ./mcp/smoke-mineflayer.mjs` to confirm a vanilla Mineflayer client can join.
+2. Start Codex/Claude from the repo so it sees `.mcp.json`.
+3. Confirm the `minecraft` MCP server is connected.
+4. Ask the bot for its position.
+5. Ask it to move a short distance, dig one vanilla block, and send a chat message.
 
 Keep MCP-facing tests vanilla-only. Custom registered mod blocks/items are out of scope for v1.

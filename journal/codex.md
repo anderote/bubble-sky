@@ -10,4 +10,6 @@
 - Decision: moved the B-side Node pin from the original Node 20 plan to Node 22 because current
   Mineflayer/Minecraft protocol packages declare Node 22 as their engine floor; still avoiding
   Node 24+ per upstream mindcraft guidance.
-- Blocked on P2/P3 runtime verification until Workstream A has a server listening on `localhost:25565`.
+- Verified direct Mineflayer connectivity against a local Fabric 1.21.6 server on `localhost:25565`.
+- Added project-owned mindcraft launcher/profile wiring for the local server.
+- Blocked on full P3 mindcraft behavior until `mindcraft/upstream/keys.json` contains an `ANTHROPIC_API_KEY`.

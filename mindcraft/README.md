@@ -35,3 +35,21 @@ Connection target for v1:
 
 Do not commit `keys.json`, `.env`, or the cloned upstream repo. The local clone can be
 recreated at any time from GitHub.
+
+## Run
+
+After Workstream A has a server listening on `localhost:25565`, create
+`mindcraft/upstream/keys.json` with an `ANTHROPIC_API_KEY`, then run:
+
+```sh
+./mindcraft/run-mindcraft.sh
+```
+
+Optional overrides:
+
+| Setting | Default | Override |
+|---------|---------|----------|
+| Host | `127.0.0.1` | `MINECRAFT_HOST` |
+| Port | `25565` | `MINECRAFT_PORT` |
+| Version | `1.21.6` | `MINECRAFT_VERSION` |
+| Profile | `mindcraft/profiles/codex-claude.json` | `MINDCRAFT_PROFILE` |
