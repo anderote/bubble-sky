@@ -43,3 +43,20 @@ After Workstream A has the server up:
 5. Ask it to move a short distance, dig one vanilla block, and send a chat message.
 
 Keep MCP-facing tests vanilla-only. Custom registered mod blocks/items are out of scope for v1.
+
+## Command bot
+
+For lightweight in-game control without an MCP client attached:
+
+```sh
+MINECRAFT_HOST=192.168.86.188 node ./mcp/codex-command-bot.mjs
+```
+
+Then address it in chat:
+
+```text
+@CodexBot help
+@CodexBot follow me
+@CodexBot stop
+@CodexBot say hello
+```
