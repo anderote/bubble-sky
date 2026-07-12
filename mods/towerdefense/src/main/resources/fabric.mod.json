@@ -1,0 +1,28 @@
+{
+	"schemaVersion": 1,
+	"id": "towerdefense",
+	"version": "${version}",
+	"name": "Tower Defense",
+	"description": "A tower-defense game mod: a constructable arrow tower that auto-shoots hostile mobs, medieval weapons (spear, mace, war hammer), and a coin currency dropped on kill. Human-facing custom content.",
+	"authors": [
+		"bubble-sky"
+	],
+	"contact": {},
+	"license": "MIT",
+	"environment": "*",
+	"icon": "assets/towerdefense/icon.png",
+	"entrypoints": {
+		"main": [
+			"net.bubblesky.towerdefense.TowerDefenseMod"
+		],
+		"client": [
+			"net.bubblesky.towerdefense.client.TowerDefenseModClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~1.21.6",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

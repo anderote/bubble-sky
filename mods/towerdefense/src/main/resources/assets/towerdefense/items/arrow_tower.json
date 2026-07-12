@@ -1,0 +1,6 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "towerdefense:block/arrow_tower"
+	}
+}

@@ -1,0 +1,17 @@
+{
+	"itemgroup.towerdefense.general": "Tower Defense",
+
+	"item.towerdefense.spear": "Spear",
+	"item.towerdefense.mace": "Mace",
+	"item.towerdefense.war_hammer": "War Hammer",
+	"item.towerdefense.coin": "Coin",
+
+	"block.towerdefense.arrow_tower": "Arrow Tower",
+
+	"entity.towerdefense.goblin_skirmisher": "Goblin Skirmisher",
+	"entity.towerdefense.footman": "Footman",
+	"entity.towerdefense.archer": "Archer",
+	"entity.towerdefense.man_at_arms": "Man-at-Arms",
+	"entity.towerdefense.undead_soldier": "Undead Soldier",
+	"entity.towerdefense.heavy_knight": "Heavy Knight"
+}
