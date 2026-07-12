@@ -122,7 +122,7 @@ Environment knobs:
 | `CODEX_BOT_USERNAME` | `codex` | In-game bot name. |
 | `CODEX_BOT_ALIASES` | unset | Optional comma-separated extra names that should address this bot. |
 | `CODEX_CHAT_VISIBILITY` | unset | Optional startup visibility override. Without it, Codex resumes the last saved visibility mode. |
-| `CODEX_CHAT_VISIBILITY_STATE` | `.codex-runtime/chat-visibility.json` | Saved visibility mode used across managed restarts. |
+| `CODEX_CHAT_VISIBILITY_STATE` | `.codex-runtime/chat-visibility.json` | Saved visibility mode used across managed restarts. If missing, Codex can initialize it from the last explicit visibility command in chat history. |
 | `CODEX_CHAT_HISTORY` | `.codex-runtime/chat-history.jsonl` | JSONL transcript path. |
 | `CODEX_CHAT_HISTORY_LIMIT` | `2000` | Maximum retained transcript events. |
 | `CODEX_LLM_PLAYERS` | `codex,claude,grok` | Comma-separated recipients for `llm` mode. |
