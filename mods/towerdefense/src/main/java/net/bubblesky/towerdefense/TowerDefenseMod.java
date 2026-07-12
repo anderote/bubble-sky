@@ -88,14 +88,14 @@ public class TowerDefenseMod implements ModInitializer {
 	/**
 	 * Discoverability: greet each joining player with a single chat line pointing
 	 * them at the Tower Defense menu (keybind or {@code /td}). One message only, so
-	 * it stays out of the way. The default menu key is {@code G} (rebindable in
+	 * it stays out of the way. The default menu key is {@code J} (rebindable in
 	 * Controls); clients without this mod still get the {@code /td} pointer.
 	 */
 	private void registerJoinHint() {
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
 			handler.player.sendMessage(
 				Text.literal("Tower Defense ready — press ").formatted(Formatting.GRAY)
-					.append(Text.literal("[G]").formatted(Formatting.YELLOW))
+					.append(Text.literal("[J]").formatted(Formatting.YELLOW))
 					.append(Text.literal(" (menu key) or type ").formatted(Formatting.GRAY))
 					.append(Text.literal("/td").formatted(Formatting.YELLOW))
 					.append(Text.literal(" to open the menu.").formatted(Formatting.GRAY)),

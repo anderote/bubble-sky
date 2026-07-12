@@ -23,6 +23,7 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.Heightmap;
 
 /**
  * The {@code /td} command family: the human-facing control panel for setting up
@@ -395,8 +396,12 @@ public final class TdCommand {
 		st.worldId = src.getWorld().getRegistryKey().getValue().toString();
 		st.gameOver = false;
 		st.spawnPoints.clear();
-		st.spawnPoints.add(here.north(distance));
-		st.spawnPoints.add(here.east(distance));
+		// Place gates at the terrain SURFACE at each (x,z), not the base's flat Y, so on
+		// hilly/natural terrain the gates aren't buried in a hill (which would make enemy
+		// spawns fail). The WaveManager also re-snaps at spawn time as a safety net.
+		ServerWorld world = src.getWorld();
+		st.spawnPoints.add(surfaceGate(world, here.north(distance)));
+		st.spawnPoints.add(surfaceGate(world, here.east(distance)));
 		st.markDirty();
 
 		src.sendFeedback(() -> Text.literal("Arena ready: base at " + here.toShortString()
@@ -416,6 +421,12 @@ public final class TdCommand {
 		ctx.getSource().sendFeedback(() -> Text.literal("Arena restarted — good luck! (/td wave to start)")
 			.formatted(Formatting.GOLD), true);
 		return result;
+	}
+
+	/** Snap a gate position to the terrain surface at its (x,z) so it isn't buried. */
+	private static BlockPos surfaceGate(ServerWorld world, BlockPos pos) {
+		int surfaceY = world.getTopY(Heightmap.Type.MOTION_BLOCKING, pos.getX(), pos.getZ());
+		return new BlockPos(pos.getX(), surfaceY, pos.getZ());
 	}
 
 	private static int wave(CommandContext<ServerCommandSource> ctx) {
@@ -477,6 +488,8 @@ public final class TdCommand {
 			arena.getOtherEntities(null, new net.minecraft.util.math.Box(st.base).expand(128.0),
 				e -> e.getCommandTags().contains(WaveManager.ENEMY_TAG)).forEach(net.minecraft.entity.Entity::discard);
 		}
+		// Release any force-loaded arena chunks before wiping the base/spawn positions.
+		WaveManager.releaseArenaChunks(src.getServer(), st);
 		st.clear();
 		src.sendFeedback(() -> Text.literal("Arena reset.").formatted(Formatting.GREEN), true);
 		return 1;

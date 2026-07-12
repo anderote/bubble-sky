@@ -27,7 +27,7 @@ import org.lwjgl.glfw.GLFW;
  *       {@link TdBipedEntityRenderer} carrying that enemy's skin, and marks the
  *       acid block translucent. Players need this mod installed client-side to see
  *       the custom textures.</li>
- *   <li><b>Discoverable control menu</b>: registers a keybind (default {@code G})
+ *   <li><b>Discoverable control menu</b>: registers a keybind (default {@code J})
  *       that opens {@link TowerDefenseScreen}, plus the always-on
  *       {@link TdClientHud} hint so the Tower Defense menu is visible by default.</li>
  * </ol>
@@ -58,7 +58,7 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		openMenuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
 			"key.towerdefense.open_menu",
 			InputUtil.Type.KEYSYM,
-			GLFW.GLFW_KEY_G,
+			GLFW.GLFW_KEY_J,
 			KEY_CATEGORY));
 
 		// Open the screen on keypress (works whether or not a match is running,
