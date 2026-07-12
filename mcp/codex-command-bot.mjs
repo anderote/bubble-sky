@@ -229,24 +229,6 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
-  if (isContextExtendCommand(lower)) {
-    await runContextExtendCommand(speaker, command);
-    return;
-  }
-
-  if (isInspectContextCommand(lower)) {
-    await inspectPhysicalContext(speaker, command);
-    return;
-  }
-
-  const architectCommand = interpretArchitectCommand(lower) ||
-    await interpretArchitectCommandWithOpenAI(command, speaker) ||
-    await interpretArchitectCommandWithCodexCli(command, speaker);
-  if (architectCommand) {
-    await runArchitectCommand(speaker, architectCommand, command);
-    return;
-  }
-
   const goToMatch = lower.match(/^(?:go to|move to|walk to)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/);
   if (goToMatch) {
     const [, x, y, z] = goToMatch;
@@ -279,7 +261,7 @@ async function runCommand(speaker, commandText) {
   }
 
   const comeMatch = lower.match(/^come(?:\s+(?:to\s+)?(.+))?$/);
-  if (comeMatch || lower === "come here") {
+  if (comeMatch || lower === "come here" || lower === "here") {
     const targetName = resolveTargetName(comeMatch?.[1], speaker);
     followTarget = null;
     escort = null;
@@ -310,16 +292,39 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
+  if (isContextExtendCommand(lower)) {
+    await runContextExtendCommand(speaker, command);
+    return;
+  }
+
+  if (isInspectContextCommand(lower)) {
+    await inspectPhysicalContext(speaker, command);
+    return;
+  }
+
+  const architectCommand = interpretArchitectCommand(lower) ||
+    await interpretArchitectCommandWithOpenAI(command, speaker) ||
+    await interpretArchitectCommandWithCodexCli(command, speaker);
+  if (architectCommand) {
+    await runArchitectCommand(speaker, architectCommand, command);
+    return;
+  }
+
   if (["hi", "hello", "hey"].includes(lower)) {
     say(`hi ${speaker}. Try @${primaryHandle} help.`);
     return;
   }
 
-  say(`I heard "${command}". Try pointing at something and saying "do you see this", "keep building this red thing", or "burn this castle with lava".`, { to: speaker });
+  if (["why", "lmao", "lol"].includes(lower)) {
+    say(`yeah, that was a bad command path. I'm online now; try @${primaryHandle} come here or point at a build and say @${primaryHandle} do you see this.`, { to: speaker });
+    return;
+  }
+
+  say(`I heard "${command}". Give me an action: come here, do you see this, keep building this red thing, build fortress here, or burn this castle with lava.`, { to: speaker });
 }
 
 function isCapabilityQuestion(lower) {
-  return /\b(?:are you smart yet|smart yet|what can you do|what do you understand|can you see|do you understand this|are you smarter)\b/.test(lower);
+  return /\b(?:are you smart(?: yet| now)?|smart yet|smart now|what can you do|what do you understand|can you see|do you understand this|are you smarter)\b/.test(lower);
 }
 
 function interpretArchitectCommand(lower) {
@@ -1235,6 +1240,17 @@ function requirePlayer(name) {
 async function resolvePlayerPosition(name, options = {}) {
   const targetName = findPlayerName(name) || name;
   const visiblePlayer = bot.players[targetName]?.entity;
+
+  if (options.teleportToPlayer === true) {
+    const before = vectorPosition(bot.entity.position);
+    bot.chat(`/tp ${username} ${targetName}`);
+    await wait(Number(process.env.CODEX_PLAYER_TP_WAIT_MS || 700));
+    const after = vectorPosition(bot.entity.position);
+    if (positionMoved(before, after)) {
+      return { ...after, teleported: true };
+    }
+  }
+
   if (visiblePlayer?.position) return vectorPosition(visiblePlayer.position);
 
   if (options.teleportToPlayer !== false) {
@@ -1271,10 +1287,24 @@ function positionMoved(before, after) {
 async function moveDirect(x, y, z) {
   if (bot.creative) {
     await bot.creative.startFlying();
-    await bot.creative.flyTo(new Vec3(x, y, z));
+    await withTimeout(bot.creative.flyTo(new Vec3(x, y, z)), 3000);
     return;
   }
   bot.pathfinder.setGoal(new goals.GoalNear(x, y, z, 2));
+}
+
+async function withTimeout(promise, timeoutMs) {
+  let timeout = null;
+  try {
+    await Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timeout = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 function resolveTargetName(target, speaker) {
