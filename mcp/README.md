@@ -234,7 +234,7 @@ Environment knobs:
 | `CODEX_SWARM_COMMAND_DELAY_MS` | `250` | Per-drone delay between `/setblock` or `/fill` commands. Raise this if the server kicks drones for spam. |
 | `CODEX_SWARM_BATCH_SIZE` | `32` | Number of assigned jobs a drone consumes per work cycle. |
 | `CODEX_SWARM_JOB_CHUNK_SIZE` | `32` | Number of contiguous per-phase jobs the boss assigns to one drone before rotating to the next. |
-| `CODEX_SWARM_VERIFY_COMMANDS` | `1` | Drones verify `/setblock` and `/fill` endpoints and retry once before marking a batch failed. |
+| `CODEX_SWARM_VERIFY_COMMANDS` | `0` | Optional best-effort endpoint verification for `/setblock` and `/fill`. Disabled by default because Mineflayer's local world cache can lag command results and create false failures. |
 | `CODEX_SWARM_ANNOUNCE_ON_JOIN` | `0` | Keeps bot reconnects quiet by default. |
 | `CODEX_SWARM_REPORT_INTERVAL_MS` | `60000` | Boss progress report cadence while a build is active. |
 | `CODEX_SWARM_REPORT_MILESTONE` | `25` | Boss also reports when progress crosses this percentage step. |

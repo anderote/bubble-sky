@@ -44,7 +44,9 @@ consume assigned jobs from that state file.
   - `@swarm blueprint`
   - natural command normalization like `build me a cabin` and `we need a cabin`
 - Drones batch command-mode work and use `/fill` for contiguous runs.
-- Drones verify command endpoints and retry once before marking a batch failed.
+- Drones can optionally do best-effort command endpoint verification, but it is
+  disabled by default because Mineflayer's local world cache can lag behind
+  command results and create false failures.
 - Swarm sessions pipe verbose logs to `.codex-runtime/swarm/logs/*.log`.
 
 ## Important caveats
@@ -56,8 +58,10 @@ consume assigned jobs from that state file.
   `walls`, `roof`, and `detail`, but true architectural region names require a
   richer metadata layer.
 - Command mode uses `/setblock` and `/fill`, so bot accounts must be opped.
-- Verification checks command endpoints, not every block in a large fill. This
-  is a pragmatic speed/reliability tradeoff.
+- Command-mode placement currently confirms that commands were sent, not that
+  every block landed. `CODEX_SWARM_VERIFY_COMMANDS=1` enables best-effort
+  endpoint checks, but robust verification probably needs a server-side mod or
+  command feedback channel.
 
 ## Useful commands
 
