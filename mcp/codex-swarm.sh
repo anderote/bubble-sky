@@ -19,6 +19,9 @@ GLOBAL_COMMAND_DELAY_MS="${CODEX_SWARM_GLOBAL_COMMAND_DELAY_MS:-650}"
 BATCH_SIZE="${CODEX_SWARM_BATCH_SIZE:-32}"
 JOB_CHUNK_SIZE="${CODEX_SWARM_JOB_CHUNK_SIZE:-32}"
 VERIFY_COMMANDS="${CODEX_SWARM_VERIFY_COMMANDS:-0}"
+RESTART_MIN_SECONDS="${CODEX_SWARM_RESTART_MIN_SECONDS:-3}"
+RESTART_MAX_SECONDS="${CODEX_SWARM_RESTART_MAX_SECONDS:-60}"
+RESTART_HEALTHY_SECONDS="${CODEX_SWARM_RESTART_HEALTHY_SECONDS:-120}"
 
 usage() {
   cat <<'EOF'
@@ -49,6 +52,9 @@ Environment:
   CODEX_SWARM_VERIFY_COMMANDS=0
   CODEX_SWARM_REPORT_INTERVAL_MS=60000
   CODEX_DRONE_REPORT_EVERY_JOBS=0
+  CODEX_SWARM_RESTART_MIN_SECONDS=3
+  CODEX_SWARM_RESTART_MAX_SECONDS=60
+  CODEX_SWARM_RESTART_HEALTHY_SECONDS=120
 EOF
 }
 
@@ -79,7 +85,7 @@ start_session() {
   fi
 
   mkdir -p "$LOG_DIR"
-  tmux new-session -d -s "$session" "while true; do $command; code=\$?; echo '$session exited' \$code '- restarting in 3s'; sleep 3; done"
+  tmux new-session -d -s "$session" "attempts=0; while true; do started=\$(date +%s); $command; code=\$?; ended=\$(date +%s); runtime=\$((ended - started)); if [ \$runtime -ge $RESTART_HEALTHY_SECONDS ]; then attempts=0; else attempts=\$((attempts + 1)); fi; exponent=\$((attempts - 1)); if [ \$exponent -lt 0 ]; then exponent=0; fi; if [ \$exponent -gt 8 ]; then exponent=8; fi; delay=\$(($RESTART_MIN_SECONDS << exponent)); if [ \$delay -gt $RESTART_MAX_SECONDS ]; then delay=$RESTART_MAX_SECONDS; fi; echo '$session exited' \$code 'after' \$runtime's; restarting in' \$delay's'; sleep \$delay; done"
   tmux pipe-pane -o -t "$session" "cat >> '$LOG_DIR/${name}.log'"
   echo "started $session"
 }

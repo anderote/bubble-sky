@@ -114,6 +114,26 @@ Environment knobs:
 | `CODEX_LLM_PLAYERS` | `codex,claude,grok` | Comma-separated recipients for `llm` mode. |
 | `CODEX_RICH_CHAT` | unset | Set to `1` to send colored/bold `/tellraw` output, including highlighted `@codex`, `@grok`, and `@claude` mentions. The bot must be opped on a vanilla server. |
 
+## Swarm launcher
+
+The detached swarm launcher keeps drone tmux sessions alive and backs off when the
+Minecraft server is unreachable or repeatedly disconnects bots:
+
+```sh
+MINECRAFT_HOST=192.168.86.188 CODEX_SWARM_COUNT=1 ./mcp/codex-swarm.sh start
+./mcp/codex-swarm.sh status
+./mcp/codex-swarm.sh logs 1
+./mcp/codex-swarm.sh stop
+```
+
+Retry knobs:
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| `CODEX_SWARM_RESTART_MIN_SECONDS` | `3` | First restart delay after a short failed run. |
+| `CODEX_SWARM_RESTART_MAX_SECONDS` | `60` | Maximum restart delay while the server is unhealthy. |
+| `CODEX_SWARM_RESTART_HEALTHY_SECONDS` | `120` | Runtime after which the failure counter resets. |
+
 Extra examples:
 
 ```text
