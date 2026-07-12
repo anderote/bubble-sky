@@ -123,6 +123,10 @@ Environment knobs:
 | `CODEX_CHAT_HISTORY_LIMIT` | `2000` | Maximum retained transcript events. |
 | `CODEX_LLM_PLAYERS` | `codex,claude,grok` | Comma-separated recipients for `llm` mode. |
 | `CODEX_RICH_CHAT` | unset | Set to `1` to send colored/bold `/tellraw` output, including highlighted `@codex`, `@grok`, and `@claude` mentions. The bot must be opped on a vanilla server. |
+| `CODEX_BOT_RESTART_MIN_SECONDS` | `3` | First managed-launcher restart delay after a short failed run. |
+| `CODEX_BOT_RESTART_MAX_SECONDS` | `60` | Maximum managed-launcher restart delay while the server is unhealthy. |
+| `CODEX_BOT_RESTART_HEALTHY_SECONDS` | `120` | Runtime after which the managed-launcher failure counter resets. |
+| `CODEX_BOT_RESTART_JITTER_SECONDS` | `3` | Extra random seconds added to each managed-launcher restart delay. |
 
 ## Swarm launcher
 
@@ -157,6 +161,7 @@ Retry knobs:
 | `CODEX_SWARM_RESTART_MIN_SECONDS` | `3` | First restart delay after a short failed run. |
 | `CODEX_SWARM_RESTART_MAX_SECONDS` | `60` | Maximum restart delay while the server is unhealthy. |
 | `CODEX_SWARM_RESTART_HEALTHY_SECONDS` | `120` | Runtime after which the failure counter resets. |
+| `CODEX_SWARM_RESTART_JITTER_SECONDS` | `3` | Extra random seconds added to each restart delay so drones do not reconnect in lockstep. |
 
 Extra examples:
 
