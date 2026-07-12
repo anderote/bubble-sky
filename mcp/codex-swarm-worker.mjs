@@ -110,6 +110,7 @@ async function workLoop() {
 
     if (nextJobs.length === 0) {
       writeProgress({ ...progress, activeJob: null, updatedAt: new Date().toISOString() });
+      markStateCompleteIfDone(state, allCompleted);
       await wait(2500);
       continue;
     }
@@ -411,6 +412,13 @@ function readState() {
   }
 }
 
+function writeState(state) {
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  const tempPath = `${statePath}.${process.pid}.tmp`;
+  fs.writeFileSync(tempPath, `${JSON.stringify(state, null, 2)}\n`);
+  fs.renameSync(tempPath, statePath);
+}
+
 function readProgress(taskId) {
   try {
     if (!fs.existsSync(progressPath)) return { taskId, worker: username, doneIds: [], failedIds: [] };
@@ -448,6 +456,43 @@ function nextAvailableJobs(state, completed) {
   return state.jobs
     .filter((job) => job.phase === activePhase && job.worker === username && !completed.has(job.id))
     .slice(0, safeBatchSize);
+}
+
+function markStateCompleteIfDone(state, completed) {
+  const jobs = Array.isArray(state.jobs) ? state.jobs : [];
+  if (!jobs.length || completed.size < jobs.length) return;
+
+  const current = readState();
+  if (!current || current.taskId !== state.taskId || current.status !== "building") return;
+
+  const summary = taskProgressSummary(state.taskId);
+  writeState({
+    ...current,
+    status: summary.failed > 0 ? "complete_with_failures" : "complete",
+    completedJobs: summary.done,
+    failedJobs: summary.failed,
+    completedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function taskProgressSummary(taskId) {
+  const progressDir = path.dirname(progressPath);
+  const done = new Set();
+  const failed = new Set();
+  try {
+    if (!fs.existsSync(progressDir)) return { done: 0, failed: 0 };
+    for (const file of fs.readdirSync(progressDir)) {
+      if (!file.endsWith(".json")) continue;
+      const entry = JSON.parse(fs.readFileSync(path.join(progressDir, file), "utf8"));
+      if (entry.taskId !== taskId) continue;
+      for (const id of entry.doneIds || []) done.add(id);
+      for (const id of entry.failedIds || []) failed.add(id);
+    }
+  } catch (error) {
+    console.error(`${username}: failed to summarize completion: ${error.message}`);
+  }
+  return { done: done.size, failed: failed.size };
 }
 
 function writeProgress(progress) {
