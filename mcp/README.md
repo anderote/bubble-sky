@@ -52,6 +52,16 @@ For lightweight in-game control without an MCP client attached:
 MINECRAFT_HOST=192.168.86.188 node ./mcp/codex-command-bot.mjs
 ```
 
+For overnight/local operation, run it under the managed tmux launcher. It restarts
+with backoff when the server is unreachable or disconnects the bot:
+
+```sh
+MINECRAFT_HOST=192.168.86.188 ./mcp/codex-command.sh start
+./mcp/codex-command.sh status
+./mcp/codex-command.sh logs
+./mcp/codex-command.sh stop
+```
+
 To run the same chat command behavior for another AI, give that bot its own
 Minecraft username:
 
