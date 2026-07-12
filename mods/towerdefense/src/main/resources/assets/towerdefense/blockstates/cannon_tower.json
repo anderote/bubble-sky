@@ -1,0 +1,7 @@
+{
+	"variants": {
+		"": {
+			"model": "towerdefense:block/cannon_tower"
+		}
+	}
+}

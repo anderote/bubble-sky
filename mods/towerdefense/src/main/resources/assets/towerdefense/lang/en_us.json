@@ -7,6 +7,8 @@
 	"item.towerdefense.coin": "Coin",
 
 	"block.towerdefense.arrow_tower": "Arrow Tower",
+	"block.towerdefense.cannon_tower": "Cannon Tower",
+	"block.towerdefense.frost_tower": "Frost Tower",
 
 	"entity.towerdefense.goblin_skirmisher": "Goblin Skirmisher",
 	"entity.towerdefense.footman": "Footman",

@@ -3,6 +3,8 @@ package net.bubblesky.towerdefense.registry;
 import java.util.function.Function;
 import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.block.ArrowTowerBlock;
+import net.bubblesky.towerdefense.block.CannonTowerBlock;
+import net.bubblesky.towerdefense.block.FrostTowerBlock;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.Block;
 import net.minecraft.item.BlockItem;
@@ -29,6 +31,24 @@ public final class ModBlocks {
 			.requiresTool()
 			.nonOpaque()
 			.sounds(BlockSoundGroup.STONE),
+		true);
+
+	public static final Block CANNON_TOWER = register("cannon_tower",
+		CannonTowerBlock::new,
+		AbstractBlock.Settings.create()
+			.strength(4.0f, 8.0f)
+			.requiresTool()
+			.nonOpaque()
+			.sounds(BlockSoundGroup.STONE),
+		true);
+
+	public static final Block FROST_TOWER = register("frost_tower",
+		FrostTowerBlock::new,
+		AbstractBlock.Settings.create()
+			.strength(3.0f, 6.0f)
+			.requiresTool()
+			.nonOpaque()
+			.sounds(BlockSoundGroup.GLASS),
 		true);
 
 	public static Block register(String name, Function<AbstractBlock.Settings, Block> factory,

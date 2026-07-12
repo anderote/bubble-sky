@@ -4,9 +4,16 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.registry.ModBlocks;
+import net.bubblesky.towerdefense.registry.ModItems;
 import net.bubblesky.towerdefense.state.TdArenaState;
+import net.minecraft.block.Block;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -19,12 +26,28 @@ import net.minecraft.util.math.BlockPos;
 
 /**
  * The {@code /td} command family: the human-facing control panel for setting up
- * and running a tower-defense match. All arena state is stored in
- * {@link TdArenaState} (world-saved data), so commands just mutate that and the
- * {@link WaveManager} tick loop does the rest.
+ * and running a tower-defense match, plus the coin-economy storefront
+ * ({@code shop}/{@code buy}/{@code upgrade}). Arena state lives in
+ * {@link TdArenaState}; the {@link WaveManager} tick loop drives the match.
  */
 public final class TdCommand {
 	private TdCommand() {
+	}
+
+	/** Default block distance from the base to the auto-placed spawn gates. */
+	private static final int DEFAULT_ARENA_DISTANCE = 20;
+
+	/** A buyable tower: its block plus the coin price to build it. */
+	private record TowerDef(Block block, int price) {
+	}
+
+	/** The storefront catalogue (insertion order = display order). */
+	private static final Map<String, TowerDef> TOWERS = new LinkedHashMap<>();
+
+	static {
+		TOWERS.put("arrow_tower", new TowerDef(ModBlocks.ARROW_TOWER, 10));
+		TOWERS.put("cannon_tower", new TowerDef(ModBlocks.CANNON_TOWER, 25));
+		TOWERS.put("frost_tower", new TowerDef(ModBlocks.FROST_TOWER, 20));
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
@@ -35,6 +58,11 @@ public final class TdCommand {
 				.executes(ctx -> tower(ctx, "arrow_tower"))
 				.then(CommandManager.argument("type", StringArgumentType.word())
 					.executes(ctx -> tower(ctx, StringArgumentType.getString(ctx, "type")))))
+			.then(CommandManager.literal("shop").executes(TdCommand::shop))
+			.then(CommandManager.literal("buy")
+				.then(CommandManager.argument("type", StringArgumentType.word())
+					.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type")))))
+			.then(CommandManager.literal("upgrade").executes(TdCommand::upgrade))
 			.then(CommandManager.literal("spawn").executes(TdCommand::spawn))
 			.then(CommandManager.literal("base")
 				.executes(ctx -> base(ctx, TdArenaState.DEFAULT_BASE_HP))
@@ -42,6 +70,11 @@ public final class TdCommand {
 					.executes(ctx -> base(ctx, IntegerArgumentType.getInteger(ctx, "hp")))))
 			.then(CommandManager.literal("wave").executes(TdCommand::wave))
 			.then(CommandManager.literal("start").executes(TdCommand::wave))
+			.then(CommandManager.literal("arena")
+				.executes(ctx -> arena(ctx, DEFAULT_ARENA_DISTANCE))
+				.then(CommandManager.argument("distance", IntegerArgumentType.integer(4, 128))
+					.executes(ctx -> arena(ctx, IntegerArgumentType.getInteger(ctx, "distance")))))
+			.then(CommandManager.literal("restart").executes(TdCommand::restart))
 			.then(CommandManager.literal("status").executes(TdCommand::status))
 			.then(CommandManager.literal("reset").executes(TdCommand::reset)));
 	}
@@ -49,11 +82,16 @@ public final class TdCommand {
 	private static int help(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();
 		src.sendFeedback(() -> Text.literal("Tower Defense commands:").formatted(Formatting.GOLD), false);
+		line(src, "/td arena [dist]", "quick-setup: base here + 2 spawn gates (N/E) at dist blocks");
 		line(src, "/td base [hp]", "set the base to defend at your position (default 100 HP)");
 		line(src, "/td spawn", "add an enemy spawn point at your position");
-		line(src, "/td tower [type]", "place a tower where you're looking (default arrow_tower)");
+		line(src, "/td tower [type]", "place a tower where you're looking (free/op; default arrow_tower)");
+		line(src, "/td shop", "list buyable towers and their coin prices");
+		line(src, "/td buy <type>", "spend coins to build a tower where you're looking");
+		line(src, "/td upgrade", "spend coins to raise the tier of the tower you're looking at");
 		line(src, "/td wave", "start the next wave (alias: /td start)");
-		line(src, "/td status", "show wave, enemies alive, base HP, spawn count");
+		line(src, "/td restart", "reset then re-arena here for a fresh run (start with /td wave)");
+		line(src, "/td status", "show wave/base info (and the tower you're looking at)");
 		line(src, "/td reset", "clear the arena (waves, enemies, spawns, base)");
 		return 1;
 	}
@@ -63,33 +101,176 @@ public final class TdCommand {
 			.append(Text.literal(" - " + desc).formatted(Formatting.GRAY)), false);
 	}
 
+	// ---- shop / economy ----------------------------------------------------
+	private static int shop(CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		int coins = countCoins(player);
+		src.sendFeedback(() -> Text.literal("Tower Shop").formatted(Formatting.GOLD), false);
+		for (Map.Entry<String, TowerDef> e : TOWERS.entrySet()) {
+			int price = e.getValue().price();
+			line(src, e.getKey(), price + " coins  (/td buy " + e.getKey() + ")");
+		}
+		src.sendFeedback(() -> Text.literal("  Your coins: " + coins).formatted(Formatting.AQUA), false);
+		src.sendFeedback(() -> Text.literal("  Upgrades cost (tower price x current tier); use /td upgrade.")
+			.formatted(Formatting.GRAY), false);
+		return 1;
+	}
+
+	private static int buy(CommandContext<ServerCommandSource> ctx, String type) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		ServerWorld world = src.getWorld();
+
+		TowerDef def = TOWERS.get(type);
+		if (def == null) {
+			src.sendError(Text.literal("Unknown tower '" + type + "'. Try /td shop."));
+			return 0;
+		}
+		int coins = countCoins(player);
+		if (coins < def.price()) {
+			src.sendError(Text.literal("Not enough coins: need " + def.price() + ", have " + coins + "."));
+			return 0;
+		}
+		BlockPos placePos = placementTarget(src, player, world);
+		if (placePos == null) {
+			return 0;
+		}
+		placeTower(world, placePos, def.block(), player);
+		removeCoins(player, def.price());
+		int remaining = coins - def.price();
+		src.sendFeedback(() -> Text.literal("Bought " + type + " for " + def.price()
+			+ " coins (" + remaining + " left).").formatted(Formatting.GREEN), false);
+		return 1;
+	}
+
+	private static int upgrade(CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		ServerWorld world = src.getWorld();
+
+		AbstractTowerBlockEntity tower = lookedAtTower(player, world);
+		if (tower == null) {
+			src.sendError(Text.literal("Look at one of your towers within 30 blocks to upgrade it."));
+			return 0;
+		}
+		if (tower.getTier() >= AbstractTowerBlockEntity.MAX_TIER) {
+			src.sendError(Text.literal("That tower is already at max tier ("
+				+ AbstractTowerBlockEntity.MAX_TIER + ")."));
+			return 0;
+		}
+		int basePrice = priceOf(world, tower.getPos());
+		int cost = basePrice * tower.getTier();
+		int coins = countCoins(player);
+		if (coins < cost) {
+			src.sendError(Text.literal("Not enough coins to upgrade: need " + cost + ", have " + coins + "."));
+			return 0;
+		}
+		int newTier = tower.getTier() + 1;
+		tower.upgrade();
+		// The upgrader (re)claims ownership so their upgraded shots keep paying them.
+		tower.setPlacer(player.getUuid());
+		removeCoins(player, cost);
+		int remaining = coins - cost;
+		src.sendFeedback(() -> Text.literal("Upgraded to tier " + newTier + " for " + cost
+			+ " coins (" + remaining + " left).").formatted(Formatting.GREEN), false);
+		return 1;
+	}
+
+	// ---- op / free placement -----------------------------------------------
 	private static int tower(CommandContext<ServerCommandSource> ctx, String type) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity player = src.getPlayerOrThrow();
 		ServerWorld world = src.getWorld();
 
-		// Only the arrow_tower exists so far; accept the type for forward-compat.
-		if (!type.equals("arrow_tower")) {
+		TowerDef def = TOWERS.get(type);
+		if (def == null) {
 			src.sendError(Text.literal("Unknown tower type '" + type + "'. Placing arrow_tower."));
+			def = TOWERS.get("arrow_tower");
+			type = "arrow_tower";
 		}
+		BlockPos placePos = placementTarget(src, player, world);
+		if (placePos == null) {
+			return 0;
+		}
+		placeTower(world, placePos, def.block(), player);
+		final String placed = type;
+		src.sendFeedback(() -> Text.literal("Placed " + placed + " at " + placePos.toShortString())
+			.formatted(Formatting.GREEN), false);
+		return 1;
+	}
 
+	// ---- placement / raycast helpers ---------------------------------------
+	private static BlockPos placementTarget(ServerCommandSource src, ServerPlayerEntity player, ServerWorld world) {
 		HitResult hit = player.raycast(30.0, 1.0f, false);
 		if (hit.getType() != HitResult.Type.BLOCK) {
 			src.sendError(Text.literal("Look at a block within 30 blocks to place a tower."));
-			return 0;
+			return null;
 		}
 		BlockHitResult bhr = (BlockHitResult) hit;
 		BlockPos placePos = bhr.getBlockPos().offset(bhr.getSide());
 		if (!world.getBlockState(placePos).isReplaceable()) {
 			src.sendError(Text.literal("No room to place a tower there."));
-			return 0;
+			return null;
 		}
-		world.setBlockState(placePos, ModBlocks.ARROW_TOWER.getDefaultState());
-		src.sendFeedback(() -> Text.literal("Placed arrow_tower at " + placePos.toShortString())
-			.formatted(Formatting.GREEN), false);
-		return 1;
+		return placePos;
 	}
 
+	/** Place the tower and stamp the placer UUID so its kills credit that player. */
+	private static void placeTower(ServerWorld world, BlockPos pos, Block block, ServerPlayerEntity placer) {
+		world.setBlockState(pos, block.getDefaultState());
+		if (world.getBlockEntity(pos) instanceof AbstractTowerBlockEntity tower) {
+			tower.setPlacer(placer.getUuid());
+		}
+	}
+
+	/** The tower the player is aiming at (within 30 blocks), or null. */
+	private static AbstractTowerBlockEntity lookedAtTower(ServerPlayerEntity player, ServerWorld world) {
+		HitResult hit = player.raycast(30.0, 1.0f, false);
+		if (hit.getType() != HitResult.Type.BLOCK) {
+			return null;
+		}
+		BlockPos pos = ((BlockHitResult) hit).getBlockPos();
+		BlockEntity be = world.getBlockEntity(pos);
+		return be instanceof AbstractTowerBlockEntity tower ? tower : null;
+	}
+
+	/** Look up the catalogue price of the tower block at a position (default 10). */
+	private static int priceOf(ServerWorld world, BlockPos pos) {
+		Block block = world.getBlockState(pos).getBlock();
+		for (TowerDef def : TOWERS.values()) {
+			if (def.block() == block) {
+				return def.price();
+			}
+		}
+		return 10;
+	}
+
+	// ---- coin helpers ------------------------------------------------------
+	private static int countCoins(ServerPlayerEntity player) {
+		int total = 0;
+		for (ItemStack stack : player.getInventory().getMainStacks()) {
+			if (stack.isOf(ModItems.COIN)) {
+				total += stack.getCount();
+			}
+		}
+		return total;
+	}
+
+	private static void removeCoins(ServerPlayerEntity player, int amount) {
+		int remaining = amount;
+		var stacks = player.getInventory().getMainStacks();
+		for (int i = 0; i < stacks.size() && remaining > 0; i++) {
+			ItemStack stack = stacks.get(i);
+			if (stack.isOf(ModItems.COIN)) {
+				int take = Math.min(remaining, stack.getCount());
+				stack.decrement(take);
+				remaining -= take;
+			}
+		}
+	}
+
+	// ---- arena setup / status ----------------------------------------------
 	private static int spawn(CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity player = src.getPlayerOrThrow();
@@ -118,6 +299,47 @@ public final class TdCommand {
 		src.sendFeedback(() -> Text.literal("Base set at " + st.base.toShortString()
 			+ " with " + hp + " HP.").formatted(Formatting.GREEN), false);
 		return 1;
+	}
+
+	/**
+	 * One-command arena setup: place the base at the player's feet (default HP) and
+	 * drop two spawn gates {@code distance} blocks away (north and east), so a match
+	 * is ready to run with just {@code /td arena} then {@code /td wave}. Replaces any
+	 * previous spawn points so it is safely re-runnable.
+	 */
+	private static int arena(CommandContext<ServerCommandSource> ctx, int distance) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		TdArenaState st = TdArenaState.get(src.getServer());
+		BlockPos here = player.getBlockPos();
+
+		st.base = here;
+		st.baseMaxHp = TdArenaState.DEFAULT_BASE_HP;
+		st.baseHp = TdArenaState.DEFAULT_BASE_HP;
+		st.worldId = src.getWorld().getRegistryKey().getValue().toString();
+		st.gameOver = false;
+		st.spawnPoints.clear();
+		st.spawnPoints.add(here.north(distance));
+		st.spawnPoints.add(here.east(distance));
+		st.markDirty();
+
+		src.sendFeedback(() -> Text.literal("Arena ready: base at " + here.toShortString()
+			+ " (" + st.baseMaxHp + " HP) with 2 spawn gates " + distance
+			+ " blocks N/E. Run /td wave to begin.").formatted(Formatting.GREEN), true);
+		return 1;
+	}
+
+	/**
+	 * Reset the arena and immediately re-set it up at the player's position — a
+	 * one-command "play again" after a game over (or any time). Equivalent to
+	 * {@code /td reset} followed by {@code /td arena}.
+	 */
+	private static int restart(CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		reset(ctx);
+		int result = arena(ctx, DEFAULT_ARENA_DISTANCE);
+		ctx.getSource().sendFeedback(() -> Text.literal("Arena restarted — good luck! (/td wave to start)")
+			.formatted(Formatting.GOLD), true);
+		return result;
 	}
 
 	private static int wave(CommandContext<ServerCommandSource> ctx) {
@@ -149,13 +371,31 @@ public final class TdCommand {
 			.formatted(Formatting.YELLOW), false);
 		src.sendFeedback(() -> Text.literal("  Spawn points: " + st.spawnPoints.size())
 			.formatted(Formatting.YELLOW), false);
+		if (!st.gameOver && st.base != null) {
+			int next = st.currentWave + 1;
+			if (WaveManager.isBossWave(next)) {
+				src.sendFeedback(() -> Text.literal("  Next up: BOSS WAVE " + next + " (Warlord)")
+					.formatted(Formatting.LIGHT_PURPLE), false);
+			}
+		}
+
+		// If the player is aiming at a tower, report its tier too.
+		if (src.getEntity() instanceof ServerPlayerEntity player) {
+			AbstractTowerBlockEntity tower = lookedAtTower(player, src.getWorld());
+			if (tower != null) {
+				String name = src.getWorld().getBlockState(tower.getPos()).getBlock()
+					.getName().getString();
+				src.sendFeedback(() -> Text.literal("  Aiming at: " + name + " (tier "
+					+ tower.getTier() + "/" + AbstractTowerBlockEntity.MAX_TIER + ")")
+					.formatted(Formatting.AQUA), false);
+			}
+		}
 		return 1;
 	}
 
 	private static int reset(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();
 		TdArenaState st = TdArenaState.get(src.getServer());
-		// Discard any live enemies before wiping the arena config.
 		ServerWorld arena = st.getArenaWorld(src.getServer());
 		if (st.base != null && arena != null) {
 			arena.getOtherEntities(null, new net.minecraft.util.math.Box(st.base).expand(128.0),

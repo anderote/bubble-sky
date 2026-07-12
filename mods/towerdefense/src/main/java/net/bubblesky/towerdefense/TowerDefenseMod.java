@@ -1,6 +1,7 @@
 package net.bubblesky.towerdefense;
 
 import net.bubblesky.towerdefense.command.TdCommand;
+import net.bubblesky.towerdefense.game.TdHud;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.registry.ModBlockEntities;
 import net.bubblesky.towerdefense.registry.ModBlocks;
@@ -59,8 +60,9 @@ public class TowerDefenseMod implements ModInitializer {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 			TdCommand.register(dispatcher));
 		WaveManager.register();
+		TdHud.register();
 
-		LOGGER.info("[towerdefense] initialized: {} weapons + arrow_tower + coin economy + wave game loop + 6-enemy roster",
+		LOGGER.info("[towerdefense] initialized: {} weapons + 3 towers (arrow/cannon/frost) + shop/upgrades + coin economy + wave game loop + 6-enemy roster + boss waves + HUD",
 			ModItems.WEAPON_COUNT);
 	}
 
