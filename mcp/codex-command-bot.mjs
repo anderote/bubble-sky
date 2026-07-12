@@ -22,6 +22,7 @@ const historyLimit = Number(process.env.CODEX_CHAT_HISTORY_LIMIT || 2000);
 const swarmRuntimeDir = process.env.CODEX_SWARM_RUNTIME || ".codex-runtime/swarm";
 const swarmStatePath = path.join(swarmRuntimeDir, "state.json");
 const delegatedDroneName = process.env.CODEX_ARCHITECT_DRONE || "CodexDrone1";
+const delegateArchitectTower = process.env.CODEX_ARCHITECT_DELEGATE_TOWER === "1";
 const buildCommandDelayMs = Number(process.env.CODEX_BUILD_COMMAND_DELAY_MS || 150);
 const openaiApiKey = process.env.OPENAI_API_KEY || "";
 const commandModel = process.env.CODEX_COMMAND_MODEL || "gpt-5-mini";
@@ -692,9 +693,12 @@ async function runArchitectCommand(speaker, command, originalText = "") {
 
   if (command.action === "castle_wall") {
     const buildOrigin = { x: origin.x, y: origin.y - 1, z: origin.z + 12 };
-    say(`building a detailed castle wall at ${formatBlockPosition(buildOrigin)}; delegating the east tower to ${delegatedDroneName}`);
+    const mode = delegateArchitectTower ? `delegating the east tower to ${delegatedDroneName}` : "building both towers directly";
+    say(`building a detailed castle wall at ${formatBlockPosition(buildOrigin)}; ${mode}`);
     await executeDelegatedCastleWall(buildOrigin);
-    say(`main wall and west tower are placed; ${delegatedDroneName} has the east tower job.`);
+    say(delegateArchitectTower
+      ? `main wall and west tower are placed; ${delegatedDroneName} has the east tower job.`
+      : `castle wall and both towers are placed.`);
   }
 }
 
@@ -1214,6 +1218,11 @@ async function executeDelegatedCastleWall(origin) {
   await sendCommandBatch(commands);
 
   const droneJobs = detailedTowerJobs(eastTower, delegatedDroneName);
+  if (!delegateArchitectTower) {
+    await sendCommandBatch(towerJobsToCommands(droneJobs));
+    return;
+  }
+
   writeDelegatedState({
     taskId: `codex-wall-${Date.now()}`,
     structure: "castle wall east tower",
@@ -1318,6 +1327,47 @@ function detailedTowerJobs(origin, worker) {
   cuboid("detail", x + 16, y + 1, z - 1, x + 25, y + 2, z + 1, "polished_deepslate");
 
   return jobs;
+}
+
+function towerJobsToCommands(jobs) {
+  return lineRuns(jobs).map((run) => {
+    const first = run[0];
+    const last = run[run.length - 1];
+    const block = commandBlockName(first.block);
+    if (run.length === 1) return setBlockCommand(first.x, first.y, first.z, block);
+    return fillCommand(first.x, first.y, first.z, last.x, last.y, last.z, block);
+  });
+}
+
+function lineRuns(jobs) {
+  const sorted = [...jobs].sort((a, b) => {
+    if (a.block !== b.block) return a.block.localeCompare(b.block);
+    if (a.y !== b.y) return a.y - b.y;
+    if (a.z !== b.z) return a.z - b.z;
+    return a.x - b.x;
+  });
+  const runs = [];
+  let current = [];
+
+  for (const job of sorted) {
+    const previous = current[current.length - 1];
+    if (
+      previous &&
+      previous.block === job.block &&
+      previous.y === job.y &&
+      previous.z === job.z &&
+      previous.x + 1 === job.x
+    ) {
+      current.push(job);
+      continue;
+    }
+
+    if (current.length) runs.push(current);
+    current = [job];
+  }
+
+  if (current.length) runs.push(current);
+  return runs;
 }
 
 function writeDelegatedState(state) {
@@ -1621,6 +1671,7 @@ function showStatus(speaker) {
 }
 
 function delegatedStatusText() {
+  if (!delegateArchitectTower) return "";
   try {
     if (!fs.existsSync(swarmStatePath)) return "";
     const state = JSON.parse(fs.readFileSync(swarmStatePath, "utf8"));
