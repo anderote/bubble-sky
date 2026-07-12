@@ -31,7 +31,7 @@ docs/        Design spec                                               (shared)
 | Tool | Version | Why |
 |------|---------|-----|
 | Java (Temurin) | **21** | Required by Fabric 1.21.6 |
-| Node | **20 LTS** | mindcraft breaks on 24+; MCP server needs Node |
+| Node | **22 LTS** | current Mineflayer packages require 22+; mindcraft warns against 24+ |
 | Fabric | server launcher + Fabric API | mod loader |
 
 ---
@@ -71,7 +71,7 @@ Making bots understand custom content is **out of scope for v1**.
 
 | Phase | Done when… | Owner |
 |-------|-----------|-------|
-| P0 Toolchain | Java 21 + Node 20 installed & pinned | A + B |
+| P0 Toolchain | Java 21 + Node 22 installed & pinned | A + B |
 | P1 Server up | Offline-mode server runs; human joins & walks around | A |
 | P2 MCP agent | Claude Code controls a bot (move/dig verified) | B |
 | P3 Autonomous bot | One mindcraft bot joins & acts on its own | B |

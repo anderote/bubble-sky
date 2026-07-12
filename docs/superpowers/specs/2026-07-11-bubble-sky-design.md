@@ -84,7 +84,7 @@ Revisiting this (making bots understand custom content via a mod-side agent brid
 ## 5. Toolchain
 
 - **Java 21** (Temurin) — required by Fabric 1.21.6. Install via SDKMAN or Homebrew.
-- **Node 20 LTS** — mindcraft breaks on Node 24+; the MCP server also runs on Node. Use nvm/fnm so it doesn't disturb system Node.
+- **Node 22 LTS** — current Mineflayer packages require Node 22+; mindcraft warns against Node 24+. Use nvm/fnm so it doesn't disturb system Node.
 - **Fabric server launcher** + **Fabric API** mod.
 - **Gradle** (via the mod template's wrapper — no separate install).
 
@@ -104,7 +104,7 @@ Owns `server/` and `mods/`.
 
 ### Workstream B — AI Agents ("AI/agents" owner)
 Owns `mcp/` and `mindcraft/`.
-- **B0** Install Node 20 LTS (pinned via nvm/fnm).
+- **B0** Install Node 22 LTS (pinned via nvm/fnm).
 - **B2** Wire `minecraft-mcp-server` into `.mcp.json`; verify Claude Code can drive a bot ("go to X", "dig this block").
 - **B3** Clone + configure mindcraft with `ANTHROPIC_API_KEY`; one autonomous bot joins and acts.
 - **Deliverable:** documented steps so anyone can launch the MCP bot and a mindcraft bot against a running server.
@@ -119,7 +119,7 @@ Owns `mcp/` and `mindcraft/`.
 
 | Phase | Done when… | Owner |
 |-------|-----------|-------|
-| P0 Toolchain | Java 21 + Node 20 installed and pinned | A + B |
+| P0 Toolchain | Java 21 + Node 22 installed and pinned | A + B |
 | P1 Server up | Fabric 1.21.6 offline-mode server runs; human joins and walks around | A |
 | P2 MCP agent | Claude Code controls a bot in-world (move/dig verified) | B |
 | P3 Autonomous bot | One mindcraft bot joins and acts on its own | B |

@@ -25,7 +25,7 @@ Everything is local to one macOS (Apple Silicon) host. Four independent processe
 │        │                     │                      │                   │
 │   ┌─────────┐          ┌──────────────┐       ┌──────────────────┐      │
 │   │ Human   │          │ MCP server   │       │ mindcraft        │      │
-│   │ client  │          │ (Node 20)    │       │ (Node 20)        │      │
+│   │ client  │          │ (Node 22)    │       │ (Node 22)        │      │
 │   │ (game   │          │ Mineflayer   │       │ Mineflayer +     │      │
 │   │  launch)│          │ bot          │       │ LLM agent loop   │      │
 │   └─────────┘          └──────────────┘       └──────────────────┘      │
@@ -49,8 +49,8 @@ process is a *client* that observes and mutates that state only through the Mine
 |-----------|---------|--------------------|-------------------|----------|
 | **Fabric server** | JVM / Java 21 | listens `:25565` TCP | Minecraft Java protocol (1.21.6); server console/commands | jars in `server/mods/` |
 | **Java mods** | in-server (JVM) | — | Fabric mod entrypoints, mixins, commands, events | Minecraft + Fabric API |
-| **MCP server** | Node 20 | connects `:25565`; speaks MCP over stdio | MCP tools (move/dig/place/find/chat/…) to Claude Code | Mineflayer ↔ server |
-| **mindcraft** | Node 20 | connects `:25565`; calls Anthropic HTTPS | in-game chat commands; bot profiles | Mineflayer ↔ server; Anthropic API |
+| **MCP server** | Node 22 | connects `:25565`; speaks MCP over stdio | MCP tools (move/dig/place/find/chat/…) to Claude Code | Mineflayer ↔ server |
+| **mindcraft** | Node 22 | connects `:25565`; calls Anthropic HTTPS | in-game chat commands; bot profiles | Mineflayer ↔ server; Anthropic API |
 | **Human client** | game launcher | connects `:25565` | keyboard/mouse | server world |
 | **Claude Code** | this CLI | drives MCP server over stdio | natural-language intent | MCP tools |
 
@@ -151,7 +151,7 @@ view of the world.
 
 ## 7. Deployment / run order
 
-1. **P0** Java 21 + Node 20 pinned.
+1. **P0** Java 21 + Node 22 pinned.
 2. **P1** `server/` boots → world generated → human can join `localhost:25565`.
 3. **P2** `.mcp.json` registered → Claude Code drives the MCP bot.
 4. **P3** mindcraft configured with key → autonomous bot joins.
