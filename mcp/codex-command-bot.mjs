@@ -14,6 +14,7 @@ const richChat = process.env.CODEX_RICH_CHAT === "1";
 const llmPlayers = parseList(process.env.CODEX_LLM_PLAYERS || "codex,claude,claudebot,grok");
 const historyPath = process.env.CODEX_CHAT_HISTORY || ".codex-runtime/chat-history.jsonl";
 const historyLimit = Number(process.env.CODEX_CHAT_HISTORY_LIMIT || 2000);
+const announceOnJoin = process.env.CODEX_ANNOUNCE_ON_JOIN !== "0";
 const helpLines = [
   "help",
   "history [count]",
@@ -59,7 +60,9 @@ let visibility = process.env.CODEX_CHAT_VISIBILITY || "public";
 bot.once("spawn", () => {
   movements = new Movements(bot);
   bot.pathfinder.setMovements(movements);
-  say("codex online. Tag @codex help. Chat visibility is public.");
+  if (announceOnJoin) {
+    say("codex online. Tag @codex help. Chat visibility is public.");
+  }
   console.log(`${username} joined ${host}:${port} at ${bot.entity.position}`);
 });
 
