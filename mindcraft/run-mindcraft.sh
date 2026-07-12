@@ -15,7 +15,7 @@ if [ ! -f "$UPSTREAM_DIR/keys.json" ]; then
 Missing mindcraft/upstream/keys.json.
 
 Create it from mindcraft/upstream/keys.example.json and set ANTHROPIC_API_KEY
-for the default CodexBot profile.
+for the default codex profile.
 EOF
   exit 1
 fi

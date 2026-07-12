@@ -23,8 +23,14 @@ server/      Fabric server install, config, world, mods/ drop-folder   (Workstre
 mods/        Java mod dev workspace (Gradle + Java 21)                  (Workstream A)
 mcp/         Mineflayer MCP server wiring for Claude Code               (Workstream B)
 mindcraft/   Autonomous LLM bots                                        (Workstream B)
+client/      Local Prism client helpers, including minimap install      (shared)
 docs/        Design spec                                               (shared)
 ```
+
+## Client helpers
+
+See [`client/README.md`](client/README.md) for local Prism client setup, including
+the Fabric/Xaero minimap installer for Minecraft 1.21.6.
 
 ## Toolchain
 

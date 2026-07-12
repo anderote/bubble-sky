@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
 import mineflayer from "../mindcraft/upstream/node_modules/mineflayer/index.js";
 import pathfinderPackage from "../mindcraft/upstream/node_modules/mineflayer-pathfinder/index.js";
 
@@ -6,8 +8,28 @@ const { pathfinder, Movements, goals } = pathfinderPackage;
 
 const host = process.env.MINECRAFT_HOST || "192.168.86.188";
 const port = Number(process.env.MINECRAFT_PORT || 25565);
-const username = process.env.CODEX_BOT_USERNAME || "CodexBot";
+const username = process.env.CODEX_BOT_USERNAME || "codex";
 const version = process.env.MINECRAFT_VERSION || "1.21.6";
+const richChat = process.env.CODEX_RICH_CHAT === "1";
+const llmPlayers = parseList(process.env.CODEX_LLM_PLAYERS || "codex,claude,claudebot,grok");
+const historyPath = process.env.CODEX_CHAT_HISTORY || ".codex-runtime/chat-history.jsonl";
+const historyLimit = Number(process.env.CODEX_CHAT_HISTORY_LIMIT || 2000);
+const helpLines = [
+  "help",
+  "history [count]",
+  "status",
+  "visibility public|private|llm",
+  "say <text>",
+  "tell <player> <text>",
+  "where",
+  "come [player]",
+  "follow [player|me]",
+  "look at [player|me]",
+  "go to <x> <y> <z>",
+  "stop",
+  "jump",
+  "spin",
+];
 
 const bot = mineflayer.createBot({
   host,
@@ -21,11 +43,12 @@ bot.loadPlugin(pathfinder);
 
 let followTarget = null;
 let movements = null;
+let visibility = process.env.CODEX_CHAT_VISIBILITY || "public";
 
 bot.once("spawn", () => {
   movements = new Movements(bot);
   bot.pathfinder.setMovements(movements);
-  bot.chat("CodexBot online. Tag me with '@CodexBot help'.");
+  say("codex online. Tag @codex help. Chat visibility is public.");
   console.log(`${username} joined ${host}:${port} at ${bot.entity.position}`);
 });
 
@@ -33,12 +56,20 @@ bot.on("chat", async (speaker, message) => {
   if (speaker === bot.username) return;
 
   const command = addressedCommand(message);
-  if (!command) return;
+  if (!command) {
+    if (looksLikeLlmConversation(speaker, message)) {
+      recordHistory({ type: "observed", speaker, text: message });
+    }
+    return;
+  }
 
   console.log(`<${speaker}> ${message}`);
+  if (shouldRecordPrompt(command)) {
+    recordHistory({ type: "prompt", speaker, text: command, raw: message });
+  }
   await runCommand(speaker, command).catch((error) => {
     console.error(error);
-    bot.chat(`I hit an error: ${error.message}`);
+    say(`I hit an error: ${error.message}`, { to: speaker });
   });
 });
 
@@ -59,40 +90,65 @@ bot.on("end", (reason) => console.log("ended", reason));
 
 function addressedCommand(message) {
   const trimmed = message.trim();
-  const lower = trimmed.toLowerCase();
-  const names = [
-    username.toLowerCase(),
-    `@${username.toLowerCase()}`,
+  const handles = [
+    username,
+    `@${username}`,
+    username.replace(/bot$/i, " bot"),
+    `@${username.replace(/bot$/i, "bot")}`,
     "codex",
     "@codex",
+    "codex bot",
+    "@codexbot",
   ];
 
-  for (const name of names) {
-    if (lower === name) return "help";
-    if (lower.startsWith(`${name} `)) return trimmed.slice(name.length).trim();
-    if (lower.startsWith(`${name},`)) return trimmed.slice(name.length + 1).trim();
-    if (lower.startsWith(`${name}:`)) return trimmed.slice(name.length + 1).trim();
+  for (const handle of unique(handles)) {
+    const pattern = handlePattern(handle);
+    const match = trimmed.match(pattern);
+    if (match) return normalizeCommand(match[1] || "help");
   }
 
   return null;
 }
 
 async function runCommand(speaker, commandText) {
-  const command = commandText.trim();
+  const command = normalizeCommand(commandText);
   const lower = command.toLowerCase();
 
   if (!command || lower === "help") {
-    bot.chat("Commands: help | say <text> | where | come | follow me | stop | jump | spin | look at me");
+    showHelp(speaker);
+    return;
+  }
+
+  const visibilityMatch = lower.match(/^(?:visibility|vis|chat)\s+(public|private|llm|llms|team)$/);
+  if (visibilityMatch) {
+    visibility = normalizeVisibility(visibilityMatch[1]);
+    say(`chat visibility set to ${visibility}`, { forcePublic: true });
     return;
   }
 
   if (lower.startsWith("say ")) {
-    bot.chat(command.slice(4));
+    say(command.slice(4), { speaker });
+    return;
+  }
+
+  const tellMatch = command.match(/^tell\s+(\S+)\s+(.+)$/i);
+  if (tellMatch) {
+    say(tellMatch[2], { to: tellMatch[1], forcePrivate: true });
+    return;
+  }
+
+  if (["history", "log", "transcript", "what happened"].includes(lower) || lower.startsWith("history ")) {
+    showHistory(speaker, command);
+    return;
+  }
+
+  if (["status", "what are you doing", "what are you up to", "whats up", "what's up"].includes(lower)) {
+    showStatus(speaker);
     return;
   }
 
   if (["where", "where are you", "pos", "position"].includes(lower)) {
-    bot.chat(`I am at ${formatPosition(bot.entity.position)}.`);
+    say(`I am at ${formatPosition(bot.entity.position)}.`, { to: speaker });
     return;
   }
 
@@ -100,7 +156,7 @@ async function runCommand(speaker, commandText) {
     bot.setControlState("jump", true);
     await wait(500);
     bot.setControlState("jump", false);
-    bot.chat("jumped");
+    say("jumped");
     return;
   }
 
@@ -109,7 +165,7 @@ async function runCommand(speaker, commandText) {
       await bot.look((Math.PI * 2 * i) / 8, 0, true);
       await wait(150);
     }
-    bot.chat("spun");
+    say("spun");
     return;
   }
 
@@ -117,38 +173,277 @@ async function runCommand(speaker, commandText) {
     followTarget = null;
     bot.pathfinder.stop();
     clearControls();
-    bot.chat("stopped");
+    say("stopped");
     return;
   }
 
-  if (lower === "come" || lower === "come here") {
-    const player = requirePlayer(speaker);
+  const goToMatch = lower.match(/^(?:go to|move to|walk to)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/);
+  if (goToMatch) {
+    const [, x, y, z] = goToMatch;
+    bot.pathfinder.setGoal(new goals.GoalNear(Number(x), Number(y), Number(z), 2));
+    say(`going to ${Number(x).toFixed(1)}, ${Number(y).toFixed(1)}, ${Number(z).toFixed(1)}`);
+    return;
+  }
+
+  const comeMatch = lower.match(/^come(?:\s+(?:to\s+)?(.+))?$/);
+  if (comeMatch || lower === "come here") {
+    const targetName = resolveTargetName(comeMatch?.[1], speaker);
+    const player = requirePlayer(targetName);
     bot.pathfinder.setGoal(new goals.GoalNear(player.position.x, player.position.y, player.position.z, 2));
-    bot.chat(`coming to ${speaker}`);
+    say(`coming to ${targetName}`);
     return;
   }
 
-  if (lower === "follow me" || lower === "follow") {
-    requirePlayer(speaker);
-    followTarget = speaker;
-    bot.chat(`following ${speaker}`);
+  const followMatch = lower.match(/^follow(?:\s+(.+))?$/);
+  if (followMatch) {
+    const targetName = resolveTargetName(followMatch[1], speaker);
+    requirePlayer(targetName);
+    followTarget = targetName;
+    say(`following ${targetName}`);
     return;
   }
 
-  if (lower === "look at me") {
-    const player = requirePlayer(speaker);
+  const lookMatch = lower.match(/^look at(?:\s+(.+))?$/);
+  if (lookMatch) {
+    const targetName = resolveTargetName(lookMatch[1], speaker);
+    const player = requirePlayer(targetName);
     await bot.lookAt(player.position.offset(0, 1.6, 0), true);
-    bot.chat(`looking at ${speaker}`);
+    say(`looking at ${targetName}`);
     return;
   }
 
-  bot.chat(`I heard "${command}", but I only know: help, say, where, come, follow me, stop, jump, spin, look at me.`);
+  if (["hi", "hello", "hey"].includes(lower)) {
+    say(`hi ${speaker}. Try @codex help.`);
+    return;
+  }
+
+  say(`I heard "${command}", but I only know: ${helpLines.join(", ")}.`, { to: speaker });
 }
 
 function requirePlayer(name) {
-  const player = bot.players[name]?.entity;
+  const playerName = findPlayerName(name);
+  const player = playerName ? bot.players[playerName]?.entity : null;
   if (!player) throw new Error(`I cannot see ${name}.`);
   return player;
+}
+
+function resolveTargetName(target, speaker) {
+  const name = (target || "me").trim();
+  if (!name || name === "me" || name === "here") return speaker;
+  return findPlayerName(name) || name;
+}
+
+function findPlayerName(name) {
+  const lower = name.toLowerCase();
+  return Object.keys(bot.players).find((playerName) => playerName.toLowerCase() === lower);
+}
+
+function showHelp(speaker) {
+  const text = [
+    { text: "[codex] ", color: "aqua", bold: true },
+    { text: "commands\n", color: "white", bold: true },
+    ...helpLines.flatMap((line) => [
+      { text: "  $ ", color: "dark_gray" },
+      { text: `@codex ${line}\n`, color: line.startsWith("visibility") ? "gold" : "gray" },
+    ]),
+    { text: `visibility: ${visibility}`, color: "green" },
+  ];
+  tellraw(speaker, text, () => {
+    say(`Commands: ${helpLines.join(" | ")}`, { to: speaker });
+  });
+}
+
+function showHistory(speaker, command) {
+  const [, countText] = command.match(/^history(?:\s+(\d+))?$/i) || [];
+  const requestedCount = Number(countText || 8);
+  const count = Number.isFinite(requestedCount) ? Math.min(Math.max(requestedCount, 1), 12) : 8;
+  const entries = readHistory(count);
+
+  if (entries.length === 0) {
+    say("No saved LLM chat history yet.", { to: speaker, record: false });
+    return;
+  }
+
+  for (const entry of entries) {
+    const who = entry.type === "prompt" ? entry.speaker : entry.bot || "codex";
+    const arrow = entry.type === "prompt" ? "asked" : entry.type === "observed" ? "chat" : "said";
+    say(`${shortTime(entry.at)} ${who} ${arrow}: ${entry.text}`, { to: speaker, record: false });
+  }
+}
+
+function showStatus(speaker) {
+  const entries = readHistory(5);
+  const target = followTarget ? `following ${followTarget}` : "idle";
+  say(`I am ${target} at ${formatPosition(bot.entity.position)}; visibility ${visibility}.`, { to: speaker, record: false });
+
+  if (entries.length) {
+    say(`recent: ${entries.map((entry) => `${entry.speaker || entry.bot}: ${entry.text}`).join(" / ")}`, {
+      to: speaker,
+      record: false,
+    });
+  }
+}
+
+function say(message, options = {}) {
+  const text = compact(message).slice(0, 240);
+  if (!text) return;
+
+  const targets = routeTargets(options);
+  const rendered = options.speaker ? `<${options.speaker} -> @codex> ${text}` : `[codex] ${text}`;
+  console.log(`> ${targets.length ? targets.join(",") : "public"} ${rendered}`);
+  if (options.record !== false) {
+    recordHistory({
+      type: options.speaker ? "relay" : "reply",
+      speaker: options.speaker,
+      bot: username,
+      text,
+      visibility,
+      targets,
+    });
+  }
+
+  if (targets.length) {
+    for (const target of targets) {
+      bot.chat(`/msg ${target} ${text}`);
+    }
+    return;
+  }
+
+  if (richChat) {
+    tellraw("@a", [
+      { text: "[", color: "dark_gray" },
+      { text: "codex", color: "aqua", bold: true },
+      { text: "] ", color: "dark_gray" },
+      ...richTextComponents(text),
+    ], () => bot.chat(rendered));
+    return;
+  }
+
+  bot.chat(rendered);
+}
+
+function routeTargets(options) {
+  if (options.forcePublic) return [];
+  if (options.forcePrivate) return options.to ? [options.to] : [];
+  if (options.to && visibility === "private") return [options.to];
+  if (visibility === "llm") return visibleLlms();
+  return [];
+}
+
+function visibleLlms() {
+  return Object.keys(bot.players).filter((playerName) => {
+    const lower = playerName.toLowerCase();
+    return lower !== username.toLowerCase() && llmPlayers.includes(lower);
+  });
+}
+
+function tellraw(target, components, fallback) {
+  if (!richChat) {
+    fallback?.();
+    return;
+  }
+
+  try {
+    bot.chat(`/tellraw ${target} ${JSON.stringify(components)}`);
+  } catch {
+    fallback?.();
+  }
+}
+
+function richTextComponents(text) {
+  const pieces = text.split(/(@(?:codex|grok|claude|claudebot)\b)/gi);
+  return pieces.filter(Boolean).map((piece) => {
+    if (/^@codex$/i.test(piece)) return { text: piece, color: "aqua", bold: true };
+    if (/^@grok$/i.test(piece)) return { text: piece, color: "light_purple", bold: true };
+    if (/^@claude(?:bot)?$/i.test(piece)) return { text: piece, color: "gold", bold: true };
+    return { text: piece, color: "white" };
+  });
+}
+
+function looksLikeLlmConversation(speaker, message) {
+  const lowerSpeaker = speaker.toLowerCase();
+  const lowerMessage = message.toLowerCase();
+  if (llmPlayers.includes(lowerSpeaker)) return true;
+  return /@(?:codex|grok|claude|claudebot)\b/i.test(lowerMessage);
+}
+
+function shouldRecordPrompt(command) {
+  const lower = command.toLowerCase();
+  return !["help", "history", "log", "transcript", "status", "what are you up to"].includes(lower) &&
+    !lower.startsWith("history ");
+}
+
+function normalizeCommand(text) {
+  let command = compact(text).replace(/[.!?]+$/g, "");
+  command = command.replace(/^(?:please|pls)\s+/i, "");
+  command = command.replace(/^(?:can|could|would|will)\s+you\s+/i, "");
+  command = command.replace(/^tell\s+me\s+/i, "");
+  return command.trim();
+}
+
+function handlePattern(handle) {
+  const escaped = handle
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\\ /g, "\\s+");
+  return new RegExp(`^(?:hey|hi|yo)?\\s*${escaped}\\s*(?:[:,>\\-])?\\s*(.*)$`, "i");
+}
+
+function normalizeVisibility(value) {
+  if (value === "llms" || value === "team") return "llm";
+  return value;
+}
+
+function unique(values) {
+  return [...new Set(values.map((value) => value.toLowerCase()).filter(Boolean))];
+}
+
+function parseList(value) {
+  return value.split(",").map((entry) => entry.trim().toLowerCase()).filter(Boolean);
+}
+
+function compact(text) {
+  return String(text).replace(/\s+/g, " ").trim();
+}
+
+function recordHistory(event) {
+  try {
+    fs.mkdirSync(path.dirname(historyPath), { recursive: true });
+    fs.appendFileSync(historyPath, `${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`);
+    trimHistory();
+  } catch (error) {
+    console.error(`failed to write chat history: ${error.message}`);
+  }
+}
+
+function readHistory(count) {
+  try {
+    if (!fs.existsSync(historyPath)) return [];
+    return fs.readFileSync(historyPath, "utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .slice(-count)
+      .map((line) => JSON.parse(line));
+  } catch (error) {
+    console.error(`failed to read chat history: ${error.message}`);
+    return [];
+  }
+}
+
+function trimHistory() {
+  if (!Number.isFinite(historyLimit) || historyLimit <= 0) return;
+
+  const lines = fs.readFileSync(historyPath, "utf8").trimEnd().split("\n");
+  if (lines.length <= historyLimit) return;
+
+  fs.writeFileSync(historyPath, `${lines.slice(-historyLimit).join("\n")}\n`);
+}
+
+function shortTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown";
+  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
 function clearControls() {
