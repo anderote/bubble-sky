@@ -726,6 +726,9 @@ async function runFreeformStructureBuild(speaker, command) {
         structure: name,
         origin,
         jobs,
+        requestedBy: speaker,
+        originalText: command,
+        instructions: `Build this freeform request near ${formatBlockPosition(origin)}: ${command}`,
       });
       return true;
     }
@@ -934,7 +937,11 @@ async function runArchitectCommand(speaker, command, originalText = "") {
     const buildOrigin = { x: origin.x, y: origin.y - 1, z: origin.z + 12 };
     const mode = delegateArchitectTower ? `delegating the east tower to ${delegatedDroneName}` : "building both towers directly";
     say(`building a detailed castle wall at ${formatBlockPosition(buildOrigin)}; ${mode}`);
-    await executeDelegatedCastleWall(buildOrigin);
+    await executeDelegatedCastleWall(buildOrigin, {
+      requestedBy: speaker,
+      originalText,
+      instructions: `Build the delegated east tower for the castle wall at ${formatBlockPosition(buildOrigin)}. Request: ${originalText}`,
+    });
     say(delegateArchitectTower
       ? `main wall and west tower are placed; ${delegatedDroneName} has the east tower job.`
       : `castle wall and both towers are placed.`);
@@ -1091,7 +1098,11 @@ async function runContextEditCommand(speaker, command) {
   if (/\b(?:tower|turret|watchtower|spire)\b/i.test(command)) {
     const origin = contextBuildOrigin(context);
     say(`editing the visible structure at ${formatBlockPosition(origin)}; delegating block placement to ${delegatedDroneName}`);
-    await delegateTowerBuild(origin, "context edit");
+    await delegateTowerBuild(origin, "context edit", {
+      requestedBy: speaker,
+      originalText: command,
+      instructions: `Add the requested tower/detail to the visible structure at ${formatBlockPosition(origin)}: ${command}`,
+    });
     say(`${delegatedDroneName} has the delegated edit.`);
     return;
   }
@@ -1476,6 +1487,9 @@ async function executeStructureCommand(speaker, command, origin, originalText = 
         structure: "generic bridge",
         origin: plan.origin,
         jobs: bridgeJobs,
+        requestedBy: speaker,
+        originalText,
+        instructions: `Build the delegated bridge starting at ${formatBlockPosition(plan.origin)}. Request: ${originalText}`,
       });
       return;
     }
@@ -1491,6 +1505,9 @@ async function executeStructureCommand(speaker, command, origin, originalText = 
         structure: "bridge semi truck",
         origin: plan.vehicleOrigin,
         jobs: vehicleJobs,
+        requestedBy: speaker,
+        originalText,
+        instructions: `Build the semi truck detail on the bridge at ${formatBlockPosition(plan.vehicleOrigin)}. Request: ${originalText}`,
       });
       say(`${delegatedDroneName} has the semi truck detail job.`);
     } else {
@@ -1502,7 +1519,11 @@ async function executeStructureCommand(speaker, command, origin, originalText = 
   const plan = genericStructurePlan(speaker, origin, originalText, command.kind);
   if (command.kind === "tower" && command.delegateStructure) {
     say(`delegating a tower at ${formatBlockPosition(plan.origin)} to ${delegatedDroneName}`);
-    delegateTowerBuild(plan.origin, "generic tower");
+    delegateTowerBuild(plan.origin, "generic tower", {
+      requestedBy: speaker,
+      originalText,
+      instructions: `Build the delegated tower at ${formatBlockPosition(plan.origin)}. Request: ${originalText}`,
+    });
     return;
   }
 
@@ -1516,6 +1537,9 @@ async function executeStructureCommand(speaker, command, origin, originalText = 
       structure: `generic ${command.kind}`,
       origin: plan.origin,
       jobs,
+      requestedBy: speaker,
+      originalText,
+      instructions: `Build the delegated ${command.kind} at ${formatBlockPosition(plan.origin)}. Request: ${originalText}`,
     });
     return;
   }
@@ -1851,7 +1875,7 @@ function semiTruckJobs(origin, worker, plan) {
   return jobs;
 }
 
-async function executeDelegatedCastleWall(origin) {
+async function executeDelegatedCastleWall(origin, metadata = {}) {
   const cx = origin.x;
   const y = origin.y;
   const cz = origin.z;
@@ -1900,26 +1924,27 @@ async function executeDelegatedCastleWall(origin) {
     return;
   }
 
-  writeDelegatedTowerState(origin, droneJobs, "castle wall east tower");
+  writeDelegatedTowerState(origin, droneJobs, "castle wall east tower", metadata);
 }
 
-async function delegateTowerBuild(origin, structure) {
+async function delegateTowerBuild(origin, structure, metadata = {}) {
   const droneJobs = detailedTowerJobs(origin, delegatedDroneName);
   if (!delegateArchitectTower) {
     await sendCommandBatch(towerJobsToCommands(droneJobs));
     return;
   }
 
-  writeDelegatedTowerState(origin, droneJobs, structure);
+  writeDelegatedTowerState(origin, droneJobs, structure, metadata);
 }
 
-function writeDelegatedTowerState(origin, droneJobs, structure) {
+function writeDelegatedTowerState(origin, droneJobs, structure, metadata = {}) {
   summonDroneToBuildSite(origin);
   writeDelegatedState({
     taskId: `codex-wall-${Date.now()}`,
     structure,
     origin,
     jobs: droneJobs,
+    ...metadata,
   });
 }
 
@@ -2080,6 +2105,9 @@ function writeDelegatedState(state) {
     source: "codex-architect",
     assignedBy: username,
     assignedTo: delegatedDroneName,
+    requestedBy: state.requestedBy || null,
+    originalText: state.originalText || null,
+    instructions: state.instructions || `Build ${state.structure} at ${formatBlockPosition(state.origin)}.`,
     origin: state.origin,
     jobs: state.jobs,
     createdAt: new Date().toISOString(),
