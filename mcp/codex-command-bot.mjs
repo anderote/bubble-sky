@@ -97,6 +97,10 @@ let visibility = process.env.CODEX_CHAT_VISIBILITY || "public";
 let flightAnchor = null;
 let flightAnchorBusy = false;
 let airborneFollowNextAt = 0;
+let stopping = false;
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 bot.once("spawn", () => {
   clearTimeout(spawnWatchdog);
@@ -166,7 +170,10 @@ bot.on("physicsTick", () => {
 
 bot.on("kicked", (reason) => console.log("kicked", reason));
 bot.on("error", (error) => console.error("error", error));
-bot.on("end", (reason) => console.log("ended", reason));
+bot.on("end", (reason) => {
+  console.log("ended", reason);
+  if (!stopping) process.exit(1);
+});
 
 function addressedCommand(message) {
   const trimmed = message.trim();
@@ -2721,4 +2728,18 @@ function formatPosition(position) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shutdown() {
+  stopping = true;
+  clearTimeout(spawnWatchdog);
+  clearAirborneFollow();
+  escort = null;
+  followTarget = null;
+  clearControls();
+  try {
+    bot.end();
+  } finally {
+    setTimeout(() => process.exit(0), 250);
+  }
 }
