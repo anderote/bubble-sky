@@ -14,6 +14,8 @@ const richChat = process.env.CODEX_RICH_CHAT === "1";
 const llmPlayers = parseList(process.env.CODEX_LLM_PLAYERS || "codex,claude,claudebot,grok");
 const historyPath = process.env.CODEX_CHAT_HISTORY || ".codex-runtime/chat-history.jsonl";
 const historyLimit = Number(process.env.CODEX_CHAT_HISTORY_LIMIT || 2000);
+const botAliases = botHandleAliases(username);
+const primaryHandle = botAliases[0] || username;
 const helpLines = [
   "help",
   "history [count]",
@@ -61,7 +63,7 @@ let visibility = process.env.CODEX_CHAT_VISIBILITY || "public";
 bot.once("spawn", () => {
   movements = new Movements(bot);
   bot.pathfinder.setMovements(movements);
-  say("codex online. Tag @codex help. Chat visibility is public.");
+  say(`${username} online. Tag @${primaryHandle} help. Chat visibility is public.`);
   console.log(`${username} joined ${host}:${port} at ${bot.entity.position}`);
 });
 
@@ -114,16 +116,7 @@ bot.on("end", (reason) => console.log("ended", reason));
 
 function addressedCommand(message) {
   const trimmed = message.trim();
-  const handles = [
-    username,
-    `@${username}`,
-    username.replace(/bot$/i, " bot"),
-    `@${username.replace(/bot$/i, "bot")}`,
-    "codex",
-    "@codex",
-    "codex bot",
-    "@codexbot",
-  ];
+  const handles = botAliases.flatMap((alias) => [alias, `@${alias}`]);
 
   for (const handle of unique(handles)) {
     const pattern = handlePattern(handle);
@@ -216,12 +209,15 @@ async function runCommand(speaker, commandText) {
   if (escortMatch) {
     const targetName = resolveTargetName(escortMatch.playerName, speaker);
     requirePlayer(targetName);
+    const destination = resolveDestination(escortMatch.destination);
+    if (!destination) {
+      say(`I can escort you to coordinates or to where I am. Try @${primaryHandle} bring me to -40,40.`, { to: speaker });
+      return;
+    }
     followTarget = null;
     escort = {
       playerName: targetName,
-      x: escortMatch.x,
-      y: escortMatch.y,
-      z: escortMatch.z,
+      ...destination,
       lastGoalKey: null,
       lastMessageAt: 0,
     };
@@ -261,7 +257,7 @@ async function runCommand(speaker, commandText) {
   }
 
   if (["hi", "hello", "hey"].includes(lower)) {
-    say(`hi ${speaker}. Try @codex help.`);
+    say(`hi ${speaker}. Try @${primaryHandle} help.`);
     return;
   }
 
@@ -290,13 +286,45 @@ function matchEscortCommand(command) {
   const commandMatch = command.match(/^(?:escort|lead|guide|bring|take)\s+(?:(me|us|[a-z0-9_]+)\s+)?(?:to\s+)?(.+)$/i);
   if (!commandMatch) return null;
 
-  const coordinates = parseCoordinates(commandMatch[2]);
-  if (!coordinates) return null;
-
   return {
     playerName: commandMatch[1] || "me",
-    ...coordinates,
+    destination: commandMatch[2],
   };
+}
+
+function resolveDestination(text) {
+  if (isSelfDestination(text)) {
+    const position = bot.entity.position;
+    return { x: position.x, y: position.y, z: position.z };
+  }
+  return parseCoordinates(text);
+}
+
+function isSelfDestination(text) {
+  const lower = compact(text).toLowerCase();
+  if ([
+    "you",
+    "your position",
+    "your coords",
+    "your coordinates",
+    "where you are",
+    "where you're at",
+    "where you stand",
+    "where are you",
+    "where he is",
+    "where she is",
+    "where they are",
+  ].includes(lower)) {
+    return true;
+  }
+
+  return botAliases.some((alias) => {
+    const normalizedAlias = alias.toLowerCase();
+    return lower === normalizedAlias ||
+      lower === `@${normalizedAlias}` ||
+      lower === `where ${normalizedAlias} is` ||
+      lower === `where @${normalizedAlias} is`;
+  });
 }
 
 function parseCoordinates(text) {
@@ -374,11 +402,11 @@ function formatDestination(destination) {
 
 function showHelp(speaker) {
   const text = [
-    { text: "[codex] ", color: "aqua", bold: true },
+    { text: `[${username}] `, color: "aqua", bold: true },
     { text: "commands\n", color: "white", bold: true },
     ...helpLines.flatMap((line) => [
       { text: "  $ ", color: "dark_gray" },
-      { text: `@codex ${line}\n`, color: line.startsWith("visibility") ? "gold" : "gray" },
+      { text: `@${primaryHandle} ${line}\n`, color: line.startsWith("visibility") ? "gold" : "gray" },
     ]),
     { text: `visibility: ${visibility}`, color: "green" },
   ];
@@ -399,7 +427,7 @@ function showHistory(speaker, command) {
   }
 
   for (const entry of entries) {
-    const who = entry.type === "prompt" ? entry.speaker : entry.bot || "codex";
+    const who = entry.type === "prompt" ? entry.speaker : entry.bot || username;
     const arrow = entry.type === "prompt" ? "asked" : entry.type === "observed" ? "chat" : "said";
     say(`${shortTime(entry.at)} ${who} ${arrow}: ${entry.text}`, { to: speaker, record: false });
   }
@@ -427,7 +455,7 @@ function say(message, options = {}) {
   if (!text) return;
 
   const targets = routeTargets(options);
-  const rendered = options.speaker ? `<${options.speaker} -> @codex> ${text}` : `[codex] ${text}`;
+  const rendered = options.speaker ? `<${options.speaker} -> @${primaryHandle}> ${text}` : `[${username}] ${text}`;
   console.log(`> ${targets.length ? targets.join(",") : "public"} ${rendered}`);
   if (options.record !== false) {
     recordHistory({
@@ -450,7 +478,7 @@ function say(message, options = {}) {
   if (richChat) {
     tellraw("@a", [
       { text: "[", color: "dark_gray" },
-      { text: "codex", color: "aqua", bold: true },
+      { text: username, color: "aqua", bold: true },
       { text: "] ", color: "dark_gray" },
       ...richTextComponents(text),
     ], () => bot.chat(rendered));
@@ -489,7 +517,8 @@ function tellraw(target, components, fallback) {
 }
 
 function richTextComponents(text) {
-  const pieces = text.split(/(@(?:codex|grok|claude|claudebot)\b)/gi);
+  const mentionPattern = llmMentionPattern();
+  const pieces = text.split(mentionPattern);
   return pieces.filter(Boolean).map((piece) => {
     if (/^@codex$/i.test(piece)) return { text: piece, color: "aqua", bold: true };
     if (/^@grok$/i.test(piece)) return { text: piece, color: "light_purple", bold: true };
@@ -500,9 +529,8 @@ function richTextComponents(text) {
 
 function looksLikeLlmConversation(speaker, message) {
   const lowerSpeaker = speaker.toLowerCase();
-  const lowerMessage = message.toLowerCase();
   if (llmPlayers.includes(lowerSpeaker)) return true;
-  return /@(?:codex|grok|claude|claudebot)\b/i.test(lowerMessage);
+  return llmMentionPattern().test(message);
 }
 
 function isBotLoopChatter(speaker, command) {
@@ -539,8 +567,30 @@ function normalizeVisibility(value) {
   return value;
 }
 
+function botHandleAliases(name) {
+  const withoutBot = name.replace(/bot$/i, "");
+  const spacedBot = name.replace(/bot$/i, " bot");
+  return unique([
+    name,
+    withoutBot,
+    spacedBot,
+    `${withoutBot} bot`,
+    ...parseList(process.env.CODEX_BOT_ALIASES || ""),
+  ]);
+}
+
+function llmMentionPattern() {
+  const names = unique([...llmPlayers, ...botAliases]);
+  if (names.length === 0) return /($^)/g;
+  return new RegExp(`(@(?:${names.map(escapeRegExp).join("|")})\\b)`, "gi");
+}
+
 function unique(values) {
   return [...new Set(values.map((value) => value.toLowerCase()).filter(Boolean))];
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function parseList(value) {
