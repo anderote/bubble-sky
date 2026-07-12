@@ -49,7 +49,10 @@ Keep MCP-facing tests vanilla-only. Custom registered mod blocks/items are out o
 For lightweight in-game control without an MCP client attached:
 
 ```sh
-MINECRAFT_HOST=192.168.86.188 node ./mcp/codex-command-bot.mjs
+./mcp/codex-bot.sh start
+./mcp/codex-bot.sh status
+./mcp/codex-bot.sh logs
+./mcp/codex-bot.sh stop
 ```
 
 Then address it in chat:
@@ -59,4 +62,43 @@ Then address it in chat:
 @CodexBot follow me
 @CodexBot stop
 @CodexBot say hello
+```
+
+## Detached swarm
+
+For long-running tasks that should not stay attached to a Codex chat session, start detached
+worker bots:
+
+```sh
+./mcp/codex-swarm.sh start 3 survey
+./mcp/codex-swarm.sh status
+./mcp/codex-swarm.sh logs
+./mcp/codex-swarm.sh stop
+```
+
+The workers write pids/logs under ignored `.codex-runtime/swarm/`.
+
+Useful tasks:
+
+| Task | Behavior |
+|------|----------|
+| `standby` | Join and wait for addressed commands |
+| `survey` | Walk a square patrol around the spawn/origin |
+| `flatten` | Clear blocks above a shared work area |
+| `castle` | Flatten, then attempt a simple castle-wall pass if inventory permits |
+
+Optional target settings:
+
+```sh
+MINECRAFT_HOST=192.168.86.188 CODEX_SWARM_ORIGIN=0,79,0 ./mcp/codex-swarm.sh start 4 castle
+```
+
+In-game swarm commands:
+
+```text
+@swarm help
+@swarm task survey
+@swarm task flatten
+@swarm task castle
+@swarm stop
 ```

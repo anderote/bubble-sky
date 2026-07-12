@@ -13,4 +13,5 @@
 - Verified direct Mineflayer connectivity against a local Fabric 1.21.6 server on `localhost:25565`.
 - Added project-owned mindcraft launcher/profile wiring for the local server.
 - Added a lightweight addressed-command bot for `@CodexBot` chat commands on the shared server.
+- Added detached swarm worker/supervisor scripts for long-running multi-bot tasks without tying up a Codex chat process.
 - Blocked on full P3 mindcraft behavior until `mindcraft/upstream/keys.json` contains an `ANTHROPIC_API_KEY`.
