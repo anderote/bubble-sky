@@ -35,8 +35,8 @@ node_bin() {
   if command -v fnm >/dev/null 2>&1; then
     eval "$(fnm env --use-on-cd)"
     cd "$ROOT_DIR"
-    fnm install >/dev/null
-    fnm use >/dev/null
+    fnm install >/dev/null 2>&1
+    fnm use >/dev/null 2>&1
   fi
   command -v node
 }
