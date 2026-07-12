@@ -459,6 +459,10 @@ function runCommandRoutingSelfTest() {
       pass: visibilityCommandValue(addressedCommand("@codex visibility alone") || "") === "alone" &&
         visibilityCommandValue(addressedCommand("@codex alone") || "") === "alone",
     },
+    {
+      name: "history visibility fallback",
+      pass: selfTestHistoryVisibilityFallback(),
+    },
   ];
 
   const failed = cases.filter((testCase) => !testCase.pass);
@@ -467,6 +471,29 @@ function runCommandRoutingSelfTest() {
     process.exit(1);
   }
   console.log(`command routing selftest passed (${cases.length} cases)`);
+}
+
+function selfTestHistoryVisibilityFallback() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-visibility-selftest-"));
+  try {
+    globalThis.__codexSelfTestPaths = {
+      historyPath: path.join(tempDir, "history.jsonl"),
+      visibilityStatePath: path.join(tempDir, "visibility.json"),
+    };
+    fs.writeFileSync(globalThis.__codexSelfTestPaths.historyPath, `${JSON.stringify({
+      at: new Date().toISOString(),
+      type: "reply",
+      bot: username,
+      text: "chat visibility set to alone",
+      visibility: "alone",
+      targets: ["tester"],
+    })}\n`);
+    return loadInitialVisibility() === "alone" &&
+      fs.existsSync(globalThis.__codexSelfTestPaths.visibilityStatePath);
+  } finally {
+    delete globalThis.__codexSelfTestPaths;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 async function answerGeneralChat(speaker, command) {
@@ -3021,24 +3048,63 @@ function loadInitialVisibility() {
     return isKnownVisibility(normalized) ? normalized : "public";
   }
 
+  const saved = loadSavedVisibility();
+  if (saved) return saved;
+
+  const historyVisibility = loadLastHistoryVisibility();
+  if (historyVisibility) {
+    saveVisibility(historyVisibility);
+    return historyVisibility;
+  }
+
+  return "public";
+}
+
+function loadSavedVisibility() {
   try {
-    if (!fs.existsSync(visibilityStatePath)) return "public";
-    const parsed = JSON.parse(fs.readFileSync(visibilityStatePath, "utf8"));
+    const statePath = runtimeVisibilityStatePath();
+    if (!fs.existsSync(statePath)) return null;
+    const parsed = JSON.parse(fs.readFileSync(statePath, "utf8"));
     const normalized = normalizeVisibility(parsed?.visibility || "");
-    return isKnownVisibility(normalized) ? normalized : "public";
+    return isKnownVisibility(normalized) ? normalized : null;
   } catch (error) {
     console.error(`failed to read chat visibility state: ${error.message}`);
-    return "public";
+    return null;
   }
+}
+
+function loadLastHistoryVisibility() {
+  try {
+    const file = runtimeHistoryPath();
+    if (!fs.existsSync(file)) return null;
+    const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const entry = JSON.parse(lines[index]);
+      const normalized = normalizeVisibility(entry?.visibility || "");
+      if (isKnownVisibility(normalized)) return normalized;
+    }
+  } catch (error) {
+    console.error(`failed to infer chat visibility from history: ${error.message}`);
+  }
+  return null;
 }
 
 function saveVisibility(value) {
   try {
-    fs.mkdirSync(path.dirname(visibilityStatePath), { recursive: true });
-    fs.writeFileSync(visibilityStatePath, `${JSON.stringify({ visibility: value, updatedAt: new Date().toISOString() })}\n`);
+    const statePath = runtimeVisibilityStatePath();
+    fs.mkdirSync(path.dirname(statePath), { recursive: true });
+    fs.writeFileSync(statePath, `${JSON.stringify({ visibility: value, updatedAt: new Date().toISOString() })}\n`);
   } catch (error) {
     console.error(`failed to save chat visibility state: ${error.message}`);
   }
+}
+
+function runtimeHistoryPath() {
+  return globalThis.__codexSelfTestPaths?.historyPath || historyPath;
+}
+
+function runtimeVisibilityStatePath() {
+  return globalThis.__codexSelfTestPaths?.visibilityStatePath || visibilityStatePath;
 }
 
 function botHandleAliases(name) {
