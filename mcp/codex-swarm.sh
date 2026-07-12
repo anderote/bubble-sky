@@ -121,7 +121,8 @@ case "$command" in
       echo "no swarm sessions running"
     fi
     if [ -f "$RUNTIME_DIR/state.json" ]; then
-      sed -n '1,80p' "$RUNTIME_DIR/state.json"
+      NODE_BIN="$(node_bin)"
+      CODEX_SWARM_RUNTIME="$RUNTIME_DIR" "$NODE_BIN" "$ROOT_DIR/mcp/codex-swarm-status.mjs"
     fi
     ;;
   logs)

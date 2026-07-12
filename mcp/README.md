@@ -136,6 +136,9 @@ MINECRAFT_HOST=192.168.86.188 CODEX_SWARM_COUNT=1 ./mcp/codex-swarm.sh start
 ./mcp/codex-swarm.sh stop
 ```
 
+`status` prints the active tmux sessions plus a concise delegated-task summary
+instead of dumping the full block-job array.
+
 Retry knobs:
 
 | Setting | Default | Notes |
