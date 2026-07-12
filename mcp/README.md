@@ -52,7 +52,15 @@ For lightweight in-game control without an MCP client attached:
 MINECRAFT_HOST=192.168.86.188 node ./mcp/codex-command-bot.mjs
 ```
 
-Then address it in chat. Conversations are public by default so everyone can see what
+To run the same chat command behavior for another AI, give that bot its own
+Minecraft username:
+
+```sh
+CODEX_BOT_USERNAME=ClaudeBot MINECRAFT_HOST=192.168.86.188 node ./mcp/codex-command-bot.mjs
+CODEX_BOT_USERNAME=grok MINECRAFT_HOST=192.168.86.188 node ./mcp/codex-command-bot.mjs
+```
+
+Then address it in chat by its username. Conversations are public by default so everyone can see what
 players are asking the LLM bots and what they reply:
 
 ```text
@@ -64,6 +72,9 @@ players are asking the LLM bots and what they reply:
 @codex history
 @codex status
 ```
+
+For `ClaudeBot`, the same examples work with `@ClaudeBot`, `@claude`, or
+`@claude bot`. For `grok`, use `@grok`.
 
 Chat visibility can be changed at runtime:
 
@@ -95,6 +106,7 @@ Environment knobs:
 | Setting | Default | Notes |
 |---------|---------|-------|
 | `CODEX_BOT_USERNAME` | `codex` | In-game bot name. |
+| `CODEX_BOT_ALIASES` | unset | Optional comma-separated extra names that should address this bot. |
 | `CODEX_CHAT_VISIBILITY` | `public` | Startup visibility mode. |
 | `CODEX_CHAT_HISTORY` | `.codex-runtime/chat-history.jsonl` | JSONL transcript path. |
 | `CODEX_CHAT_HISTORY_LIMIT` | `2000` | Maximum retained transcript events. |
@@ -110,4 +122,7 @@ Extra examples:
 @codex go to 12 64 -8
 @codex bring me to -40,40
 @codex lead me to -40 72 40
+@codex where are you
+@codex bring me to you
+@codex bring me to where codex is
 ```
