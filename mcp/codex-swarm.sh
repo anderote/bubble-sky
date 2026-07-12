@@ -76,6 +76,12 @@ tmux_session() {
   echo "${SESSION_PREFIX}-${name}"
 }
 
+last_meaningful_line() {
+  local session="$1"
+  tmux capture-pane -pt "$session" -S -160 2>/dev/null |
+    awk 'NF { line=$0 } END { if (line) print line }'
+}
+
 start_session() {
   local name="$1"
   local command="$2"
@@ -120,8 +126,18 @@ case "$command" in
     done
     ;;
   status)
-    if ! tmux list-sessions -F '#S' 2>/dev/null | grep "^${SESSION_PREFIX}-"; then
+    sessions="$(tmux list-sessions -F '#S' 2>/dev/null | grep "^${SESSION_PREFIX}-" || true)"
+    if [ -z "$sessions" ]; then
       echo "no swarm sessions running"
+    else
+      echo "$sessions"
+      while IFS= read -r session; do
+        [ -n "$session" ] || continue
+        last_line="$(last_meaningful_line "$session" || true)"
+        if [ -n "${last_line:-}" ]; then
+          echo "$session last: $last_line"
+        fi
+      done <<< "$sessions"
     fi
     if [ -f "$RUNTIME_DIR/state.json" ]; then
       NODE_BIN="$(node_bin)"

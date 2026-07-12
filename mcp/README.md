@@ -146,7 +146,8 @@ MINECRAFT_HOST=192.168.86.188 CODEX_SWARM_COUNT=1 ./mcp/codex-swarm.sh start
 ```
 
 `status` prints the active tmux sessions plus a concise delegated-task summary
-instead of dumping the full block-job array.
+instead of dumping the full block-job array. It also includes the latest
+meaningful wrapper line for each swarm tmux session.
 `validate` checks the current delegated state for duplicate job ids, malformed
 coordinates, invalid workers, and unknown vanilla block ids.
 
