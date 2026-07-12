@@ -504,7 +504,7 @@ function interpretArchitectCommand(lower) {
 }
 
 function interpretStructureBuildCommand(lower) {
-  if (!/\b(build|make|create|construct|spawn|summon)\b/.test(lower)) return null;
+  if (!/\b(build|make|create|construct|spawn|summon|add|place|put|generate|design|rip|whip|delegate)\b/.test(lower)) return null;
   const kind = structureKindFromText(lower);
   if (kind) {
     return {
@@ -664,7 +664,7 @@ async function interpretArchitectCommandWithCodexCli(command, speaker) {
 }
 
 function shouldUseLlmArchitectParser(command) {
-  return /\b(build|make|create|construct|spawn|summon|freestyle|upgrade|enhance|repair|fix|delete|destroy|demolish|erase|wipe|nuke|trash|remove|obliterate|burn|ignite|torch|melt|scorch|incinerate|lava|flood|drown|submerge|waterlog|freeze|ice|snow|blizzard|frost|curse|haunt|spooky|evil|corrupt|darken|castle|fortress|fort|tower|towers|wall|walls|rampart|battlement|bridge|road|path|street|platform|stage|pad|house|home|cabin|room|chamber|dome|igloo|observatory|pyramid|ziggurat|base|building|structure|vehicle|truck|semi|village|area|dumpster|badass|sick|ugly|beneath|nearby|here)\b/i.test(command);
+  return /\b(build|make|create|construct|spawn|summon|freestyle|add|place|put|generate|design|rip|whip|delegate|upgrade|enhance|repair|fix|delete|destroy|demolish|erase|wipe|nuke|trash|remove|obliterate|burn|ignite|torch|melt|scorch|incinerate|lava|flood|drown|submerge|waterlog|freeze|ice|snow|blizzard|frost|curse|haunt|spooky|evil|corrupt|darken|castle|fortress|fort|tower|towers|wall|walls|rampart|battlement|bridge|road|path|street|platform|stage|pad|house|home|cabin|room|chamber|dome|igloo|observatory|pyramid|ziggurat|base|building|structure|vehicle|truck|semi|village|area|dumpster|badass|sick|ugly|beneath|nearby|here)\b/i.test(command);
 }
 
 function isValidArchitectAction(parsed) {
@@ -689,7 +689,7 @@ function normalizeArchitectAction(parsed) {
 
 function shouldUseFreeformStructureBuilder(lower) {
   if (!codexCliEnabled) return false;
-  if (!/\b(build|make|create|construct|spawn|summon|freestyle)\b/.test(lower)) return false;
+  if (!/\b(build|make|create|construct|spawn|summon|freestyle|add|place|put|generate|design|rip|whip|delegate)\b/.test(lower)) return false;
   if (/\b(delete|destroy|demolish|remove|burn|flood|freeze|curse)\b/.test(lower)) return false;
   return /\b(here|near me|by me|for me|at me|in front|next to|beside|drone|delegate|build|structure|thing|object|statue|vehicle|ship|spaceship|sword|tree|robot|dragon|portal|temple|arena|garden|boat|car|truck)\b/.test(lower);
 }
