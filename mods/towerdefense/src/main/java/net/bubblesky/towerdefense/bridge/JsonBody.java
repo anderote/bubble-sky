@@ -32,6 +32,11 @@ final class JsonBody {
 		return gson;
 	}
 
+	/** The underlying JSON object (for nested access like corner {x,y,z}). */
+	JsonObject raw() {
+		return obj;
+	}
+
 	boolean has(String key) {
 		return obj.has(key) && !obj.get(key).isJsonNull();
 	}

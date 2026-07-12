@@ -2,6 +2,9 @@ package net.bubblesky.towerdefense;
 
 import net.bubblesky.towerdefense.bridge.AgentBridge;
 import net.bubblesky.towerdefense.command.TdCommand;
+import net.bubblesky.towerdefense.item.LayoutWandItem;
+import net.bubblesky.towerdefense.layout.LayoutStore;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.bubblesky.towerdefense.game.TdHud;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.registry.ModBlockEntities;
@@ -67,6 +70,12 @@ public class TowerDefenseMod implements ModInitializer {
 		// modded world without the vanilla protocol. Localhost-bound + token-gated;
 		// starts on SERVER_STARTED if enabled in config. See net.bubblesky.towerdefense.bridge.
 		AgentBridge.init();
+
+		// Layout Wand planning tool: server-side flag/region store + the wand's
+		// left-click + particle-visualization hooks. The store is loaded from the
+		// run dir once the server starts (world/config dir is available then).
+		ServerLifecycleEvents.SERVER_STARTED.register(server -> LayoutStore.init(server.getRunDirectory()));
+		LayoutWandItem.register();
 
 		LOGGER.info("[towerdefense] initialized: {} weapons + 3 towers (arrow/cannon/frost) + shop/upgrades + coin economy + wave game loop + 6-enemy roster + boss waves + HUD",
 			ModItems.WEAPON_COUNT);

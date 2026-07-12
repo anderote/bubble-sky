@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import net.bubblesky.towerdefense.bridge.AgentBridge.BridgeException;
+import net.bubblesky.towerdefense.layout.LayoutStore;
 import net.minecraft.block.BlockState;
 import net.minecraft.command.argument.BlockArgumentParser;
 import net.minecraft.entity.Entity;
@@ -80,6 +81,99 @@ final class BridgeHandlers {
 		http.createContext("/status/agent", bridge.secure(this::statusAgent));
 		http.createContext("/status", bridge.secure(this::status));
 		http.createContext("/test/chat", bridge.secure(this::testChat));
+		// layout planning: shared flag/region store (wand + agents + chat = one store)
+		http.createContext("/flags", bridge.secure(this::flags));
+		http.createContext("/regions", bridge.secure(this::regions));
+	}
+
+	// ---------- /flags : GET (list) | POST {name?,x,y,z,dim?} | DELETE ?name= ----------
+
+	private Object flags(HttpExchange exchange, JsonBody body) {
+		String method = exchange.getRequestMethod();
+		if ("GET".equalsIgnoreCase(method)) {
+			Map<String, Object> out = new LinkedHashMap<>();
+			out.put("ok", true);
+			out.put("flags", LayoutStore.flagMaps());
+			return out;
+		}
+		if ("DELETE".equalsIgnoreCase(method)) {
+			JsonBody q = query(exchange);
+			String name = q.requireString("name");
+			LayoutStore.Flag removed = LayoutStore.removeFlag(name);
+			Map<String, Object> out = new LinkedHashMap<>();
+			out.put("ok", true);
+			out.put("removed", removed != null);
+			out.put("name", name);
+			return out;
+		}
+		if ("POST".equalsIgnoreCase(method)) {
+			String name = body.getString("name", "").trim();
+			int x = body.requireInt("x");
+			int y = body.requireInt("y");
+			int z = body.requireInt("z");
+			String dim = body.getString("dim", "overworld");
+			if (name.isEmpty()) {
+				name = LayoutStore.nextFlagName(body.getString("letter", "A"));
+			}
+			LayoutStore.Flag f = LayoutStore.putFlag(name, x, y, z, dim);
+			Map<String, Object> out = new LinkedHashMap<>();
+			out.put("ok", true);
+			out.put("name", f.name());
+			out.put("x", f.x());
+			out.put("y", f.y());
+			out.put("z", f.z());
+			return out;
+		}
+		throw new BridgeException(405, "method not allowed on /flags: " + method);
+	}
+
+	// ---------- /regions : GET (list) | POST {name?,a:{x,y,z},b:{x,y,z},dim?} | DELETE ?name= ----------
+
+	private Object regions(HttpExchange exchange, JsonBody body) {
+		String method = exchange.getRequestMethod();
+		if ("GET".equalsIgnoreCase(method)) {
+			Map<String, Object> out = new LinkedHashMap<>();
+			out.put("ok", true);
+			out.put("regions", LayoutStore.regionMaps());
+			return out;
+		}
+		if ("DELETE".equalsIgnoreCase(method)) {
+			JsonBody q = query(exchange);
+			String name = q.requireString("name");
+			LayoutStore.Region removed = LayoutStore.removeRegion(name);
+			Map<String, Object> out = new LinkedHashMap<>();
+			out.put("ok", true);
+			out.put("removed", removed != null);
+			out.put("name", name);
+			return out;
+		}
+		if ("POST".equalsIgnoreCase(method)) {
+			String name = body.getString("name", "").trim();
+			int[] a = requireCorner(body, "a");
+			int[] b = requireCorner(body, "b");
+			String dim = body.getString("dim", "overworld");
+			LayoutStore.Region r = LayoutStore.putRegion(name.isEmpty() ? null : name,
+				a[0], a[1], a[2], b[0], b[1], b[2], dim);
+			Map<String, Object> out = new LinkedHashMap<>();
+			out.put("ok", true);
+			out.put("name", r.name());
+			out.put("a", new int[] {r.ax(), r.ay(), r.az()});
+			out.put("b", new int[] {r.bx(), r.by(), r.bz()});
+			return out;
+		}
+		throw new BridgeException(405, "method not allowed on /regions: " + method);
+	}
+
+	/** Pull a {x,y,z} corner object out of a POST /regions body. */
+	private int[] requireCorner(JsonBody body, String key) {
+		if (!body.has(key)) {
+			throw new BridgeException(400, "missing required corner object: " + key);
+		}
+		JsonObject c = body.raw().getAsJsonObject(key);
+		if (c == null || !c.has("x") || !c.has("y") || !c.has("z")) {
+			throw new BridgeException(400, "corner '" + key + "' must be {x,y,z}");
+		}
+		return new int[] {c.get("x").getAsInt(), c.get("y").getAsInt(), c.get("z").getAsInt()};
 	}
 
 	// ---------- GET /chat?since=<seq> ----------

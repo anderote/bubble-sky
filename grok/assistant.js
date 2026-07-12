@@ -65,8 +65,12 @@ const survey = require('./lib/survey')
 const build = require('./lib/build')
 const BUILD_OUT = path.join(DIR, 'build-out')   // our own interop dir; NEVER Codex's live state.json
 
-// ---- named FLAGS (spatial markers) + SCHEMATIC LIBRARY (save/reuse builds) ----
-const flags = require('./lib/flags')({ dir: path.join(DIR, 'memory'), enqueue, hands, log })
+// ---- named FLAGS (spatial markers) + REGIONS + SCHEMATIC LIBRARY (save/reuse builds) ----
+// Flags/regions live in the SHARED server-side store when the mod bridge is
+// reachable (the Layout Wand writes there too), with a local json fallback. Use
+// the transport's bridge in bridge mode, else spin one up from env if configured.
+const flagBridge = transport.bridge || (process.env.BUBBLESKY_BRIDGE_URL || process.env.BUBBLESKY_BRIDGE_TOKEN ? require('./lib/bridge')() : null)
+const flags = require('./lib/flags')({ dir: path.join(DIR, 'memory'), enqueue, hands, log, bridge: flagBridge })
 const { wallBetween } = require('./lib/flags')
 const library = require('./lib/build/library')({ dir: path.join(DIR, 'blueprints', 'saved'), log })
 
@@ -105,6 +109,8 @@ const TOOLS = [
     parameters: { type: 'object', properties: { op: { type: 'string', enum: ['set', 'list', 'remove', 'goto'] }, name: { type: 'string', description: 'flag name (e.g. "A2")' }, ...originProps, reply: { type: 'string' } }, required: ['op'] } } },
   { type: 'function', function: { name: 'build_between', description: 'Build a WALL spanning two named flags ("build a wall between A2 and B1"). flagA/flagB are flag names; optional block/material, height, thickness.',
     parameters: { type: 'object', properties: { flagA: { type: 'string' }, flagB: { type: 'string' }, kindOrBlock: { type: 'string' }, block: { type: 'string' }, material: { type: 'string' }, height: { type: 'integer' }, thickness: { type: 'integer' }, reply: { type: 'string' } }, required: ['flagA', 'flagB'] } } },
+  { type: 'function', function: { name: 'build_in_region', description: 'Build INSIDE a named REGION defined with the Layout Wand ("build a castle in region 1", "put a keep in Region 2"). Resolves the region rectangle from the shared store, anchors the build to its corner, and sizes the footprint to the region. Routes through the Architect (furnished, detailed).',
+    parameters: { type: 'object', properties: { region: { type: 'string', description: 'region name (e.g. "region 1" or "Region 2")' }, goal: { type: 'string', description: 'what to build, in the user\'s words' }, reply: { type: 'string' } }, required: ['region', 'goal'] } } },
   { type: 'function', function: { name: 'save_build', description: 'Save the ACTIVE/last build to the schematic library for reuse ("save this as cozy_cottage").',
     parameters: { type: 'object', properties: { name: { type: 'string' }, reply: { type: 'string' } }, required: ['name'] } } },
   { type: 'function', function: { name: 'list_builds', description: 'Say the names of the saved builds in the library ("what have I saved", "list builds").',
@@ -128,6 +134,7 @@ Guidance:
 - Quick edits → fill_box / set_block / dig / clear_area / flatten.
 - FLAGS (named spatial markers): "flag A2 here" / "plant a flag called home" / "mark this as A2" → flag op:set (origin "look" for "here"). "list/show flags" → flag op:list. "remove/delete flag A2" → flag op:remove. "go to / teleport to flag A2" → flag op:goto.
 - "build a wall between A2 and B1" (two flag NAMES) → build_between (flagA=A2, flagB=B1). To build something AT a flag, use a normal build tool with origin:"flag" + flag:"A2".
+- REGIONS (rectangles defined with the Layout Wand): "build a castle in region 1" / "put a keep in Region 2" → build_in_region (region="region 1", goal=the build request). The build is anchored to the region and sized to fit it.
 - SAVED BUILDS (schematic library): "save this as <name>" / "save this build" → save_build. "list builds" / "what have I saved" → list_builds. "build <saved name> here" / "place my <name> here" → build_saved (origin "look" for "here"). "delete build <name>" → delete_build. After build_saved, "make it taller / add a tower" → edit_build as usual.
 - Movement/teleport → move. Time/weather/give → world_cmd.
 - Questions & chit-chat ("where are you", "what's nearby", "what can you do") → answer, using world-state.
@@ -181,6 +188,9 @@ async function onChat(username, message) {
   // Refresh the transport's per-speaker snapshot (bridge: fetch /player so "here"
   // + position resolve synchronously below; mineflayer: no-op).
   if (transport.refresh) { try { await transport.refresh(username) } catch (e) { log('refresh err', e.message) } }
+  // Pull the shared server-side flags/regions into the local cache so wand-planted
+  // markers resolve the same as chat-planted ones (no-op when the bridge is off).
+  try { await flags.sync() } catch (e) { log('flags sync err', e.message) }
   history.push(`${username}: ${message}`); while (history.length > 30) history.shift()
   if (busy) return
   busy = true
@@ -266,6 +276,7 @@ async function dispatch(tool, args, speaker, message) {
     case 'edit_build': await runEdit(args, speaker); break
     case 'flag': await runFlag(args, speaker); break
     case 'build_between': await runBuildBetween(args, speaker); break
+    case 'build_in_region': await runBuildInRegion(args, speaker); break
     case 'save_build': await runSaveBuild(args); break
     case 'list_builds': runListBuilds(); break
     case 'build_saved': await runBuildSaved(args, speaker); break
@@ -275,7 +286,7 @@ async function dispatch(tool, args, speaker, message) {
 }
 
 // Tools that speak their OWN reply line(s) below (so dispatch doesn't double-say).
-const SELF_REPLY = new Set(['answer', 'ask', 'plan_build', 'edit_build', 'flag', 'build_between', 'save_build', 'list_builds', 'build_saved', 'delete_build'])
+const SELF_REPLY = new Set(['answer', 'ask', 'plan_build', 'edit_build', 'flag', 'build_between', 'build_in_region', 'save_build', 'list_builds', 'build_saved', 'delete_build'])
 
 // ---- FLAGS: set / list / remove / goto ----
 async function runFlag(args, speaker) {
@@ -324,6 +335,47 @@ async function runBuildBetween(args, speaker) {
   await queueIdle()
   log(`build_between ${A.name}->${B2.name} block=${block} ~${n} blocks`)
   say(args.reply || `Wall up between ${A.name} and ${B2.name}.`)
+}
+
+// ---- build INSIDE a Layout-Wand region ----
+// Resolve the region rectangle from the shared store, anchor the build to its
+// min corner, and size the footprint to the region (honoring parseDims via the
+// goal), then run the normal Architect pipeline so it stays inside the bounds.
+async function runBuildInRegion(args, speaker) {
+  const region = flags.getRegion(args.region)
+  if (!region) { say(`No region named "${args.region}". Define one with the Layout Wand first.`); return }
+  const a = region.a, b = region.b
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x)
+  const y0 = Math.min(a.y, b.y)
+  const z0 = Math.min(a.z, b.z), z1 = Math.max(a.z, b.z)
+  const spanW = x1 - x0 + 1, spanL = z1 - z0 + 1
+  // Footprint sized to fit inside the rectangle with a margin for the Architect's
+  // corner towers / banners / entrance overhang (~3 blocks/side), then CENTERED in
+  // the region (composers treat origin as the min corner, so shift back by W/2).
+  const MARGIN = 6
+  const W = Math.max(6, spanW - MARGIN), L = Math.max(6, spanL - MARGIN)
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2
+  const origin = { x: Math.round(cx - W / 2), y: y0, z: Math.round(cz - L / 2) }
+  aborted = false
+  pendingBuild = null
+  const site = transport.surveySite(origin, 20)
+  const originF = { x: origin.x, y: site.groundY, z: origin.z }
+  const goal = `${args.goal || 'a fitting structure'} (${W}x${L})`
+  say(args.reply || `Building that in ${region.name} now…`)
+  transport.status({ activity: 'building', detail: `${region.name}: ${(args.goal || '').slice(0, 40)}` })
+  let summary
+  try {
+    summary = await build.planAndBuild(
+      { goal, origin: originF, memory: memory.context(), site,
+        terrainFit: 'follow', emit: true,
+        statePath: path.join(BUILD_OUT, 'state.json'), schemPath: path.join(BUILD_OUT, 'last.schem') },
+      { architect, bot, hands, survey, log, memory, shouldAbort: () => aborted })
+  } catch (e) { log('build_in_region err', e.stack || e.message); say('Trouble building in that region — try again?'); return }
+  await queueIdle()
+  if (aborted) return
+  log(`build_in_region ${region.name} (${W}x${L}) "${summary.project}" placed=${summary.placed}`)
+  memory.save({ project: summary.project, origin: originF, palette: summary.blueprint.palette, phasesDone: summary.regions, goal, blueprint: summary.blueprint })
+  say(args.reply ? `Done — ${summary.project} up in ${region.name}.` : `Done — ${summary.project} is up in ${region.name}.`)
 }
 
 // ---- SCHEMATIC LIBRARY: save / list / rebuild / delete ----

@@ -117,7 +117,15 @@ function makeBridge(opts = {}) {
     players() { return request('GET', '/players') },
     testChat(player, text) { return request('POST', '/test/chat', { player, text: String(text) }) },
     postStatus(update) { return request('POST', '/status/agent', update) },
-    getStatus() { return request('GET', '/status') }
+    getStatus() { return request('GET', '/status') },
+
+    // ---- shared layout store (Layout Wand + agents + chat = one plan) ----
+    getFlags() { return request('GET', '/flags') },
+    postFlag(flag) { return request('POST', '/flags', flag) },      // {name?,x,y,z,dim?}
+    deleteFlag(name) { return request('DELETE', '/flags' + qs({ name })) },
+    getRegions() { return request('GET', '/regions') },
+    postRegion(region) { return request('POST', '/regions', region) }, // {name?,a:{x,y,z},b:{x,y,z},dim?}
+    deleteRegion(name) { return request('DELETE', '/regions' + qs({ name })) }
   }
 }
 
