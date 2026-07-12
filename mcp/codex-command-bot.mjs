@@ -274,6 +274,7 @@ async function runCommand(speaker, commandText) {
     followTarget = null;
     escort = null;
     const targetPosition = await resolvePlayerPosition(targetName, { teleportToPlayer: true });
+    await maintainFlightNearTarget(targetName, targetPosition);
     if (!targetPosition.teleported) {
       await moveDirect(targetPosition.x, targetPosition.y + 1, targetPosition.z);
     }
@@ -284,7 +285,8 @@ async function runCommand(speaker, commandText) {
   const followMatch = lower.match(/^follow(?:\s+(.+))?$/);
   if (followMatch) {
     const targetName = resolveTargetName(followMatch[1], speaker);
-    await resolvePlayerPosition(targetName, { teleportToPlayer: true });
+    const targetPosition = await resolvePlayerPosition(targetName, { teleportToPlayer: true });
+    await maintainFlightNearTarget(targetName, targetPosition);
     escort = null;
     followTarget = targetName;
     say(`following ${targetName}`);
@@ -297,6 +299,11 @@ async function runCommand(speaker, commandText) {
     const position = await resolvePlayerPosition(targetName, { teleportToPlayer: false });
     await bot.lookAt(new Vec3(position.x, position.y + 1.6, position.z), true);
     say(`looking at ${targetName}`);
+    return;
+  }
+
+  if (isContextEditCommand(lower)) {
+    await runContextEditCommand(speaker, command);
     return;
   }
 
@@ -440,12 +447,6 @@ function interpretArchitectCommand(lower) {
     return { action: "demolish" };
   }
 
-  if (/\b(add|attach|append|put|place|build|make|create|construct)\b/.test(lower) &&
-      /\b(tower|turret|watchtower|spire)\b/.test(lower) &&
-      /\b(to|onto|on|beside|next to|near|this|that|wall|castle|fortress|structure|building)\b/.test(lower)) {
-    return { action: "add_tower" };
-  }
-
   if (/\b(build|make|create|construct|spawn|summon|freestyle)\b/.test(lower) &&
       /\b(wall|walls|rampart|battlement|battlements)\b/.test(lower) &&
       /\b(castle|fortress|fort|two towers|towers)\b/.test(lower)) {
@@ -502,7 +503,6 @@ async function interpretArchitectCommandWithOpenAI(command, speaker) {
     '{"action":"effect","effect":"flood"} for requests to flood, drown, submerge, soak, or waterlog a nearby structure.',
     '{"action":"effect","effect":"freeze"} for requests to freeze, ice over, snow over, frost, or blizzard a nearby structure.',
     '{"action":"effect","effect":"curse"} for requests to curse, haunt, corrupt, darken, or make a nearby structure spooky/evil.',
-    '{"action":"add_tower"} for requests to add/attach one tower to an existing wall, castle, fortress, or structure.',
     '{"action":"castle_wall"} for requests to build a castle/fortress wall, rampart, battlement, or a wall with two towers.',
     '{"action":"fortress"} for requests to build, make, create, summon, upgrade, or freestyle a castle/fortress/fort/keep here.',
     '{"action":"none"} for anything else.',
@@ -566,7 +566,6 @@ async function interpretArchitectCommandWithCodexCli(command, speaker) {
     '{"action":"effect","effect":"flood"} for requests to flood, drown, submerge, soak, or waterlog a nearby structure.',
     '{"action":"effect","effect":"freeze"} for requests to freeze, ice over, snow over, frost, or blizzard a nearby structure.',
     '{"action":"effect","effect":"curse"} for requests to curse, haunt, corrupt, darken, or make a nearby structure spooky/evil.',
-    '{"action":"add_tower"} for requests to add/attach one tower to an existing wall, castle, fortress, or structure.',
     '{"action":"castle_wall"} for requests to build a castle/fortress wall, rampart, battlement, or a wall with two towers.',
     '{"action":"fortress"} for requests to build, make, create, summon, upgrade, or freestyle a castle/fortress/fort/keep here.',
     '{"action":"none"} for anything else.',
@@ -598,7 +597,7 @@ function shouldUseLlmArchitectParser(command) {
 }
 
 function isValidArchitectAction(parsed) {
-  if (["demolish", "fortress", "castle_wall", "add_tower"].includes(parsed?.action)) return true;
+  if (["demolish", "fortress", "castle_wall"].includes(parsed?.action)) return true;
   return parsed?.action === "effect" && ["lava_burn", "flood", "freeze", "curse"].includes(parsed.effect);
 }
 
@@ -691,14 +690,6 @@ async function runArchitectCommand(speaker, command, originalText = "") {
     return;
   }
 
-  if (command.action === "add_tower") {
-    const towerOrigin = await resolveAddTowerOrigin(speaker, originalText, origin);
-    say(`adding one tower at ${formatBlockPosition(towerOrigin)}; delegating block placement to ${delegatedDroneName}`);
-    await delegateTowerBuild(towerOrigin, "added tower");
-    say(`${delegatedDroneName} has the tower job.`);
-    return;
-  }
-
   if (command.action === "fortress") {
     const buildOrigin = { x: origin.x, y: origin.y - 8, z: origin.z };
     say(`freestyling a fortress around ${formatBlockPosition(buildOrigin)}`);
@@ -719,7 +710,7 @@ async function runArchitectCommand(speaker, command, originalText = "") {
 }
 
 async function resolveArchitectOrigin(speaker, command, originalText, playerPosition) {
-  if (!usesPhysicalReference(originalText) || !["demolish", "effect", "add_tower"].includes(command.action)) {
+  if (!usesPhysicalReference(originalText) || !["demolish", "effect"].includes(command.action)) {
     return blockPosition(playerPosition);
   }
 
@@ -731,28 +722,6 @@ async function resolveArchitectOrigin(speaker, command, originalText, playerPosi
   }
 
   return blockPosition(playerPosition);
-}
-
-async function resolveAddTowerOrigin(speaker, originalText, fallbackOrigin) {
-  try {
-    const context = await resolvePhysicalContext(speaker, originalText || "this wall");
-    const focus = context.focus?.position || fallbackOrigin;
-    const baseY = lowestNearbySolidY(context, focus) ?? fallbackOrigin.y - 1;
-    return { x: focus.x, y: baseY, z: focus.z };
-  } catch (error) {
-    console.error(`add tower context unavailable: ${error.message}`);
-    return { x: fallbackOrigin.x, y: fallbackOrigin.y - 1, z: fallbackOrigin.z };
-  }
-}
-
-function lowestNearbySolidY(context, focus) {
-  const nearby = context.blocks
-    .filter((block) => Math.abs(block.position.x - focus.x) <= 2 && Math.abs(block.position.z - focus.z) <= 2)
-    .map((block) => block.position.y);
-  if (nearby.length) return Math.min(...nearby);
-
-  const all = context.blocks.map((block) => block.position.y);
-  return all.length ? Math.min(...all) : null;
 }
 
 function usesPhysicalReference(text) {
@@ -855,6 +824,11 @@ function isContextExtendCommand(lower) {
     /\b(?:it|this|that|thing|build|building|wall|tower|castle|structure|red|blue|green|yellow|white|black|purple|orange|pink|gray|grey|cyan|lime)\b/.test(lower);
 }
 
+function isContextEditCommand(lower) {
+  return /\b(?:add|attach|append|improve|upgrade|enhance|detail|decorate|expand|modify|change|make)\b/.test(lower) &&
+    /\b(?:this|that|it|thing|build|building|wall|tower|castle|structure|red|blue|green|yellow|white|black|purple|orange|pink|gray|grey|cyan|lime)\b/.test(lower);
+}
+
 async function inspectPhysicalContext(speaker, command) {
   const context = await resolvePhysicalContext(speaker, command);
   if (!context.focus) {
@@ -873,6 +847,49 @@ async function inspectPhysicalContext(speaker, command) {
     : "no obvious color";
 
   say(`I see ${blockText}; ${paletteText}; ${colorText}.`, { to: speaker });
+}
+
+async function runContextEditCommand(speaker, command) {
+  const context = await resolvePhysicalContext(speaker, command);
+  if (!context.focus) {
+    say(`I need you to look directly at the existing structure before I edit it.`, { to: speaker });
+    return;
+  }
+
+  if (/\b(?:tower|turret|watchtower|spire)\b/i.test(command)) {
+    const origin = contextBuildOrigin(context);
+    say(`editing the visible structure at ${formatBlockPosition(origin)}; delegating block placement to ${delegatedDroneName}`);
+    await delegateTowerBuild(origin, "context edit");
+    say(`${delegatedDroneName} has the delegated edit.`);
+    return;
+  }
+
+  const selected = chooseContextBlock(context, command);
+  if (!selected) {
+    say(`I can see the structure, but I need a clearer edit target.`, { to: speaker });
+    return;
+  }
+
+  const extension = contextExtensionCommands(context, selected);
+  say(`editing ${selected.name} from ${formatBlockPosition(selected.position)} toward ${extension.directionText}`);
+  await sendCommandBatch(extension.commands);
+  say(`edited ${selected.name} with ${extension.commands.length} placement commands`);
+}
+
+function contextBuildOrigin(context) {
+  const focus = context.focus?.position || context.playerPosition;
+  const baseY = lowestNearbySolidY(context, focus) ?? focus.y;
+  return { x: focus.x, y: baseY, z: focus.z };
+}
+
+function lowestNearbySolidY(context, focus) {
+  const nearby = context.blocks
+    .filter((block) => Math.abs(block.position.x - focus.x) <= 2 && Math.abs(block.position.z - focus.z) <= 2)
+    .map((block) => block.position.y);
+  if (nearby.length) return Math.min(...nearby);
+
+  const all = context.blocks.map((block) => block.position.y);
+  return all.length ? Math.min(...all) : null;
 }
 
 async function runContextExtendCommand(speaker, command) {
@@ -1491,6 +1508,7 @@ async function resolvePlayerPosition(name, options = {}) {
     await wait(Number(process.env.CODEX_PLAYER_TP_WAIT_MS || 700));
     const after = vectorPosition(bot.entity.position);
     if (positionMoved(before, after)) {
+      await startCreativeFlight();
       return { ...after, teleported: true };
     }
   }
@@ -1503,6 +1521,7 @@ async function resolvePlayerPosition(name, options = {}) {
     await wait(Number(process.env.CODEX_PLAYER_TP_WAIT_MS || 700));
     const after = vectorPosition(bot.entity.position);
     if (positionMoved(before, after)) {
+      await startCreativeFlight();
       return { ...after, teleported: true };
     }
   }
@@ -1528,9 +1547,35 @@ function positionMoved(before, after) {
     Math.abs(before.z - after.z) > 0.25;
 }
 
+async function maintainFlightNearTarget(targetName, fallbackPosition = null) {
+  if (!bot.creative) return;
+  await startCreativeFlight();
+  const playerName = findPlayerName(targetName) || targetName;
+  const player = bot.players[playerName]?.entity;
+  const target = player?.position || fallbackPosition;
+  if (!target) return;
+
+  const airborne = player ? !player.onGround : true;
+  if (!airborne && target.y <= bot.entity.position.y + 1) return;
+
+  await withTimeout(
+    bot.creative.flyTo(new Vec3(target.x, target.y + 1.5, target.z)),
+    Number(process.env.CODEX_FLY_TO_PLAYER_TIMEOUT_MS || 2500),
+  );
+}
+
+async function startCreativeFlight() {
+  if (!bot.creative?.startFlying) return;
+  try {
+    await bot.creative.startFlying();
+  } catch {
+    // Some Mineflayer versions expose this as a synchronous state toggle.
+  }
+}
+
 async function moveDirect(x, y, z) {
   if (bot.creative) {
-    await bot.creative.startFlying();
+    await startCreativeFlight();
     await withTimeout(bot.creative.flyTo(new Vec3(x, y, z)), 3000);
     return;
   }
