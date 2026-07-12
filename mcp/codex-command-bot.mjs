@@ -1176,10 +1176,164 @@ async function runContextExtendCommand(speaker, command) {
     return;
   }
 
+  if (shouldUseContextFreeformContinuation(command)) {
+    const handled = await runContextFreeformContinuation(speaker, command, context, selected);
+    if (handled) return;
+  }
+
   const extension = contextExtensionCommands(context, selected);
+  if (shouldDelegateContextContinuation(command)) {
+    const jobs = structureJobsFromCommands(extension.commands, delegatedDroneName, "context-extension");
+    say(`delegating continuation of ${selected.name} from ${formatBlockPosition(selected.position)} to ${delegatedDroneName}`);
+    summonDroneToBuildSite(selected.position);
+    writeDelegatedState({
+      taskId: `codex-context-${Date.now()}`,
+      structure: `continued ${selected.name}`,
+      origin: selected.position,
+      jobs,
+      requestedBy: speaker,
+      originalText: command,
+      instructions: `Continue the visible structure from ${formatBlockPosition(selected.position)}. Request: ${command}`,
+    });
+    return;
+  }
+
   say(`continuing ${selected.name} from ${formatBlockPosition(selected.position)} toward ${extension.directionText}`);
   await sendCommandBatch(extension.commands);
   say(`continued ${selected.name} with ${extension.commands.length} placement commands`);
+}
+
+function shouldUseContextFreeformContinuation(command) {
+  if (!codexCliEnabled) return false;
+  return /\b(?:into|as|like|with|filled|fill|detailed|detail|decorate|font|pool|fountain|statue|tower|roof|entrance|door|window|finish|complete|drone|delegate)\b/i.test(command);
+}
+
+function shouldDelegateContextContinuation(command) {
+  return /\b(?:delegate|drone|codexdrone|drone1|codexdrone1|make your drone)\b/i.test(command);
+}
+
+async function runContextFreeformContinuation(speaker, command, context, selected) {
+  const origin = selected.position;
+  const outputPath = path.join(os.tmpdir(), `codex-context-build-${process.pid}-${Date.now()}.json`);
+  const prompt = contextFreeformPrompt(speaker, command, context, selected);
+
+  try {
+    await runCodexCli(prompt, outputPath, Math.max(codexCliTimeoutMs, 18000));
+    const parsed = parseJsonObject(fs.readFileSync(outputPath, "utf8"));
+    const commands = validateContextBuildCommands(parsed?.commands, origin, command);
+    if (!commands.length) return false;
+
+    const name = compact(parsed?.name || `continued ${selected.name}`).slice(0, 60) || `continued ${selected.name}`;
+    const delegate = Boolean(parsed?.delegate) || shouldDelegateContextContinuation(command);
+    if (delegate) {
+      const jobs = structureJobsFromCommands(commands, delegatedDroneName, "context-freeform");
+      say(`delegating ${name} from ${formatBlockPosition(origin)} to ${delegatedDroneName}`);
+      summonDroneToBuildSite(origin);
+      writeDelegatedState({
+        taskId: `codex-context-${Date.now()}`,
+        structure: name,
+        origin,
+        jobs,
+        requestedBy: speaker,
+        originalText: command,
+        instructions: `Extend or finish the visible structure from ${formatBlockPosition(origin)}. Request: ${command}`,
+      });
+      return true;
+    }
+
+    say(`continuing ${name} from ${formatBlockPosition(origin)}`);
+    await sendCommandBatch(commands);
+    say(`${name} continuation complete with ${commands.length} placement commands`);
+    return true;
+  } catch (error) {
+    console.error(`context continuation planner failed: ${error.message}`);
+    return false;
+  } finally {
+    fs.rmSync(outputPath, { force: true });
+  }
+}
+
+function contextFreeformPrompt(speaker, command, context, selected) {
+  const origin = selected.position;
+  const palette = context.palette.slice(0, 8).map((entry) => `${entry.name} x${entry.count}`).join(", ") || "none";
+  const colors = context.colors.slice(0, 6).map((entry) => `${entry.color} x${entry.count}`).join(", ") || "none";
+  return [
+    "You are extending an existing Minecraft build the player is looking at.",
+    "Return only compact JSON. No markdown.",
+    "JSON shape: {\"name\":\"short continuation name\",\"delegate\":false,\"commands\":[\"/fill ...\",\"/setblock ...\"]}",
+    "Commands must be absolute Minecraft commands using only /fill or /setblock.",
+    "Use at most 45 commands. Use only vanilla block ids or block states with no spaces.",
+    "Preserve the existing visible build; add adjacent detail instead of rebuilding or clearing the whole thing.",
+    "Small air fills are okay only for openings/interiors. Water is allowed only when the request asks for water.",
+    "Do not use lava, fire, TNT, entities, particles, execute, summon, command blocks, redstone clocks, structure blocks, or jigsaw blocks.",
+    "Stay inside this box:",
+    `x ${origin.x - 16}..${origin.x + 16}, y ${origin.y - 4}..${origin.y + 24}, z ${origin.z - 16}..${origin.z + 16}.`,
+    `Player: ${speaker}`,
+    `Selected block: ${selected.name} at ${formatBlockPosition(origin)}`,
+    `Nearby palette: ${palette}`,
+    `Nearby colors: ${colors}`,
+    `Request: ${JSON.stringify(command)}`,
+  ].join("\n");
+}
+
+function validateContextBuildCommands(commands, origin, requestText = "") {
+  if (!Array.isArray(commands)) return [];
+  const allowWater = /\b(?:water|filled|fill|pool|font|fountain|bath|baptism)\b/i.test(requestText);
+  return commands
+    .map((command) => compact(command))
+    .filter((command) => isValidContextBuildCommand(command, origin, allowWater))
+    .slice(0, 45);
+}
+
+function isValidContextBuildCommand(command, origin, allowWater) {
+  const blockPattern = "[a-z0-9_:\\[\\]=,]+";
+  const fill = command.match(new RegExp(`^/fill\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(${blockPattern})$`));
+  if (fill) {
+    const [, x1, y1, z1, x2, y2, z2, block] = fill;
+    const coordinates = [x1, y1, z1, x2, y2, z2].map(Number);
+    return isSafeContextBuildBlock(block, allowWater) &&
+      coordinatesInsideContextBox(coordinates, origin) &&
+      cuboidVolume(coordinates) <= 4000;
+  }
+
+  const setblock = command.match(new RegExp(`^/setblock\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(${blockPattern})$`));
+  if (setblock) {
+    const [, x, y, z, block] = setblock;
+    return isSafeContextBuildBlock(block, allowWater) && coordinatesInsideContextBox([x, y, z].map(Number), origin);
+  }
+
+  return false;
+}
+
+function isSafeContextBuildBlock(block, allowWater) {
+  const name = commandBlockName(block);
+  if (!isKnownVanillaBlock(name)) return false;
+  if (name === "water" && !allowWater) return false;
+  return !new Set([
+    "lava",
+    "fire",
+    "soul_fire",
+    "tnt",
+    "command_block",
+    "chain_command_block",
+    "repeating_command_block",
+    "structure_block",
+    "jigsaw",
+    "barrier",
+  ]).has(name);
+}
+
+function coordinatesInsideContextBox(values, origin) {
+  if (values.some((value) => !Number.isInteger(value))) return false;
+  for (let i = 0; i < values.length; i += 3) {
+    const x = values[i];
+    const y = values[i + 1];
+    const z = values[i + 2];
+    if (x < origin.x - 16 || x > origin.x + 16) return false;
+    if (y < origin.y - 4 || y > origin.y + 24) return false;
+    if (z < origin.z - 16 || z > origin.z + 16) return false;
+  }
+  return true;
 }
 
 async function resolvePhysicalContext(speaker, command) {
