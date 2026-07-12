@@ -1,0 +1,18 @@
+{
+	"type": "minecraft:crafting_shaped",
+	"category": "misc",
+	"pattern": [
+		" I ",
+		"IBI",
+		"PPP"
+	],
+	"key": {
+		"I": "minecraft:iron_ingot",
+		"B": "minecraft:bow",
+		"P": "#minecraft:planks"
+	},
+	"result": {
+		"id": "towerdefense:arrow_tower",
+		"count": 1
+	}
+}

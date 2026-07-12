@@ -1,0 +1,14 @@
+{
+  "name": "grok-assistant",
+  "version": "0.1.0",
+  "type": "commonjs",
+  "private": true,
+  "description": "Grok — our personal in-world Minecraft assistant (natural language + godmode)",
+  "dependencies": {
+    "mineflayer": "4.33.0",
+    "minecraft-data": "3.97.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "prismarine-item": "^1.15.0",
+    "vec3": "^0.1.10"
+  }
+}
