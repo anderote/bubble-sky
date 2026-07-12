@@ -5,8 +5,8 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 node_bin() {
   if command -v fnm >/dev/null 2>&1; then
-    eval "$(fnm env --use-on-cd)"
     cd "$ROOT_DIR"
+    eval "$(fnm env)"
     fnm install >/dev/null 2>&1
     fnm use >/dev/null 2>&1
   fi
