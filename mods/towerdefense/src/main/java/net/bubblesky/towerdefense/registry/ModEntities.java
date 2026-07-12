@@ -1,6 +1,7 @@
 package net.bubblesky.towerdefense.registry;
 
 import net.bubblesky.towerdefense.TowerDefenseMod;
+import net.bubblesky.towerdefense.entity.FlagArrowEntity;
 import net.bubblesky.towerdefense.entity.TdArcherEnemy;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
 import net.bubblesky.towerdefense.entity.TdMeleeEnemy;
@@ -52,6 +53,22 @@ public final class ModEntities {
 		registerMelee("undead_soldier", 0.6f, 1.95f);
 	public static final EntityType<TdMeleeEnemy> HEAVY_KNIGHT =
 		registerMelee("heavy_knight", 0.7f, 2.0f);
+
+	// ---- projectiles ------------------------------------------------------
+	/** The Flag Bow's arrow: plants a Layout flag wherever it lands. */
+	public static final EntityType<FlagArrowEntity> FLAG_ARROW = registerFlagArrow("flag_arrow");
+
+	private static EntityType<FlagArrowEntity> registerFlagArrow(String name) {
+		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, name));
+		EntityType<FlagArrowEntity> type = EntityType.Builder
+			.<FlagArrowEntity>create(FlagArrowEntity::new, SpawnGroup.MISC)
+			.dimensions(0.5f, 0.5f)
+			.maxTrackingRange(4)
+			.trackingTickInterval(20)
+			.build(key);
+		return Registry.register(Registries.ENTITY_TYPE, key, type);
+	}
 
 	private static EntityType<TdMeleeEnemy> registerMelee(String name, float width, float height) {
 		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,

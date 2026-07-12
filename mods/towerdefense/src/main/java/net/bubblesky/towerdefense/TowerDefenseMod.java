@@ -1,6 +1,10 @@
 package net.bubblesky.towerdefense;
 
+import net.bubblesky.towerdefense.bridge.AgentBridge;
 import net.bubblesky.towerdefense.command.TdCommand;
+import net.bubblesky.towerdefense.item.LayoutWandItem;
+import net.bubblesky.towerdefense.layout.LayoutStore;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.bubblesky.towerdefense.game.TdHud;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.registry.ModBlockEntities;
@@ -11,11 +15,14 @@ import net.bubblesky.towerdefense.registry.ModItems;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +62,7 @@ public class TowerDefenseMod implements ModInitializer {
 		ModItemGroups.initialize();
 
 		registerCoinDrops();
+		registerJoinHint();
 
 		// Game loop: the /td command family + the endless wave state machine.
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
@@ -62,8 +70,36 @@ public class TowerDefenseMod implements ModInitializer {
 		WaveManager.register();
 		TdHud.register();
 
+		// Modded agent bridge: in-JVM HTTP API so AI agents can observe/act on the
+		// modded world without the vanilla protocol. Localhost-bound + token-gated;
+		// starts on SERVER_STARTED if enabled in config. See net.bubblesky.towerdefense.bridge.
+		AgentBridge.init();
+
+		// Layout Wand planning tool: server-side flag/region store + the wand's
+		// left-click + particle-visualization hooks. The store is loaded from the
+		// run dir once the server starts (world/config dir is available then).
+		ServerLifecycleEvents.SERVER_STARTED.register(server -> LayoutStore.init(server.getRunDirectory()));
+		LayoutWandItem.register();
+
 		LOGGER.info("[towerdefense] initialized: {} weapons + 3 towers (arrow/cannon/frost) + shop/upgrades + coin economy + wave game loop + 6-enemy roster + boss waves + HUD",
 			ModItems.WEAPON_COUNT);
+	}
+
+	/**
+	 * Discoverability: greet each joining player with a single chat line pointing
+	 * them at the Tower Defense menu (keybind or {@code /td}). One message only, so
+	 * it stays out of the way. The default menu key is {@code G} (rebindable in
+	 * Controls); clients without this mod still get the {@code /td} pointer.
+	 */
+	private void registerJoinHint() {
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+			handler.player.sendMessage(
+				Text.literal("Tower Defense ready — press ").formatted(Formatting.GRAY)
+					.append(Text.literal("[G]").formatted(Formatting.YELLOW))
+					.append(Text.literal(" (menu key) or type ").formatted(Formatting.GRAY))
+					.append(Text.literal("/td").formatted(Formatting.YELLOW))
+					.append(Text.literal(" to open the menu.").formatted(Formatting.GRAY)),
+				false));
 	}
 
 	/**

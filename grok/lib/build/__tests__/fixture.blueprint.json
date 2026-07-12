@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "Test Keep",
+  "style": "medieval",
+  "palette": { "wall": "stone_bricks", "trim": "dark_oak_log", "roof": "dark_oak_stairs", "floor": "spruce_planks", "glass": "glass_pane", "light": "lantern", "foundation": "cobblestone" },
+  "anchor": { "origin": { "x": 100, "y": 72, "z": -40 }, "facing": "north", "terrainFit": "float" },
+  "bounds": { "min": { "x": 0, "y": 0, "z": 0 }, "max": { "x": 8, "y": 8, "z": 8 } },
+  "regions": [
+    { "id": "foundation", "name": "Foundation", "phase": 1, "components": [
+      { "kind": "box", "role": "foundation", "a": { "x": 0, "y": 0, "z": 0 }, "b": { "x": 8, "y": 0, "z": 8 }, "hollow": false }
+    ] },
+    { "id": "shell", "name": "Shell", "phase": 3, "components": [
+      { "kind": "box", "role": "wall", "a": { "x": 0, "y": 1, "z": 0 }, "b": { "x": 8, "y": 6, "z": 8 }, "hollow": true }
+    ] },
+    { "id": "door", "name": "Door", "phase": 6, "components": [
+      { "kind": "carve", "a": { "x": 4, "y": 1, "z": 0 }, "b": { "x": 4, "y": 2, "z": 0 } },
+      { "kind": "point", "block": "lantern", "at": { "x": 4, "y": 4, "z": 4 } }
+    ] }
+  ]
+}

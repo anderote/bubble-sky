@@ -2,6 +2,7 @@ package net.bubblesky.towerdefense.registry;
 
 import java.util.function.Function;
 import net.bubblesky.towerdefense.TowerDefenseMod;
+import net.bubblesky.towerdefense.block.AcidBlock;
 import net.bubblesky.towerdefense.block.ArrowTowerBlock;
 import net.bubblesky.towerdefense.block.CannonTowerBlock;
 import net.bubblesky.towerdefense.block.FrostTowerBlock;
@@ -50,6 +51,20 @@ public final class ModBlocks {
 			.nonOpaque()
 			.sounds(BlockSoundGroup.GLASS),
 		true);
+
+	// The corrosive acid pseudo-liquid. No block item (obtained via acid_bucket,
+	// like vanilla fluids); still /setblock-able. No collision so you sink through
+	// it, translucent + non-opaque so you can see through the green.
+	public static final Block ACID = register("acid",
+		AcidBlock::new,
+		AbstractBlock.Settings.create()
+			.noCollision()
+			.nonOpaque()
+			.strength(100.0f)
+			.dropsNothing()
+			.luminance(s -> 4)
+			.sounds(BlockSoundGroup.HONEY),
+		false);
 
 	public static Block register(String name, Function<AbstractBlock.Settings, Block> factory,
 			AbstractBlock.Settings settings, boolean withItem) {
