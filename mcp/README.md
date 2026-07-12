@@ -27,7 +27,7 @@ Defaults:
 |---------|---------|----------|
 | Host | `localhost` | `MINECRAFT_HOST` |
 | Port | `25565` | `MINECRAFT_PORT` |
-| Bot username | `ClaudeBot` | `MCP_MINECRAFT_USERNAME` |
+| Bot username | `claude` | `MCP_MINECRAFT_USERNAME` |
 
 The Fabric server must already be running with `online-mode=false`, or the MCP server will
 start but the bot will fail to join.
@@ -52,7 +52,15 @@ For lightweight in-game control without an MCP client attached:
 MINECRAFT_HOST=192.168.86.188 node ./mcp/codex-command-bot.mjs
 ```
 
-Then address it in chat. Conversations are public by default so everyone can see what
+To run the same chat command behavior for another AI, give that bot its own
+Minecraft username:
+
+```sh
+CODEX_BOT_USERNAME=claude MINECRAFT_HOST=192.168.86.188 node ./mcp/codex-command-bot.mjs
+CODEX_BOT_USERNAME=grok MINECRAFT_HOST=192.168.86.188 node ./mcp/codex-command-bot.mjs
+```
+
+Then address it in chat by its username. Conversations are public by default so everyone can see what
 players are asking the LLM bots and what they reply:
 
 ```text
@@ -64,6 +72,8 @@ players are asking the LLM bots and what they reply:
 @codex history
 @codex status
 ```
+
+For `claude`, use `@claude`. For `grok`, use `@grok`.
 
 Chat visibility can be changed at runtime:
 
@@ -95,10 +105,11 @@ Environment knobs:
 | Setting | Default | Notes |
 |---------|---------|-------|
 | `CODEX_BOT_USERNAME` | `codex` | In-game bot name. |
+| `CODEX_BOT_ALIASES` | unset | Optional comma-separated extra names that should address this bot. |
 | `CODEX_CHAT_VISIBILITY` | `public` | Startup visibility mode. |
 | `CODEX_CHAT_HISTORY` | `.codex-runtime/chat-history.jsonl` | JSONL transcript path. |
 | `CODEX_CHAT_HISTORY_LIMIT` | `2000` | Maximum retained transcript events. |
-| `CODEX_LLM_PLAYERS` | `codex,claude,claudebot,grok` | Comma-separated recipients for `llm` mode. |
+| `CODEX_LLM_PLAYERS` | `codex,claude,grok` | Comma-separated recipients for `llm` mode. |
 | `CODEX_RICH_CHAT` | unset | Set to `1` to send colored/bold `/tellraw` output, including highlighted `@codex`, `@grok`, and `@claude` mentions. The bot must be opped on a vanilla server. |
 
 Extra examples:
@@ -110,4 +121,7 @@ Extra examples:
 @codex go to 12 64 -8
 @codex bring me to -40,40
 @codex lead me to -40 72 40
+@codex where are you
+@codex bring me to you
+@codex bring me to where codex is
 ```

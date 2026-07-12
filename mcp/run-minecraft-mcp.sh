@@ -9,5 +9,5 @@ fi
 exec npx -y github:yuniko-software/minecraft-mcp-server \
   --host "${MINECRAFT_HOST:-localhost}" \
   --port "${MINECRAFT_PORT:-25565}" \
-  --username "${MCP_MINECRAFT_USERNAME:-ClaudeBot}" \
+  --username "${MCP_MINECRAFT_USERNAME:-claude}" \
   "$@"
