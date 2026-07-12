@@ -150,6 +150,7 @@ bot.on("physicsTick", () => {
     return;
   }
 
+  clearAirborneFollow();
   if (distance > 3) {
     bot.pathfinder.setGoal(new goals.GoalFollow(player, 2), true);
   }
@@ -241,8 +242,7 @@ async function runCommand(speaker, commandText) {
 
   if (lower === "stop") {
     followTarget = null;
-    airborneFollowNextAt = 0;
-    flightAnchor = null;
+    clearAirborneFollow();
     escort = null;
     bot.pathfinder.stop();
     clearControls();
@@ -285,7 +285,7 @@ async function runCommand(speaker, commandText) {
   if (comeMatch || lower === "come here" || lower === "here") {
     const targetName = resolveTargetName(comeMatch?.[1], speaker);
     followTarget = null;
-    airborneFollowNextAt = 0;
+    clearAirborneFollow();
     escort = null;
     const targetPosition = await resolvePlayerPosition(targetName, { teleportToPlayer: true });
     await maintainFlightNearTarget(targetName, targetPosition);
@@ -1579,6 +1579,15 @@ function tickAirborneFollow(targetName) {
   });
 }
 
+function clearAirborneFollow() {
+  if (!flightAnchor && airborneFollowNextAt === 0) return;
+  flightAnchor = null;
+  airborneFollowNextAt = 0;
+  stopCreativeFlight().catch((error) => {
+    console.error(`failed to stop creative flight: ${error.message}`);
+  });
+}
+
 async function maintainFlightNearTarget(targetName, fallbackPosition = null) {
   if (!bot.creative) return;
   await startCreativeFlight();
@@ -1643,6 +1652,15 @@ async function startCreativeFlight() {
   if (!bot.creative?.startFlying) return;
   try {
     await bot.creative.startFlying();
+  } catch {
+    // Some Mineflayer versions expose this as a synchronous state toggle.
+  }
+}
+
+async function stopCreativeFlight() {
+  if (!bot.creative?.stopFlying) return;
+  try {
+    await bot.creative.stopFlying();
   } catch {
     // Some Mineflayer versions expose this as a synchronous state toggle.
   }
