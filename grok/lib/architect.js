@@ -2,7 +2,11 @@
 // goal into a structured, phased blueprint (submit_build_plan tool). It is given
 // a catalog of REAL skills (structures + detailing) so it composes them, plus any
 // active project from memory so follow-ups edit the same build.
-const KEYENV = 'XAI_API_KEY'
+//
+// The LLM backend is pluggable per role (see lib/llm.js). The architect runs on
+// Claude (Anthropic) by default when ANTHROPIC_API_KEY is set, else falls back to
+// the xAI reasoning model — override with GROK_ARCHITECT_PROVIDER / GROK_ARCHITECT_MODEL.
+const { createLLM } = require('./llm')
 
 function catalogText(skills) {
   const line = ([n, args, desc]) => `  - ${n} ${args} — ${desc}`
@@ -48,12 +52,11 @@ If given an existing project (memory), EDIT it — reuse its origin/palette and 
 If given a REPAIR request, output ONLY the phases/steps needed to fix the reported deficiency — do not rebuild what already exists.`
 }
 
+// Neutral tool shape (see lib/llm.js): { name, description, schema }.
 const PLAN_TOOL = {
-  type: 'function',
-  function: {
-    name: 'submit_build_plan',
-    description: 'Submit the phased build blueprint.',
-    parameters: {
+  name: 'submit_build_plan',
+  description: 'Submit the phased build blueprint.',
+  schema: {
       type: 'object',
       properties: {
         project: { type: 'string', description: 'Short name of what is being built' },
@@ -84,14 +87,13 @@ const PLAN_TOOL = {
       },
       required: ['project', 'origin', 'palette', 'phases']
     }
-  }
 }
 
 module.exports = function makeArchitect({ skills, log = () => {} }) {
-  const KEY = process.env[KEYENV]
-  // Both reasoning models produce valid tool-called blueprints; grok-4.5 gives
-  // richer, faster plans. Override with GROK_ARCHITECT_MODEL=grok-4.20-0309-reasoning.
-  const MODEL = process.env.GROK_ARCHITECT_MODEL || 'grok-4.5'
+  // Per-role backend: default to Anthropic (Claude) when a key is present, else xAI.
+  const PROVIDER = process.env.GROK_ARCHITECT_PROVIDER || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'xai')
+  const MODEL = process.env.GROK_ARCHITECT_MODEL || (PROVIDER === 'anthropic' ? 'claude-opus-4-8' : 'grok-4.5')
+  const llm = createLLM({ provider: PROVIDER })
 
   async function plan({ goal, origin, memory, site, repair }) {
     const sys = architectSystem(skills)
@@ -99,21 +101,15 @@ module.exports = function makeArchitect({ skills, log = () => {} }) {
       note: repair
         ? 'REPAIR MODE: the previous build has the reported deficiency. Emit ONLY the phases/steps to fix it, via submit_build_plan.'
         : 'Emit the blueprint via submit_build_plan. Integrate with the SITE survey. Use absolute coordinates around origin. Obey the HARD RULES.' }
-    const body = {
-      model: MODEL, temperature: 0.4,
-      messages: [{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify(user) }],
-      tools: [PLAN_TOOL], tool_choice: { type: 'function', function: { name: 'submit_build_plan' } }
-    }
-    const res = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST', headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    // Force the tool; long plans need room (~4096) on the Anthropic side.
+    const { toolCalls } = await llm.chat({
+      system: sys,
+      messages: [{ role: 'user', content: JSON.stringify(user) }],
+      tools: [PLAN_TOOL], toolChoice: { name: 'submit_build_plan' }, maxTokens: 4096, model: MODEL
     })
-    if (!res.ok) throw new Error(`architect ${res.status}: ${(await res.text()).slice(0, 160)}`)
-    const j = await res.json()
-    const tc = j.choices?.[0]?.message?.tool_calls?.[0]
-    if (!tc) throw new Error('architect returned no plan')
-    let bp
-    try { bp = JSON.parse(tc.function.arguments) } catch (e) { throw new Error('architect plan not valid JSON') }
-    return normalize(bp, origin)
+    const tc = toolCalls[0]
+    if (!tc || !tc.args) throw new Error('architect returned no plan')
+    return normalize(tc.args, origin)
   }
 
   // Fill gaps, coerce types, and validate against the anti-cube guardrails.
@@ -139,5 +135,5 @@ module.exports = function makeArchitect({ skills, log = () => {} }) {
     return bp
   }
 
-  return { plan, MODEL }
+  return { plan, MODEL, PROVIDER }
 }

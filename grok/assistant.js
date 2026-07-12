@@ -10,8 +10,11 @@ for (const line of fs.readFileSync(path.join(DIR, '.env'), 'utf8').split('\n')) 
   const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.+?)\s*$/)
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2]
 }
-const KEY = process.env.XAI_API_KEY
-const ROUTER_MODEL = process.env.XAI_MODEL || process.env.GROK_ROUTER_MODEL || 'grok-4.20-0309-non-reasoning'
+// ---- pluggable LLM backend, per role (router/executor vs architect) ----
+const { createLLM } = require('./lib/llm')
+const ROUTER_PROVIDER = process.env.GROK_ROUTER_PROVIDER || 'xai'
+const ROUTER_MODEL = process.env.GROK_ROUTER_MODEL || process.env.XAI_MODEL || 'grok-4.20-0309-non-reasoning'
+const routerLLM = createLLM({ provider: ROUTER_PROVIDER })
 const USERNAME = process.env.MC_USER || 'Grok'
 // Grok ONLY responds to these people (allowlist) — everyone/everything else is ignored.
 const ALLOW = new Set((process.env.GROK_ALLOW || 'claudebert').toLowerCase().split(',').map(s => s.trim()).filter(Boolean))
@@ -58,7 +61,7 @@ const architect = require('./lib/architect')({ skills, log })
 const memory = require('./lib/memory')(path.join(DIR, 'memory'))
 const survey = require('./lib/survey')
 
-log(`backend=${hands.name} (godmode=${hands.godmode}) router=${ROUTER_MODEL} architect=${architect.MODEL}`)
+log(`backend=${hands.name} (godmode=${hands.godmode}) router=${ROUTER_PROVIDER}/${ROUTER_MODEL} architect=${architect.PROVIDER}/${architect.MODEL}`)
 
 // ---- one-shot tool schema (Phase 1: native tool calling) ----
 const originProps = {
@@ -139,37 +142,39 @@ function world(speaker) {
   return { position: { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) }, biome, health: bot.health, food: bot.food, timeOfDay: bot.time.timeOfDay, players, entities, inventory: bot.inventory.items().map(i => `${i.name} x${i.count}`).slice(0, 12), resourcesNearby: resources(), following: followTarget, speakerLookingAt: speaker ? lookTarget(speaker) : null, activeProject: activeProject ? { project: activeProject.project, origin: activeProject.origin } : null }
 }
 
+// Neutral tool list (see lib/llm.js) derived from the OpenAI-format TOOLS above.
+const NEUTRAL_TOOLS = TOOLS.map(t => ({ name: t.function.name, description: t.function.description, schema: t.function.parameters }))
+
 // ---- one-shot: ask the router/executor model which tool to call ----
+// Returns normalized calls: [{ id, name, args }] with args already JSON-parsed.
 async function askOneShot(from, message) {
-  const payload = { from, message, world: world(from), recentChat: history.slice(-8) }
-  const res = await fetch('https://api.x.ai/v1/chat/completions', {
-    method: 'POST', headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: ROUTER_MODEL, temperature: 0.4, max_tokens: 400, tools: TOOLS, tool_choice: 'auto',
-      messages: [{ role: 'system', content: SYS }, { role: 'user', content: JSON.stringify(payload) }] })
+  const payload = { from, message, world: world(from), conversation: history.slice(-20) }
+  const { text, toolCalls } = await routerLLM.chat({
+    system: SYS,
+    messages: [{ role: 'user', content: JSON.stringify(payload) }],
+    tools: NEUTRAL_TOOLS, toolChoice: 'auto', maxTokens: 400, model: ROUTER_MODEL
   })
-  if (!res.ok) throw new Error(`xai ${res.status}: ${(await res.text()).slice(0, 120)}`)
-  const msg = (await res.json()).choices[0].message
-  return { calls: msg.tool_calls || [], content: (msg.content || '').trim() }
+  return { calls: toolCalls, content: text }
 }
 
 bot.on('chat', async (username, message) => {
   if (!ALLOW.has(username.toLowerCase())) return
-  history.push(`${username}: ${message}`); while (history.length > 12) history.shift()
+  history.push(`${username}: ${message}`); while (history.length > 30) history.shift()
   if (busy) return
   busy = true
   try {
     const { calls, content } = await askOneShot(username, message)
     if (!calls.length) { if (content) say(content); busy = false; return }
     for (const c of calls) {
-      let args = {}; try { args = JSON.parse(c.function.arguments || '{}') } catch {}
-      log(`<${username}> ${message}  ->  ${c.function.name} ${JSON.stringify(args)}`)
-      await dispatch(c.function.name, args, username)
+      const args = c.args || {}
+      log(`<${username}> ${message}  ->  ${c.name} ${JSON.stringify(args)}`)
+      await dispatch(c.name, args, username)
     }
   } catch (e) { log('grok err', e.message) }
   busy = false
 })
 
-const say = s => { if (s) bot.chat(String(s).slice(0, 200)) }
+const say = s => { if (s) { bot.chat(String(s).slice(0, 200)); history.push(`${USERNAME}: ${s}`); while (history.length > 30) history.shift() } }  // remember our own replies too
 
 function resolveOrigin(args, speaker) {
   if (args.here || args.origin === 'look') { const l = lookTarget(speaker); if (l) return round(l) }
@@ -194,7 +199,7 @@ async function dispatch(tool, args, speaker) {
       else if (mode === 'stop') { followTarget = null; bot.pathfinder.setGoal(null); bot.clearControlStates() }
       else if (mode === 'goto') { if (args.x != null && args.z != null) { followTarget = null; bot.pathfinder.setGoal(new goals.GoalNear(+args.x, args.y != null ? +args.y : p.y, +args.z, 1)) } }
       else if (mode === 'explore') { followTarget = null; bot.pathfinder.setGoal(new goals.GoalNear(Math.floor(p.x + (Math.random() * 40 - 20)), p.y, Math.floor(p.z + (Math.random() * 40 - 20)), 1)) }
-      else if (mode === 'tp') { const o = (args.x != null) ? { x: +args.x, y: +args.y, z: +args.z } : (spEnt ? spEnt.position : null); if (o) hands.tp(USERNAME, o.x, o.y, o.z) }
+      else if (mode === 'tp') { if (args.x != null) hands.tp(USERNAME, +args.x, +args.y, +args.z); else hands.tpTo(USERNAME, args.player || speaker) }  // by name → works at any distance
       else if (mode === 'bring') { hands.tpTo(args.player || speaker, USERNAME) }
       break
     }
