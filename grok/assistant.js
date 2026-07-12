@@ -55,6 +55,16 @@ const furniture = require('./furniture')(sctx)
 const makeSkills = require('./lib/skills')
 const skills = makeSkills({ hands, structures, details, furniture, B, clamp, log })
 
+// ---- world-SHAPING / earthworks (carve terrain: tunnel/trench/pit/hollow/moat) ----
+// Additive AIR carving through the same throttled hands the build pipeline uses.
+const terrain = require('./lib/terrain')({
+  hands,
+  fillBox: hands.fillBox.bind(hands),
+  clearArea: hands.clearArea.bind(hands),
+  setBlock: (x, y, z, b) => hands.setBlock(x, y, z, b),
+  B, clamp
+})
+
 // ---- architect + project memory ----
 const architect = require('./lib/architect')({ skills, log })
 const memory = require('./lib/memory')(path.join(DIR, 'memory'))
@@ -101,6 +111,16 @@ const TOOLS = [
     parameters: { type: 'object', properties: { ...originProps, radius: { type: 'integer' }, height: { type: 'integer' }, reply: { type: 'string' } } } } },
   { type: 'function', function: { name: 'flatten', description: 'Clear an area and lay a flat floor.',
     parameters: { type: 'object', properties: { ...originProps, radius: { type: 'integer' }, height: { type: 'integer' }, floor: { type: 'string' }, reply: { type: 'string' } } } } },
+  { type: 'function', function: { name: 'tunnel', description: 'WORLD-SHAPING: bore a horizontal TUNNEL/shaft into terrain (carve to air). Use for "tunnel/bore/dig into/dig through this mountain/hill". Goes the direction the speaker LOOKS. NOT a built structure — do not use build_structure/plan_build for a tunnel.',
+    parameters: { type: 'object', properties: { ...originProps, length: { type: 'integer', description: 'how far to bore (blocks)' }, width: { type: 'integer', description: 'tunnel diameter/width' }, height: { type: 'integer' }, shape: { type: 'string', enum: ['round', 'square'], description: 'round = circular bore of diameter=width; square = width×height rectangle' }, reply: { type: 'string' } } } } },
+  { type: 'function', function: { name: 'trench', description: 'WORLD-SHAPING: cut a linear TRENCH/ditch/channel/slot/cut into the ground (carve down along the look direction). Use for "trench/ditch/cut/channel/slot here". Optional block lines the floor. NOT a built structure.',
+    parameters: { type: 'object', properties: { ...originProps, length: { type: 'integer' }, width: { type: 'integer' }, depth: { type: 'integer' }, block: { type: 'string', description: 'optional block to line the floor' }, reply: { type: 'string' } } } } },
+  { type: 'function', function: { name: 'pit', description: 'WORLD-SHAPING: dig a PIT/hole straight DOWN (round via radius, or rectangular via width×length). Use for "hole/pit/excavate/dig down". NOT a built structure.',
+    parameters: { type: 'object', properties: { ...originProps, radius: { type: 'integer', description: 'set for a round pit' }, width: { type: 'integer' }, length: { type: 'integer' }, depth: { type: 'integer' }, reply: { type: 'string' } } } } },
+  { type: 'function', function: { name: 'hollow', description: 'WORLD-SHAPING: HOLLOW OUT / gut / empty the inside of a volume (set the interior to air, leave a shell). Use for "hollow this out / gut it / empty the inside". NOT a built structure.',
+    parameters: { type: 'object', properties: { ...originProps, radius: { type: 'integer', description: 'half-width of the volume around the origin' }, height: { type: 'integer' }, reply: { type: 'string' } } } } },
+  { type: 'function', function: { name: 'moat', description: 'WORLD-SHAPING: dig a MOAT — a trench (along the look direction) whose bottom fills with water by default. Use for "moat" / "dig a moat around here". NOT a built structure.',
+    parameters: { type: 'object', properties: { ...originProps, length: { type: 'integer' }, width: { type: 'integer' }, depth: { type: 'integer' }, water: { type: 'boolean', description: 'fill the bottom with water (default true)' }, reply: { type: 'string' } } } } },
   { type: 'function', function: { name: 'move', description: 'Movement / teleport. mode: come|follow (walk to & follow speaker), stop, goto (x,z), explore, tp (teleport SELF to speaker or x,y,z), bring (teleport the speaker/player to Grok).',
     parameters: { type: 'object', properties: { mode: { type: 'string', enum: ['come', 'follow', 'stop', 'goto', 'explore', 'tp', 'bring'] }, player: { type: 'string' }, x: { type: 'integer' }, y: { type: 'integer' }, z: { type: 'integer' }, reply: { type: 'string' } }, required: ['mode'] } } },
   { type: 'function', function: { name: 'world_cmd', description: 'World control. cmd: time (value day|night|noon|midnight), weather (value clear|rain|thunder), give (item + count to the speaker/player).',
@@ -132,6 +152,7 @@ Guidance:
 - Anything FURNISHED or "nice/good/detailed", a home someone could live in, BIG or multi-section builds, a whole compound, "grand/epic/fancy", furnished rooms (bedroom/kitchen/library/great hall) → plan_build (the Architect authors a furnished, lit, terrain-fit blueprint; it builds additively without disturbing surroundings). When in doubt, prefer plan_build.
 - A follow-up that MODIFIES the build you just made ("make it taller", "raise the roof", "add a west tower", "remove the tower") → edit_build (non-destructive; only the changed part is touched).
 - Quick edits → fill_box / set_block / dig / clear_area / flatten.
+- WORLD-SHAPING / EARTHWORKS (carve or move terrain, NOT a built object → NEVER build_structure/plan_build): "tunnel / bore / dig into / dig through" (e.g. "tunnel into this mountain, 30 long, 5 diameter") → tunnel (it bores the way the speaker LOOKS; width=diameter, shape "round" unless they say square). "trench / ditch / cut / channel / slot" → trench. "hole / pit / excavate / dig down" → pit. "hollow out / gut / empty the inside" → hollow. "moat / dig a moat" → moat. Put length/width/height/depth from the request into the tool args; default origin "look" for "here"/"this".
 - FLAGS (named spatial markers): "flag A2 here" / "plant a flag called home" / "mark this as A2" → flag op:set (origin "look" for "here"). "list/show flags" → flag op:list. "remove/delete flag A2" → flag op:remove. "go to / teleport to flag A2" → flag op:goto.
 - "build a wall between A2 and B1" (two flag NAMES) → build_between (flagA=A2, flagB=B1). To build something AT a flag, use a normal build tool with origin:"flag" + flag:"A2".
 - REGIONS (rectangles defined with the Layout Wand): "build a castle in region 1" / "put a keep in Region 2" → build_in_region (region="region 1", goal=the build request). The build is anchored to the region and sized to fit it.
@@ -228,6 +249,21 @@ function resolveOrigin(args, speaker) {
 }
 const round = p => ({ x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) })
 
+// Horizontal travel unit for shaping ops: derived from (lookedAtBlock − speakerPos)
+// so a tunnel/trench/moat goes the way the speaker FACES, snapped to the dominant
+// axis for a clean grid-aligned cut. Falls back to +x if look/pos are unavailable.
+function lookDir(speaker) {
+  const sp = transport.speakerPos(speaker)
+  const l = lookTarget(speaker)
+  if (sp && l) {
+    let dx = l.x - sp.x, dz = l.z - sp.z
+    if (Math.abs(dx) >= Math.abs(dz)) { dx = dx < 0 ? -1 : 1; dz = 0 }
+    else { dz = dz < 0 ? -1 : 1; dx = 0 }
+    return { dx, dz }
+  }
+  return { dx: 1, dz: 0 }
+}
+
 async function dispatch(tool, args, speaker, message) {
   // Grok is QUIET about the *work* — no per-block/per-phase spam (that flood came from
   // the sendCommandFeedback gamerule, now disabled). But it STILL speaks the one short
@@ -260,6 +296,39 @@ async function dispatch(tool, args, speaker, message) {
     case 'fill_box': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 6), h = clamp(args.height, 0, 60, 4); hands.fillBox(o.x - r, o.y, o.z - r, o.x + r, o.y + h, o.z + r, args.block || 'stone'); break }
     case 'clear_area': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 12), h = clamp(args.height, 1, 60, 20); hands.clearArea(o.x, o.y, o.z, r, h); break }
     case 'flatten': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 12), h = clamp(args.height, 1, 60, 12); hands.fillBox(o.x - r, o.y, o.z - r, o.x + r, o.y + h, o.z + r, 'air'); hands.fillBox(o.x - r, o.y - 1, o.z - r, o.x + r, o.y - 1, o.z + r, B(args.floor, 'grass_block')); break }
+    case 'tunnel': {
+      const o = resolveOrigin(args, speaker); const { dx, dz } = lookDir(speaker)
+      const width = clamp(args.width, 1, 16, 5), height = clamp(args.height, 1, 16, width), length = clamp(args.length, 1, 64, 16)
+      const shape = /^sq|box|rect/i.test(String(args.shape || '')) ? 'square' : 'round'
+      const r = terrain.tunnel({ ox: o.x, oy: o.y, oz: o.z, dx, dz, length, width, height, shape })
+      log(`tunnel dir=(${dx},${dz}) ${shape} len=${length} w=${width} @(${o.x},${o.y},${o.z}) cells=${r.cells}`)
+      break
+    }
+    case 'trench': {
+      const o = resolveOrigin(args, speaker); const { dx, dz } = lookDir(speaker)
+      const r = terrain.trench({ x: o.x, y: o.y, z: o.z, dx, dz, length: clamp(args.length, 1, 64, 12), width: clamp(args.width, 1, 16, 3), depth: clamp(args.depth, 1, 32, 3), block: args.block ? B(args.block, 'stone') : null })
+      log(`trench dir=(${dx},${dz}) len=${r.length} w=${r.width} d=${r.depth} @(${o.x},${o.y},${o.z}) cells=${r.cells}`)
+      break
+    }
+    case 'pit': {
+      const o = resolveOrigin(args, speaker)
+      const radius = args.radius != null ? clamp(args.radius, 1, 16, 4) : null
+      const r = terrain.pit({ x: o.x, y: o.y, z: o.z, radius, width: clamp(args.width, 1, 32, 6), length: clamp(args.length, 1, 32, 6), depth: clamp(args.depth, 1, 32, 5) })
+      log(`pit ${r.shape} depth=${r.depth} @(${o.x},${o.y},${o.z}) cells=${r.cells}`)
+      break
+    }
+    case 'hollow': {
+      const o = resolveOrigin(args, speaker); const rad = clamp(args.radius, 1, 16, 5), h = clamp(args.height, 1, 16, 5)
+      const r = terrain.hollow({ x1: o.x - rad, y1: o.y, z1: o.z - rad, x2: o.x + rad, y2: o.y + h, z2: o.z + rad })
+      log(`hollow @(${o.x},${o.y},${o.z}) rad=${rad} h=${h} shell=${r.shell} cells=${r.cells}`)
+      break
+    }
+    case 'moat': {
+      const o = resolveOrigin(args, speaker); const { dx, dz } = lookDir(speaker)
+      const r = terrain.moat({ x: o.x, y: o.y, z: o.z, dx, dz, length: clamp(args.length, 1, 64, 16), width: clamp(args.width, 1, 16, 3), depth: clamp(args.depth, 1, 32, 3), water: args.water !== false })
+      log(`moat dir=(${dx},${dz}) len=${r.length} w=${r.width} d=${r.depth} water=${r.water} @(${o.x},${o.y},${o.z}) cells=${r.cells}`)
+      break
+    }
     case 'build_structure': {
       pendingBuild = null
       aborted = false               // fresh build → clear any prior interrupt
@@ -482,6 +551,12 @@ async function runEdit(args, speaker) {
 }
 
 // ---- start the selected transport: wire the shared chat handler + greeting. ----
-const GREETING = `${USERNAME} here (${transport.name}, ${hands.godmode ? 'godmode on' : 'survival'}) — try "build a big detailed castle here"${transport.followsSupported ? ' or "follow me"' : ''}`
-Promise.resolve(transport.start({ onChat, greeting: GREETING }))
-  .catch(e => { log('transport start failed:', e.message); process.exit(1) })
+// Guarded so the module can be `require`d (e.g. by an offline router test) to reach
+// SYS / NEUTRAL_TOOLS / the router client WITHOUT connecting to a server.
+if (require.main === module) {
+  const GREETING = `${USERNAME} here (${transport.name}, ${hands.godmode ? 'godmode on' : 'survival'}) — try "build a big detailed castle here"${transport.followsSupported ? ' or "follow me"' : ''}`
+  Promise.resolve(transport.start({ onChat, greeting: GREETING }))
+    .catch(e => { log('transport start failed:', e.message); process.exit(1) })
+}
+
+module.exports = { SYS, NEUTRAL_TOOLS, routerLLM, ROUTER_MODEL, askOneShot, world }
