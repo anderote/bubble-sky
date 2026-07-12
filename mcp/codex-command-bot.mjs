@@ -100,6 +100,7 @@ let visibility = process.env.CODEX_CHAT_VISIBILITY || "public";
 let flightAnchor = null;
 let flightAnchorBusy = false;
 let airborneFollowNextAt = 0;
+let groundFollowSettleBusy = false;
 let stopping = false;
 
 process.on("SIGTERM", shutdown);
@@ -165,7 +166,7 @@ bot.on("physicsTick", () => {
     return;
   }
 
-  clearAirborneFollow();
+  settleAirborneFollow(followTarget, player, distance);
   if (distance > 3) {
     bot.pathfinder.setGoal(new goals.GoalFollow(player, 2), true);
   }
@@ -2263,6 +2264,29 @@ function clearAirborneFollow() {
   stopCreativeFlight().catch((error) => {
     console.error(`failed to stop creative flight: ${error.message}`);
   });
+}
+
+function settleAirborneFollow(targetName, player, distance) {
+  if (!flightAnchor && airborneFollowNextAt === 0) return;
+  flightAnchor = null;
+  airborneFollowNextAt = 0;
+
+  if (!bot.creative || groundFollowSettleBusy) return;
+  groundFollowSettleBusy = true;
+  (async () => {
+    try {
+      const verticalGap = Math.abs(bot.entity.position.y - player.position.y);
+      if (distance > 4 || verticalGap > 2) {
+        bot.chat(`/tp ${username} ${targetName}`);
+        await wait(Number(process.env.CODEX_PLAYER_TP_WAIT_MS || 700));
+      }
+      await stopCreativeFlight();
+    } catch (error) {
+      console.error(`failed to settle grounded follow: ${error.message}`);
+    } finally {
+      groundFollowSettleBusy = false;
+    }
+  })();
 }
 
 async function maintainFlightNearTarget(targetName, fallbackPosition = null) {
