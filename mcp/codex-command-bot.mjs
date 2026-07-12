@@ -30,6 +30,17 @@ const helpLines = [
   "jump",
   "spin",
 ];
+const botLoopPatterns = [
+  /^help$/,
+  /^hi$/,
+  /^hello$/,
+  /^hey$/,
+  /^say ["']?help["']?/,
+  /tell you what i can do/,
+  /what i can do/,
+  /try @/,
+  /tag @/,
+];
 
 const bot = mineflayer.createBot({
   host,
@@ -64,6 +75,12 @@ bot.on("chat", async (speaker, message) => {
   }
 
   console.log(`<${speaker}> ${message}`);
+  if (isBotLoopChatter(speaker, command)) {
+    recordHistory({ type: "observed", speaker, text: message });
+    console.log(`ignored bot loop chatter from ${speaker}: ${command}`);
+    return;
+  }
+
   if (shouldRecordPrompt(command)) {
     recordHistory({ type: "prompt", speaker, text: command, raw: message });
   }
@@ -365,6 +382,13 @@ function looksLikeLlmConversation(speaker, message) {
   const lowerMessage = message.toLowerCase();
   if (llmPlayers.includes(lowerSpeaker)) return true;
   return /@(?:codex|grok|claude|claudebot)\b/i.test(lowerMessage);
+}
+
+function isBotLoopChatter(speaker, command) {
+  if (!llmPlayers.includes(speaker.toLowerCase())) return false;
+
+  const lower = command.toLowerCase();
+  return botLoopPatterns.some((pattern) => pattern.test(lower));
 }
 
 function shouldRecordPrompt(command) {
