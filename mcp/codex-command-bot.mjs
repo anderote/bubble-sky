@@ -455,6 +455,13 @@ function runCommandRoutingSelfTest() {
         shouldUseContextFreeformContinuation("make your drone finish the wall tower"),
     },
     {
+      name: "delegated castle wall route",
+      pass: selfTestArchitectRoute(
+        "build a defensive wall here with a tower on each end, delegate one tower to your drone",
+        (action) => action?.action === "castle_wall",
+      ),
+    },
+    {
       name: "alone visibility command",
       pass: visibilityCommandValue(addressedCommand("@codex visibility alone") || "") === "alone" &&
         visibilityCommandValue(addressedCommand("@codex alone") || "") === "alone",
@@ -471,6 +478,11 @@ function runCommandRoutingSelfTest() {
     process.exit(1);
   }
   console.log(`command routing selftest passed (${cases.length} cases)`);
+}
+
+function selfTestArchitectRoute(text, predicate) {
+  const command = normalizeCommand(text);
+  return predicate(interpretArchitectCommand(command.toLowerCase()));
 }
 
 function selfTestHistoryVisibilityFallback() {
@@ -613,7 +625,7 @@ function interpretArchitectCommand(lower) {
 
   if (/\b(build|make|create|construct|spawn|summon|freestyle)\b/.test(lower) &&
       /\b(wall|walls|rampart|battlement|battlements)\b/.test(lower) &&
-      /\b(castle|fortress|fort|two towers|towers)\b/.test(lower)) {
+      /\b(castle|fortress|fort|two towers|towers|tower on each end|tower at each end|tower on both ends|tower at both ends|defensive)\b/.test(lower)) {
     return { action: "castle_wall" };
   }
 
