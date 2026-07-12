@@ -24,6 +24,7 @@ const helpLines = [
   "where",
   "come [player]",
   "follow [player|me]",
+  "escort me to <x>,<z>",
   "look at [player|me]",
   "go to <x> <y> <z>",
   "stop",
@@ -53,6 +54,7 @@ const bot = mineflayer.createBot({
 bot.loadPlugin(pathfinder);
 
 let followTarget = null;
+let escort = null;
 let movements = null;
 let visibility = process.env.CODEX_CHAT_VISIBILITY || "public";
 
@@ -91,6 +93,11 @@ bot.on("chat", async (speaker, message) => {
 });
 
 bot.on("physicsTick", () => {
+  if (escort) {
+    tickEscort();
+    return;
+  }
+
   if (!followTarget) return;
   const player = bot.players[followTarget]?.entity;
   if (!player) return;
@@ -188,6 +195,7 @@ async function runCommand(speaker, commandText) {
 
   if (lower === "stop") {
     followTarget = null;
+    escort = null;
     bot.pathfinder.stop();
     clearControls();
     say("stopped");
@@ -197,8 +205,28 @@ async function runCommand(speaker, commandText) {
   const goToMatch = lower.match(/^(?:go to|move to|walk to)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/);
   if (goToMatch) {
     const [, x, y, z] = goToMatch;
+    followTarget = null;
+    escort = null;
     bot.pathfinder.setGoal(new goals.GoalNear(Number(x), Number(y), Number(z), 2));
     say(`going to ${Number(x).toFixed(1)}, ${Number(y).toFixed(1)}, ${Number(z).toFixed(1)}`);
+    return;
+  }
+
+  const escortMatch = matchEscortCommand(lower);
+  if (escortMatch) {
+    const targetName = resolveTargetName(escortMatch.playerName, speaker);
+    requirePlayer(targetName);
+    followTarget = null;
+    escort = {
+      playerName: targetName,
+      x: escortMatch.x,
+      y: escortMatch.y,
+      z: escortMatch.z,
+      lastGoalKey: null,
+      lastMessageAt: 0,
+    };
+    say(`escorting ${targetName} to ${formatDestination(escort)}`);
+    tickEscort();
     return;
   }
 
@@ -206,6 +234,8 @@ async function runCommand(speaker, commandText) {
   if (comeMatch || lower === "come here") {
     const targetName = resolveTargetName(comeMatch?.[1], speaker);
     const player = requirePlayer(targetName);
+    followTarget = null;
+    escort = null;
     bot.pathfinder.setGoal(new goals.GoalNear(player.position.x, player.position.y, player.position.z, 2));
     say(`coming to ${targetName}`);
     return;
@@ -215,6 +245,7 @@ async function runCommand(speaker, commandText) {
   if (followMatch) {
     const targetName = resolveTargetName(followMatch[1], speaker);
     requirePlayer(targetName);
+    escort = null;
     followTarget = targetName;
     say(`following ${targetName}`);
     return;
@@ -246,13 +277,99 @@ function requirePlayer(name) {
 
 function resolveTargetName(target, speaker) {
   const name = (target || "me").trim();
-  if (!name || name === "me" || name === "here") return speaker;
+  if (!name || name === "me" || name === "us" || name === "here") return speaker;
   return findPlayerName(name) || name;
 }
 
 function findPlayerName(name) {
   const lower = name.toLowerCase();
   return Object.keys(bot.players).find((playerName) => playerName.toLowerCase() === lower);
+}
+
+function matchEscortCommand(command) {
+  const commandMatch = command.match(/^(?:escort|lead|guide|bring|take)\s+(?:(me|us|[a-z0-9_]+)\s+)?(?:to\s+)?(.+)$/i);
+  if (!commandMatch) return null;
+
+  const coordinates = parseCoordinates(commandMatch[2]);
+  if (!coordinates) return null;
+
+  return {
+    playerName: commandMatch[1] || "me",
+    ...coordinates,
+  };
+}
+
+function parseCoordinates(text) {
+  const numbers = text.match(/-?\d+(?:\.\d+)?/g)?.map(Number) || [];
+  if (numbers.length === 2) {
+    const [x, z] = numbers;
+    return { x, y: null, z };
+  }
+  if (numbers.length === 3) {
+    const [x, y, z] = numbers;
+    return { x, y, z };
+  }
+  return null;
+}
+
+function tickEscort() {
+  const player = bot.players[escort.playerName]?.entity;
+  if (!player) {
+    sayThrottled(`I cannot see ${escort.playerName}; escort paused.`, escort);
+    return;
+  }
+
+  const playerDestinationDistance = distanceToDestination(player.position, escort);
+  const botDestinationDistance = distanceToDestination(bot.entity.position, escort);
+  if (playerDestinationDistance <= 5 && botDestinationDistance <= 8) {
+    say(`arrived at ${formatDestination(escort)}`);
+    escort = null;
+    bot.pathfinder.stop();
+    clearControls();
+    return;
+  }
+
+  const playerDistance = bot.entity.position.distanceTo(player.position);
+  if (playerDistance > 10) {
+    setEscortGoal(
+      new goals.GoalNear(player.position.x, player.position.y, player.position.z, 3),
+      `player:${player.position.floored().toString()}`,
+    );
+    sayThrottled(`waiting for ${escort.playerName}`, escort);
+    return;
+  }
+
+  if (escort.y === null) {
+    setEscortGoal(new goals.GoalNearXZ(escort.x, escort.z, 3), `xz:${escort.x},${escort.z}`);
+  } else {
+    setEscortGoal(new goals.GoalNear(escort.x, escort.y, escort.z, 3), `xyz:${escort.x},${escort.y},${escort.z}`);
+  }
+}
+
+function setEscortGoal(goal, key) {
+  if (escort.lastGoalKey === key) return;
+  escort.lastGoalKey = key;
+  bot.pathfinder.setGoal(goal);
+}
+
+function sayThrottled(message, state, intervalMs = 10000) {
+  const now = Date.now();
+  if (now - state.lastMessageAt < intervalMs) return;
+  state.lastMessageAt = now;
+  say(message);
+}
+
+function distanceToDestination(position, destination) {
+  const dx = position.x - destination.x;
+  const dz = position.z - destination.z;
+  if (destination.y === null) return Math.hypot(dx, dz);
+  const dy = position.y - destination.y;
+  return Math.hypot(dx, dy, dz);
+}
+
+function formatDestination(destination) {
+  if (destination.y === null) return `${destination.x.toFixed(1)}, ${destination.z.toFixed(1)}`;
+  return `${destination.x.toFixed(1)}, ${destination.y.toFixed(1)}, ${destination.z.toFixed(1)}`;
 }
 
 function showHelp(speaker) {
@@ -290,7 +407,11 @@ function showHistory(speaker, command) {
 
 function showStatus(speaker) {
   const entries = readHistory(5);
-  const target = followTarget ? `following ${followTarget}` : "idle";
+  const target = escort
+    ? `escorting ${escort.playerName} to ${formatDestination(escort)}`
+    : followTarget
+      ? `following ${followTarget}`
+      : "idle";
   say(`I am ${target} at ${formatPosition(bot.entity.position)}; visibility ${visibility}.`, { to: speaker, record: false });
 
   if (entries.length) {

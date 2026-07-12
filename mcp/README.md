@@ -58,6 +58,7 @@ players are asking the LLM bots and what they reply:
 ```text
 @codex help
 @codex follow me
+@codex escort me to -40,40
 @codex stop
 @codex say hello
 @codex history
@@ -107,4 +108,6 @@ Extra examples:
 @codex come to Andrew
 @codex look at me
 @codex go to 12 64 -8
+@codex bring me to -40,40
+@codex lead me to -40 72 40
 ```
