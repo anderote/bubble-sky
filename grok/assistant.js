@@ -53,13 +53,20 @@ const hands = makeHands({ enqueue, bot, log })
 const sctx = { enqueue, fillBox: hands.fillBox.bind(hands), B, clamp, set: (x, y, z, b) => hands.setBlock(x, y, z, b) }
 const structures = require('./structures')(sctx)
 const details = require('./detail')(sctx)
+const furniture = require('./furniture')(sctx)
 const makeSkills = require('./lib/skills')
-const skills = makeSkills({ hands, structures, details, B, clamp, log })
+const skills = makeSkills({ hands, structures, details, furniture, B, clamp, log })
+const { resolvePalette } = require('./palettes')
 
 // ---- architect + project memory ----
 const architect = require('./lib/architect')({ skills, log })
 const memory = require('./lib/memory')(path.join(DIR, 'memory'))
 const survey = require('./lib/survey')
+
+// ---- agent-native build pipeline (semantic blueprint → additive, site-aware
+// compiler → shared Codex job state). plan_build + edits route through here. ----
+const build = require('./lib/build')
+const BUILD_OUT = path.join(DIR, 'build-out')   // our own interop dir; NEVER Codex's live state.json
 
 log(`backend=${hands.name} (godmode=${hands.godmode}) router=${ROUTER_PROVIDER}/${ROUTER_MODEL} architect=${architect.PROVIDER}/${architect.MODEL}`)
 
@@ -69,12 +76,14 @@ const originProps = {
   x: { type: 'integer' }, y: { type: 'integer' }, z: { type: 'integer' }
 }
 const TOOLS = [
-  { type: 'function', function: { name: 'build_structure', description: 'Build ONE named structure (quick, single object). For a big/detailed/multi-section build (grand castle, mansion, cathedral, "make it fancy/detailed") use plan_build instead.',
+  { type: 'function', function: { name: 'build_structure', description: 'Build ONE named structure (quick, single BARE object — no interior furnishing). For anything FURNISHED, "nice", detailed, or multi-section (a furnished/nice house, grand castle, mansion, cathedral, "make it fancy/detailed", furnished rooms) use plan_build instead.',
     parameters: { type: 'object', properties: { kind: { type: 'string', enum: skills.buildKinds },
       ...originProps, size: { type: 'integer' }, width: { type: 'integer' }, length: { type: 'integer' }, height: { type: 'integer' }, radius: { type: 'integer' }, base: { type: 'integer' },
       material: { type: 'string' }, roof_material: { type: 'string' }, floor: { type: 'string' }, axis: { type: 'string', enum: ['x', 'z'] }, reply: { type: 'string' } }, required: ['kind'] } } },
-  { type: 'function', function: { name: 'plan_build', description: 'Escalate a large / detailed / multi-section build to the Architect (phased blueprint + detailing). Use for "big detailed castle", "grand X", follow-up edits to an existing build ("make it taller", "add a moat"), or anything that should have towers, roofs, trim, and lighting.',
+  { type: 'function', function: { name: 'plan_build', description: 'Escalate a large / detailed / multi-section build to the Architect (semantic blueprint → additive, site-aware build with towers, roofs, trim, furniture, lighting). Use for "big detailed castle", "grand X", furnished houses, anything that should be furnished + detailed.',
     parameters: { type: 'object', properties: { goal: { type: 'string', description: 'the full build request in the user\'s words' }, ...originProps, reply: { type: 'string' } }, required: ['goal'] } } },
+  { type: 'function', function: { name: 'edit_build', description: 'Incrementally + NON-DESTRUCTIVELY edit the ACTIVE build (a follow-up that modifies what was just built): "make it taller / raise the roof", "add a west tower", "remove the tower". Touches only the changed region, leaves the rest standing.',
+    parameters: { type: 'object', properties: { op: { type: 'string', enum: ['raise_roof', 'add_tower', 'remove_region'] }, side: { type: 'string', enum: ['north', 'south', 'east', 'west'] }, amount: { type: 'integer', description: 'blocks to raise (raise_roof)' }, region: { type: 'string', description: 'region id to remove (remove_region)' }, reply: { type: 'string' } }, required: ['op'] } } },
   { type: 'function', function: { name: 'fill_box', description: 'Fill a solid box of one block, sized by radius/height around an origin.',
     parameters: { type: 'object', properties: { ...originProps, block: { type: 'string' }, radius: { type: 'integer' }, height: { type: 'integer' }, reply: { type: 'string' } }, required: ['block'] } } },
   { type: 'function', function: { name: 'set_block', description: 'Place a single block. Target = the block the speaker looks at ("here") or explicit x,y,z.',
@@ -96,8 +105,9 @@ const TOOLS = [
 const SYS = `You are ${USERNAME}, a warm, genuinely helpful AI assistant living in a Minecraft world (creative, 1.21.6) with OPERATOR powers (edits are instant). Players talk in natural language; you act by calling exactly ONE tool.
 You receive the message plus a JSON world-state: your position, nearby players/entities/resources, inventory, biome, and speakerLookingAt = the block coordinates the speaker is currently looking at.
 Guidance:
-- "build a house/tower/wall/bridge/pyramid/dome here" → build_structure (pick kind; origin "look" for "here").
-- Anything BIG or DETAILED, a whole compound, "grand/epic/fancy/detailed", or a follow-up that edits an existing build ("make it taller", "add a moat", "add towers") → plan_build (the Architect makes a phased, detailed blueprint).
+- A quick BARE structure ("just a plain house/tower/wall/bridge/pyramid/dome here", no interior) → build_structure (pick kind; origin "look" for "here").
+- Anything FURNISHED or "nice/good/detailed", a home someone could live in, BIG or multi-section builds, a whole compound, "grand/epic/fancy", furnished rooms (bedroom/kitchen/library/great hall) → plan_build (the Architect authors a furnished, lit, terrain-fit blueprint; it builds additively without disturbing surroundings). When in doubt, prefer plan_build.
+- A follow-up that MODIFIES the build you just made ("make it taller", "raise the roof", "add a west tower", "remove the tower") → edit_build (non-destructive; only the changed part is touched).
 - Quick edits → fill_box / set_block / dig / clear_area / flatten.
 - Movement/teleport → move. Time/weather/give → world_cmd.
 - Questions & chit-chat ("where are you", "what's nearby", "what can you do") → answer, using world-state.
@@ -105,6 +115,11 @@ Default origin to "look" when they say "here" or "where I'm looking". Pick sensi
 
 bot.once('spawn', () => {
   log('spawned at', bot.entity.position)
+  // QUIET the build: /fill + /setblock otherwise broadcast "Successfully filled…" /
+  // "Changed the block at…" to every op on EVERY command. Silence that feedback so
+  // Grok builds without flooding chat. (Grok still speaks via its own say() for answers.)
+  bot.chat('/gamerule sendCommandFeedback false')
+  bot.chat('/gamerule logAdminCommands false')
   const m = new Movements(bot); m.allowSprinting = true; m.canDig = false
   bot.pathfinder.setMovements(m)
   bot.chat(`${USERNAME} here (${hands.godmode ? 'godmode on' : 'survival'}) — try "build a big detailed castle here" or "follow me"`)
@@ -188,11 +203,15 @@ function resolveOrigin(args, speaker) {
 const round = p => ({ x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) })
 
 async function dispatch(tool, args, speaker) {
-  if (args.reply) say(args.reply)
+  // Grok is QUIET about the *work* — no per-block/per-phase spam (that flood came from
+  // the sendCommandFeedback gamerule, now disabled). But it STILL speaks the one short
+  // acknowledgement line the model wrote, so it never feels mute to a command.
+  // `answer` says its own reply below; plan_build emits its own start/finish lines.
+  if (args.reply && tool !== 'answer' && tool !== 'plan_build' && tool !== 'edit_build') say(args.reply)
   const p = bot.entity.position
   const spEnt = bot.players[speaker]?.entity
   switch (tool) {
-    case 'answer': break
+    case 'answer': say(args.reply); break
     case 'move': {
       const mode = args.mode
       if (mode === 'come' || mode === 'follow') { followTarget = args.player || speaker; const e = bot.players[followTarget]?.entity; if (e) bot.pathfinder.setGoal(new goals.GoalFollow(e, 2), true) }
@@ -215,9 +234,9 @@ async function dispatch(tool, args, speaker) {
       else { const o = resolveOrigin({ here: true, x: args.x, y: args.y, z: args.z }, speaker); hands.dig(o.x, o.y, o.z) }
       break
     }
-    case 'fill_box': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 6), h = clamp(args.height, 0, 60, 4); const n = hands.fillBox(o.x - r, o.y, o.z - r, o.x + r, o.y + h, o.z + r, args.block || 'stone'); say(args.reply ? null : `filled a ${2 * r + 1}-wide box (${n} ops)`); break }
-    case 'clear_area': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 12), h = clamp(args.height, 1, 60, 20); const n = hands.clearArea(o.x, o.y, o.z, r, h); if (!args.reply) say(`clearing a ${2 * r + 1}-wide area (${n} ops)`); break }
-    case 'flatten': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 12), h = clamp(args.height, 1, 60, 12); hands.fillBox(o.x - r, o.y, o.z - r, o.x + r, o.y + h, o.z + r, 'air'); hands.fillBox(o.x - r, o.y - 1, o.z - r, o.x + r, o.y - 1, o.z + r, B(args.floor, 'grass_block')); if (!args.reply) say(`flattened a ${2 * r + 1}-wide platform`); break }
+    case 'fill_box': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 6), h = clamp(args.height, 0, 60, 4); hands.fillBox(o.x - r, o.y, o.z - r, o.x + r, o.y + h, o.z + r, args.block || 'stone'); break }
+    case 'clear_area': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 12), h = clamp(args.height, 1, 60, 20); hands.clearArea(o.x, o.y, o.z, r, h); break }
+    case 'flatten': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 12), h = clamp(args.height, 1, 60, 12); hands.fillBox(o.x - r, o.y, o.z - r, o.x + r, o.y + h, o.z + r, 'air'); hands.fillBox(o.x - r, o.y - 1, o.z - r, o.x + r, o.y - 1, o.z + r, B(args.floor, 'grass_block')); break }
     case 'build_structure': {
       const o = resolveOrigin(args, speaker)
       let kind = B(args.kind, 'house')
@@ -229,6 +248,7 @@ async function dispatch(tool, args, speaker) {
       break
     }
     case 'plan_build': await runProject(args, speaker); break
+    case 'edit_build': await runEdit(args, speaker); break
     default: log('unknown tool', tool)
   }
 }
@@ -262,7 +282,8 @@ async function executePlan(state, origin, fr) {
     const structural = /found|shell|wall|tower|keep|base|floor/i.test(ph.phase)
     const before = structural ? survey.observe(bot, origin, fr, yLo, yHi) : null
     let phaseEmit = 0
-    for (const step of ph.steps) { const r = skills.run(step, { origin: state.plan.origin }); if (r.ok) { state.okSteps++; phaseEmit += (r.n || 1) } else state.failSteps++ }
+    const runDefaults = { origin: state.plan.origin, palette: state.plan.palette }
+    for (const step of ph.steps) { const r = skills.run(step, runDefaults); if (r.ok) { state.okSteps++; phaseEmit += (r.n || 1) } else state.failSteps++ }
     state.emitted += phaseEmit
     await queueIdle()
     // observe: did this section actually add structure? Settle first so the
@@ -275,13 +296,11 @@ async function executePlan(state, origin, fr) {
       const readEmpty = after.solid <= before.solid && after.solid / (after.total || 1) < 0.06
       if (readEmpty && phaseEmit < 3) {
         log(`phase "${ph.phase}" empty (read ${before.solid}->${after.solid}, emitted ${phaseEmit}); repairing once`)
-        for (const step of ph.steps) skills.run(step, { origin: state.plan.origin }); await queueIdle()
+        for (const step of ph.steps) skills.run(step, runDefaults); await queueIdle()
       } else log(`phase "${ph.phase}" ok (read ${before.solid}->${after.solid}, emitted ${phaseEmit} ops)`)
     }
     state.done.push(ph.phase)
-    const next = phases[state.cursor + 1]
-    say(`${cap(ph.phase)} done${next ? `, starting ${next.phase}…` : '.'}`)
-    await sleep(550)   // deliberate pacing between sections
+    await sleep(400)   // deliberate pacing between sections (silent)
   }
 }
 
@@ -297,49 +316,90 @@ function verifyBuild(bp, origin, fr, wallH, tally) {
   return { ok: true, fill: +overall.ratio.toFixed(3), emitted: tally ? tally.emitted : null, via: builtByWorld ? 'world+exec' : 'exec' }
 }
 
-async function runProject(args, speaker) {
-  const o = resolveOrigin(args, speaker)
-  const mem = memory.context()
-  const isFollowUp = !!mem && !(args.here || args.origin || args.x != null)
-  const origin0 = isFollowUp ? mem.origin : o
+// Validate + sanitize every block name/state in a blueprint against the real block
+// registry (auto-repair pass). Unknown blocks fall back to the nearest palette role
+// so a hallucinated block never breaks the build. Keeps blockstate suffixes intact.
+function sanitizePlan(bp) {
+  let mcData; try { mcData = require('minecraft-data')(bot.version) } catch { return 0 }
+  const known = mcData.blocksByName || {}
+  const P = resolvePalette(bp.palette)
+  const roleFor = (key) => {
+    if (/roof/.test(key)) return P.roof
+    if (/floor/.test(key)) return P.floor
+    if (/trim/.test(key)) return P.trim
+    if (/accent/.test(key)) return P.accent
+    if (/glass|window/.test(key)) return P.glass
+    if (/light|lantern|torch/.test(key)) return P.light
+    return P.wall
+  }
+  let fixed = 0
+  const fix = (val, key) => {
+    if (typeof val !== 'string') return val
+    const clean = val.toLowerCase().replace(/^minecraft:/, '').trim()
+    const base = clean.replace(/\[.*$/, '').replace(/[^a-z0-9_]/g, '')
+    const state = clean.includes('[') ? clean.slice(clean.indexOf('[')) : ''
+    if (base && known[base]) return val
+    // a plain "<name>" that only exists as "<name>_block" (e.g. quartz -> quartz_block)
+    if (base && known[base + '_block']) { fixed++; return base + '_block' + state }
+    const repl = P[key] || roleFor(key)
+    fixed++
+    return String(repl) + state
+  }
+  for (const ph of bp.phases || []) for (const st of ph.steps || []) {
+    const a = st.args || {}
+    for (const k of ['block', 'material', 'roof_material', 'floor', 'trim', 'wall', 'accent', 'glass', 'light', 'frame', 'sill']) {
+      if (a[k] != null) a[k] = fix(a[k], k)
+    }
+  }
+  if (bp.palette && typeof bp.palette === 'object') for (const [k, v] of Object.entries(bp.palette)) bp.palette[k] = fix(v, k)
+  return fixed
+}
 
-  // 1) SURVEY the terrain before planning.
-  say('Let me look over the site…')
+// plan_build → AGENT-NATIVE PIPELINE: survey → Architect authors a Layer-A
+// semantic blueprint → anchor to terrain → compile → additive diff vs the live
+// world → godmode realize (only the differing cells). Non-destructive: nothing
+// outside the design is touched. Preserves quiet mode + the single start/finish
+// chat lines. Also emits a shared state.json + .schem under build-out/ (NEVER
+// Codex's live state.json) for interop.
+async function runProject(args, speaker) {
+  const origin0 = resolveOrigin(args, speaker)
+  // 1) SURVEY the terrain before planning. (silent)
   const site = survey.surveySite(bot, origin0, 20)
   log('site survey', JSON.stringify(site))
-  const origin = { x: origin0.x, y: (isFollowUp ? origin0.y : site.groundY + 1), z: origin0.z }
+  const origin = { x: origin0.x, y: site.groundY + 1, z: origin0.z }
 
-  // 2) ARCHITECT plans around the real terrain (+ any active project for edits).
-  say(isFollowUp ? 'Updating the existing build…' : `Site looks ${site.note}. Drawing up a plan…`)
-  let bp
-  try { bp = await architect.plan({ goal: args.goal || 'build something impressive', origin, memory: mem, site }) }
-  catch (e) { log('architect err', e.message); say('trouble planning that — try again?'); return }
-  bp.origin = origin
-  const v = bp._validation, fr = footprintRadius(bp)
-  log(`architect "${bp.project}" phases=${v.phases} steps=${v.steps} materials=${v.materials} detailing=${v.hasDetailing} ok=${v.ok} footprintR=${fr} palette=${JSON.stringify(bp.palette)}`)
-  say(`Plan: ${bp.project} — ${v.phases} phases. Foundation first…`)
+  say('Building that now…')   // the ONE start line for a multi-minute build
+  let summary
+  try {
+    summary = await build.planAndBuild(
+      { goal: args.goal || 'build something impressive', origin, memory: memory.context(), site,
+        terrainFit: 'follow', emit: true,
+        statePath: path.join(BUILD_OUT, 'state.json'), schemPath: path.join(BUILD_OUT, 'last.schem') },
+      { architect, bot, hands, survey, log, memory })
+  } catch (e) { log('build err', e.stack || e.message); say('Trouble building that — try again?'); return }
 
-  // 3) Observed goal loop, section by section.
-  const state = { goal: args.goal, plan: bp, cursor: 0, done: [] }
-  await executePlan(state, origin, fr)
+  log(`blueprint "${summary.project}" regions=${summary.regionCount} jobs=${summary.jobs} placed=${summary.placed} air=${summary.air} skipped=${summary.skipped} materials=${summary.materialCount} additive=${summary.additive}`)
+  if (summary.filled) log(`  realized: ${summary.filled.fills} /fill + ${summary.filled.sets} /setblock = ${summary.filled.ops} ops`)
+  await queueIdle()
 
-  // 4) VERIFY against the goal; re-plan the deficient part (bounded retries).
-  const wallH = 6
-  await sleep(700)   // let final block updates reach the bot before sampling
-  for (let tries = 0; tries < 1; tries++) {
-    const chk = verifyBuild(bp, origin, fr, wallH, state)
-    log('verify', JSON.stringify(chk))
-    if (chk.ok) { say('Looks solid — build reads as done.'); break }
-    say(`Not quite done — fixing ${chk.missing}.`)
-    let rep
-    try { rep = await architect.plan({ goal: args.goal, origin, memory: memory.context(), site, repair: chk }) }
-    catch (e) { log('repair err', e.message); break }
-    rep.origin = origin
-    await executePlan({ goal: args.goal, plan: rep, cursor: 0, done: state.done }, origin, fr)
-  }
+  // Persist the blueprint so edit_build follow-ups recompile the SAME build.
+  memory.save({ id: memory.active()?.id, project: summary.project, origin, palette: summary.blueprint.palette, phasesDone: summary.regions, goal: args.goal, blueprint: summary.blueprint })
+  say(`Done — ${summary.project} is up.`)   // the ONE finish line
+}
 
-  memory.save({ id: mem ? memory.active()?.id : undefined, project: bp.project, origin, palette: bp.palette, phasesDone: state.done, goal: args.goal })
-  say(`${bp.project} done — come take a look!`)
+// edit_build → incremental, non-destructive edit of the active blueprint.
+async function runEdit(args, speaker) {
+  const rec = memory.active()
+  if (!rec || !rec.blueprint) { say("I don't have an active build to edit — build something first."); return }
+  const op = { type: args.op, side: args.side, amount: args.amount, dy: args.amount, regionId: args.region }
+  say('On it…')
+  let s
+  try { s = await build.editBuild(op, rec.blueprint, { bot, hands, survey, log }) }
+  catch (e) { log('edit err', e.stack || e.message); say('Could not make that change.'); return }
+  await queueIdle()
+  log(`edit ${args.op} -> touched ${(s.touched || []).join(', ')} jobs=${s.jobs} placed=${s.placed}`)
+  memory.save({ id: rec.id, project: s.project, origin: rec.origin, palette: s.blueprint.palette, phasesDone: s.regions, goal: rec.goal, blueprint: s.blueprint })
+  say(`Done — ${(s.touched || ['build']).join(', ')} updated.`)
 }
 
 bot.on('kicked', r => log('KICKED', r)); bot.on('error', e => log('ERR', e.message)); bot.on('end', () => log('END'))
