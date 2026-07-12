@@ -15,4 +15,6 @@
 - Added a lightweight addressed-command bot for `@codex` chat commands on the shared server.
 - Updated command chat to be public by default, with runtime `public`, `private`, and `llm`
   visibility modes plus optional rich `/tellraw` formatting for opped bot accounts.
+- Added a tmux-backed swarm runner: `CodexBoss` plans cabin/watchtower builds and
+  `CodexDroneN` botfolk execute assigned jobs from `.codex-runtime/swarm/state.json`.
 - Blocked on full P3 mindcraft behavior until `mindcraft/upstream/keys.json` contains an `ANTHROPIC_API_KEY`.

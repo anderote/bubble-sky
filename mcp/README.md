@@ -126,3 +126,58 @@ Extra examples:
 @codex bring me to you
 @codex bring me to where codex is
 ```
+
+## Swarm builders
+
+The swarm runner starts one planner/boss bot plus drone botfolk. The boss listens
+for build requests, writes a shared plan under `.codex-runtime/swarm/state.json`,
+and drones execute their assigned block jobs.
+
+Start four drones plus `CodexBoss`:
+
+```sh
+./mcp/codex-swarm.sh start 4
+```
+
+In game:
+
+```text
+@swarm help
+@swarm build cabin
+@swarm build cabin at -40 72 40
+@swarm build watchtower
+@swarm status
+@swarm cancel
+```
+
+Operational commands:
+
+```sh
+./mcp/codex-swarm.sh status
+./mcp/codex-swarm.sh logs boss
+./mcp/codex-swarm.sh logs 1
+./mcp/codex-swarm.sh stop
+```
+
+The first implementation uses `/setblock` for reliable building, while drones
+still move near their assigned jobs so they appear to be working in-world. On an
+offline-mode vanilla/Fabric server, op the bot accounts before asking them to
+build:
+
+```text
+op CodexBoss
+op CodexDrone1
+op CodexDrone2
+op CodexDrone3
+op CodexDrone4
+```
+
+Environment knobs:
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| `CODEX_SWARM_COUNT` | `4` | Number of drone botfolk. |
+| `CODEX_SWARM_PREFIX` | `CodexDrone` | Drone username prefix. |
+| `CODEX_SWARM_BOSS` | `CodexBoss` | Planner username. |
+| `CODEX_SWARM_BUILD_MODE` | `command` | Uses `/setblock`; inventory mode is intentionally not implemented yet. |
+| `CODEX_SWARM_ANNOUNCE_ON_JOIN` | `0` | Keeps bot reconnects quiet by default. |
