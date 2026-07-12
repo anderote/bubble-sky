@@ -462,6 +462,27 @@ function runCommandRoutingSelfTest() {
       ),
     },
     {
+      name: "lava castle effect route",
+      pass: selfTestArchitectRoute(
+        "burn this castle with lava",
+        (action) => action?.action === "effect" && action.effect === "lava_burn",
+      ),
+    },
+    {
+      name: "delegated bridge vehicle route",
+      pass: selfTestArchitectRoute(
+        "build a bridge here with a semi truck on it and delegate the semi truck to your drone",
+        (action) => action?.action === "structure" &&
+          action.kind === "bridge" &&
+          action.delegateVehicle === true &&
+          action.vehicle === "semi_truck",
+      ),
+    },
+    {
+      name: "unsupported build uses freeform planner",
+      pass: shouldUseFreeformStructureBuilder("build a spaceship here"),
+    },
+    {
       name: "alone visibility command",
       pass: visibilityCommandValue(addressedCommand("@codex visibility alone") || "") === "alone" &&
         visibilityCommandValue(addressedCommand("@codex alone") || "") === "alone",
