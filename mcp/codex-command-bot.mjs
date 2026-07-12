@@ -348,6 +348,10 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
+  if (shouldUseFreeformStructureBuilder(lower) && await runFreeformStructureBuild(speaker, command)) {
+    return;
+  }
+
   if (["hi", "hello", "hey"].includes(lower)) {
     say(`hi ${speaker}. Try @${primaryHandle} help.`);
     return;
@@ -674,6 +678,111 @@ function normalizeArchitectAction(parsed) {
     };
   }
   return { action: parsed.action };
+}
+
+function shouldUseFreeformStructureBuilder(lower) {
+  if (!codexCliEnabled) return false;
+  if (!/\b(build|make|create|construct|spawn|summon|freestyle)\b/.test(lower)) return false;
+  if (/\b(delete|destroy|demolish|remove|burn|flood|freeze|curse)\b/.test(lower)) return false;
+  return /\b(here|near me|by me|for me|at me|in front|next to|beside|drone|delegate|build|structure|thing|object|statue|vehicle|ship|spaceship|sword|tree|robot|dragon|portal|temple|arena|garden|boat|car|truck)\b/.test(lower);
+}
+
+async function runFreeformStructureBuild(speaker, command) {
+  const playerPosition = await resolvePlayerPosition(speaker, { teleportToPlayer: true });
+  const playerName = findPlayerName(speaker) || speaker;
+  const player = bot.players[playerName]?.entity;
+  const origin = blockPosition(playerPosition);
+  const direction = bridgeDirection(player, command);
+  const outputPath = path.join(os.tmpdir(), `codex-freeform-build-${process.pid}-${Date.now()}.json`);
+  const prompt = freeformBuildPrompt(speaker, command, origin, direction);
+
+  try {
+    await runCodexCli(prompt, outputPath, Math.max(codexCliTimeoutMs, 18000));
+    const parsed = parseJsonObject(fs.readFileSync(outputPath, "utf8"));
+    const commands = validateFreeformBuildCommands(parsed?.commands, origin);
+    if (!commands.length) return false;
+
+    const name = compact(parsed?.name || "freeform structure").slice(0, 60) || "freeform structure";
+    const delegate = Boolean(parsed?.delegate) || /\b(delegate|drone|codexdrone)\b/i.test(command);
+    if (delegate) {
+      const jobs = structureJobsFromCommands(commands, delegatedDroneName, "freeform");
+      say(`delegating ${name} at ${formatBlockPosition(origin)} to ${delegatedDroneName}`);
+      summonDroneToBuildSite(origin);
+      writeDelegatedState({
+        taskId: `codex-freeform-${Date.now()}`,
+        structure: name,
+        origin,
+        jobs,
+      });
+      return true;
+    }
+
+    say(`building ${name} at ${formatBlockPosition(origin)}`);
+    await sendCommandBatch(commands);
+    say(`${name} complete around ${formatBlockPosition(origin)}`);
+    return true;
+  } catch (error) {
+    console.error(`freeform build planner failed: ${error.message}`);
+    return false;
+  } finally {
+    fs.rmSync(outputPath, { force: true });
+  }
+}
+
+function freeformBuildPrompt(speaker, command, origin, direction) {
+  return [
+    "You are planning a small Minecraft build for an in-game bot.",
+    "Return only compact JSON. No markdown.",
+    "JSON shape: {\"name\":\"short build name\",\"delegate\":false,\"commands\":[\"/fill ...\",\"/setblock ...\"]}",
+    "Commands must be absolute Minecraft commands using only /fill or /setblock.",
+    "Use at most 55 commands. Use only vanilla block ids or block states with no spaces.",
+    "Stay inside this box:",
+    `x ${origin.x - 24}..${origin.x + 24}, y ${origin.y - 4}..${origin.y + 32}, z ${origin.z - 24}..${origin.z + 24}.`,
+    "Prefer visible, recognizable silhouettes over huge solid cubes. Use air fills first only when needed.",
+    "Do not use entities, particles, execute, summon, command blocks, redstone clocks, lava, fire, water, or TNT.",
+    `Player: ${speaker}`,
+    `Origin near player feet: ${formatBlockPosition(origin)}`,
+    `Facing axis: ${direction.axis}, dx ${direction.dx}, dz ${direction.dz}`,
+    `Request: ${JSON.stringify(command)}`,
+  ].join("\n");
+}
+
+function validateFreeformBuildCommands(commands, origin) {
+  if (!Array.isArray(commands)) return [];
+  return commands
+    .map((command) => compact(command))
+    .filter((command) => isValidFreeformBuildCommand(command, origin))
+    .slice(0, 55);
+}
+
+function isValidFreeformBuildCommand(command, origin) {
+  const blockPattern = "[a-z0-9_:\\[\\]=,]+";
+  const fill = command.match(new RegExp(`^/fill\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(${blockPattern})$`));
+  if (fill) {
+    const [, x1, y1, z1, x2, y2, z2] = fill.map((part) => part);
+    return coordinatesInsideBuildBox([x1, y1, z1, x2, y2, z2].map(Number), origin);
+  }
+
+  const setblock = command.match(new RegExp(`^/setblock\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(${blockPattern})$`));
+  if (setblock) {
+    const [, x, y, z] = setblock.map((part) => part);
+    return coordinatesInsideBuildBox([x, y, z].map(Number), origin);
+  }
+
+  return false;
+}
+
+function coordinatesInsideBuildBox(values, origin) {
+  if (values.some((value) => !Number.isInteger(value))) return false;
+  for (let i = 0; i < values.length; i += 3) {
+    const x = values[i];
+    const y = values[i + 1];
+    const z = values[i + 2];
+    if (x < origin.x - 24 || x > origin.x + 24) return false;
+    if (y < origin.y - 4 || y > origin.y + 32) return false;
+    if (z < origin.z - 24 || z > origin.z + 24) return false;
+  }
+  return true;
 }
 
 function extractResponseText(data) {
