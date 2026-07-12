@@ -1,6 +1,7 @@
 package net.bubblesky.towerdefense.client;
 
 import net.bubblesky.towerdefense.TowerDefenseMod;
+import net.bubblesky.towerdefense.client.render.FlagArrowEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TdBipedEntityRenderer;
 import net.bubblesky.towerdefense.client.screen.TowerDefenseScreen;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
@@ -46,6 +47,9 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		bind(ModEntities.MAN_AT_ARMS, "man_at_arms");
 		bind(ModEntities.UNDEAD_SOLDIER, "undead_soldier");
 		bind(ModEntities.HEAVY_KNIGHT, "heavy_knight");
+
+		// Flag Bow's arrow: rendered as a vanilla-looking arrow in flight.
+		EntityRendererRegistry.register(ModEntities.FLAG_ARROW, FlagArrowEntityRenderer::new);
 
 		// Acid renders as a translucent green liquid.
 		BlockRenderLayerMap.putBlock(ModBlocks.ACID, BlockRenderLayer.TRANSLUCENT);

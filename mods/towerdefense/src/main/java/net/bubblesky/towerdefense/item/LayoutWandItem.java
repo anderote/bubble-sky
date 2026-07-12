@@ -3,20 +3,17 @@ package net.bubblesky.towerdefense.item;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import net.bubblesky.towerdefense.layout.FlagMarker;
 import net.bubblesky.towerdefense.layout.LayoutStore;
 import net.bubblesky.towerdefense.registry.ModItems;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.ItemUsageContext;
 import net.minecraft.particle.DustParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.command.CommandOutput;
-import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
@@ -61,12 +58,6 @@ public class LayoutWandItem extends Item {
 	/** Pending region corner-A per player (cleared when the region is saved or reset). */
 	private static final Map<UUID, BlockPos> PENDING_CORNER = new HashMap<>();
 
-	private static final Block[] MARKER_WOOLS = {
-		Blocks.RED_WOOL, Blocks.ORANGE_WOOL, Blocks.YELLOW_WOOL, Blocks.LIME_WOOL,
-		Blocks.LIGHT_BLUE_WOOL, Blocks.MAGENTA_WOOL, Blocks.PINK_WOOL, Blocks.CYAN_WOOL,
-		Blocks.PURPLE_WOOL, Blocks.WHITE_WOOL
-	};
-
 	public LayoutWandItem(Settings settings) {
 		super(settings);
 	}
@@ -90,7 +81,7 @@ public class LayoutWandItem extends Item {
 		}
 		// Plant at the empty cell adjacent to the clicked face (top face → on top).
 		BlockPos pos = context.getBlockPos().offset(context.getSide());
-		String dim = dimensionId(serverWorld);
+		String dim = FlagMarker.dimensionId(serverWorld);
 
 		if (player.isSneaking()) {
 			plantFlag(serverWorld, player, pos, dim);
@@ -101,10 +92,9 @@ public class LayoutWandItem extends Item {
 	}
 
 	private void plantFlag(ServerWorld world, ServerPlayerEntity player, BlockPos pos, String dim) {
-		String letter = initialOf(player.getName().getString());
+		String letter = FlagMarker.initialOf(player.getName().getString());
 		String name = LayoutStore.nextFlagName(letter);
-		LayoutStore.putFlag(name, pos.getX(), pos.getY(), pos.getZ(), dim);
-		placeMarker(world, name, pos);
+		FlagMarker.plantFlag(world, pos, name, dim);
 		player.sendMessage(Text.literal("Planted flag ")
 			.append(Text.literal(name).formatted(Formatting.AQUA))
 			.append(Text.literal(String.format(" at (%d, %d, %d)", pos.getX(), pos.getY(), pos.getZ()))), false);
@@ -149,7 +139,7 @@ public class LayoutWandItem extends Item {
 					+ (int) FLAG_REMOVE_RADIUS + " blocks to remove."), false);
 			} else {
 				LayoutStore.removeFlag(near.name());
-				clearMarker((ServerWorld) world, near);
+				FlagMarker.clearMarker((ServerWorld) world, near);
 				serverPlayer.sendMessage(Text.literal("Removed flag ")
 					.append(Text.literal(near.name()).formatted(Formatting.RED)), false);
 			}
@@ -161,41 +151,8 @@ public class LayoutWandItem extends Item {
 		return ActionResult.SUCCESS;
 	}
 
-	// ---- markers -----------------------------------------------------------
-
-	private void placeMarker(ServerWorld world, String name, BlockPos pos) {
-		Block wool = MARKER_WOOLS[Math.floorMod(name.hashCode(), MARKER_WOOLS.length)];
-		world.setBlockState(pos, wool.getDefaultState());
-		world.setBlockState(pos.up(), Blocks.LIGHTNING_ROD.getDefaultState());
-		// Floating name label: an invisible, no-gravity marker armor stand, tagged
-		// so it (and only it) can be removed later.
-		String label = name.replace("\"", "").replace("\\", "");
-		String cmd = String.format(
-			"summon minecraft:armor_stand %.1f %.1f %.1f "
-			+ "{Invisible:1b,Marker:1b,NoGravity:1b,CustomNameVisible:1b,"
-			+ "CustomName:'\"%s\"',Tags:[\"layoutflag\",\"%s\"]}",
-			pos.getX() + 0.5, pos.getY() + 1.3, pos.getZ() + 0.5, label, tagOf(name));
-		runSilent(world.getServer(), cmd);
-	}
-
-	private static void clearMarker(ServerWorld world, LayoutStore.Flag flag) {
-		BlockPos pos = new BlockPos(flag.x(), flag.y(), flag.z());
-		if (world.getBlockState(pos.up()).isOf(Blocks.LIGHTNING_ROD)) {
-			world.setBlockState(pos.up(), Blocks.AIR.getDefaultState());
-		}
-		Block below = world.getBlockState(pos).getBlock();
-		for (Block w : MARKER_WOOLS) {
-			if (below == w) {
-				world.setBlockState(pos, Blocks.AIR.getDefaultState());
-				break;
-			}
-		}
-		runSilent(world.getServer(), "kill @e[tag=" + tagOf(flag.name()) + "]");
-	}
-
-	private static String tagOf(String name) {
-		return "layoutflag_" + name.toLowerCase().replaceAll("[^a-z0-9_]", "_");
-	}
+	// Flag marker placement/removal lives in the shared {@link FlagMarker} helper so
+	// the Layout Wand and the Flag Bow plant identical markers into the same store.
 
 	// ---- particle visualization (only while a player holds the wand) -------
 
@@ -281,33 +238,4 @@ public class LayoutWandItem extends Item {
 		}
 	}
 
-	// ---- misc --------------------------------------------------------------
-
-	private static String initialOf(String playerName) {
-		if (playerName != null) {
-			for (int i = 0; i < playerName.length(); i++) {
-				char c = playerName.charAt(i);
-				if (Character.isLetter(c)) {
-					return String.valueOf(Character.toUpperCase(c));
-				}
-			}
-		}
-		return "A";
-	}
-
-	private static String dimensionId(ServerWorld world) {
-		return world.getRegistryKey().getValue().getPath(); // "overworld", "the_nether", …
-	}
-
-	/** Run a server command from a silent, level-4 source (no console/chat spam). */
-	private static void runSilent(MinecraftServer server, String cmd) {
-		if (server == null) {
-			return;
-		}
-		ServerCommandSource source = server.getCommandSource()
-			.withOutput(CommandOutput.DUMMY)
-			.withLevel(4)
-			.withSilent();
-		server.getCommandManager().executeWithPrefix(source, cmd);
-	}
 }
