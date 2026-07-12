@@ -3,7 +3,7 @@
 // primitives into one name->fn map. Every fn takes ONE args object with
 // absolute world coordinates (so the Architect can compose blueprints directly).
 // Both the one-shot router and the Executor run steps through run().
-module.exports = function makeSkills({ hands, structures, details, B, clamp, log = () => {} }) {
+module.exports = function makeSkills({ hands, structures, details, furniture, B, clamp, log = () => {} }) {
   const reg = {}
 
   // Structure generators: pull origin {x,y,z} out of args, pass the rest through.
@@ -16,6 +16,8 @@ module.exports = function makeSkills({ hands, structures, details, B, clamp, log
   }
   // Detailing skills already take absolute-coord arg objects.
   for (const [name, fn] of Object.entries(details.skills)) reg[name] = (a) => fn(a)
+  // Furniture + furnishRoom skills (also absolute-coord arg objects).
+  if (furniture) for (const [name, fn] of Object.entries(furniture.skills)) reg[name] = (a) => fn(a)
 
   // Raw primitives.
   reg.fill_box = (a) => hands.fillBox(a.x1, a.y1, a.z1, a.x2, a.y2, a.z2, a.block)
@@ -39,6 +41,21 @@ module.exports = function makeSkills({ hands, structures, details, B, clamp, log
     return { x: Math.round(a.x != null ? +a.x : 0), y: Math.round(a.y != null ? +a.y : 64), z: Math.round(a.z != null ? +a.z : 0) }
   }
 
+  // ---- BLUEPRINT EDIT OPS (incremental, non-destructive) ----
+  // Each maps an args object to a normalized transform op consumed by
+  // build/index.editBuild → recompile → additive diff → small job set that
+  // touches ONLY the changed region. Registered as skills so the router/executor
+  // can name them; the assistant routes them through the build pipeline.
+  const editOps = {
+    raise_roof: (a) => ({ type: 'raise_roof', dy: clamp(a.dy || a.amount || a.height, 1, 20, 3) }),
+    make_taller: (a) => ({ type: 'raise_roof', dy: clamp(a.dy || a.amount || a.height, 1, 20, 3) }),
+    add_tower: (a) => ({ type: 'add_tower', side: String(a.side || a.direction || 'west').toLowerCase(), height: a.height, radius: a.radius }),
+    add_region: (a) => ({ type: 'add_region', region: a.region || a }),
+    add_component: (a) => ({ type: 'add_component', regionId: a.regionId || a.region, component: a.component }),
+    remove_region: (a) => ({ type: 'remove_region', regionId: a.regionId || a.id || a.region })
+  }
+  for (const name of Object.keys(editOps)) if (!reg[name]) reg[name] = (a) => editOps[name](a)
+
   // Run one blueprint step; merge blueprint palette+origin defaults into its args.
   function run(step, defaults = {}) {
     const name = String(step.skill || '').trim()
@@ -48,6 +65,8 @@ module.exports = function makeSkills({ hands, structures, details, B, clamp, log
     // Fall back to blueprint origin when a structure step omits coords.
     if (args.x == null && defaults.origin) { args.x = defaults.origin.x; args.y = defaults.origin.y; args.z = defaults.origin.z }
     else if (args.y == null && defaults.origin) args.y = defaults.origin.y
+    // Inject the blueprint palette so furniture/detailing steps stay cohesive.
+    if (args.palette == null && defaults.palette) args.palette = defaults.palette
     try { const r = fn(args); return { ok: true, skill: name, n: typeof r === 'number' ? r : undefined } }
     catch (e) { log('skills: error in', name, e.message); return { ok: false, skill: name, err: e.message } }
   }
@@ -55,5 +74,6 @@ module.exports = function makeSkills({ hands, structures, details, B, clamp, log
   const kinds = Object.keys(reg)
   const structureCatalog = structures.catalog
   const detailCatalog = details.catalog
-  return { reg, run, kinds, structureCatalog, detailCatalog, buildKinds: [...Object.keys(structures.gens), ...Object.keys(structures.alias)] }
+  const furnitureCatalog = furniture ? furniture.catalog : []
+  return { reg, run, kinds, editOps, structureCatalog, detailCatalog, furnitureCatalog, buildKinds: [...Object.keys(structures.gens), ...Object.keys(structures.alias)] }
 }

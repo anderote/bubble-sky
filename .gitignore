@@ -18,6 +18,18 @@ server/*.jar
 # Java / Gradle mod build
 **/build/
 **/.gradle/
+# ...but grok/lib/build/ is the Grok build-pipeline SOURCE, not Gradle output.
+!grok/lib/build/
+!grok/lib/build/**
+
+# Modded server runtime instance (symlinks + generated world) — like server/
+server-modded/
+
+# Grok build-pipeline interop output (state.json / .schem exports)
+grok/build-out/
+
+# Grok user-saved schematics (runtime library, like memory/) and flag markers
+grok/blueprints/saved/
 
 # Node (MCP server, mindcraft)
 node_modules/
