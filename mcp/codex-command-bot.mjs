@@ -15,14 +15,14 @@ const port = Number(process.env.MINECRAFT_PORT || 25565);
 const username = process.env.CODEX_BOT_USERNAME || "codex";
 const version = process.env.MINECRAFT_VERSION || "1.21.6";
 const richChat = process.env.CODEX_RICH_CHAT === "1";
-const llmPlayers = parseList(process.env.CODEX_LLM_PLAYERS || "codex,claude,claudebot,grok");
-const ignoredSpeakers = parseList(process.env.CODEX_IGNORED_SPEAKERS || "codexdrone1,codexdrone2,codexdrone3,codexdrone4,codexboss");
+const llmPlayers = parseList(process.env.CODEX_LLM_PLAYERS || "codex,claude,claudebot,grok,grokdev");
+const ignoredSpeakers = parseList(process.env.CODEX_IGNORED_SPEAKERS || "codexdrone1,codexdrone2,codexdrone3,codexdrone4,codexboss,grokdev");
 const historyPath = process.env.CODEX_CHAT_HISTORY || ".codex-runtime/chat-history.jsonl";
 const historyLimit = Number(process.env.CODEX_CHAT_HISTORY_LIMIT || 2000);
 const swarmRuntimeDir = process.env.CODEX_SWARM_RUNTIME || ".codex-runtime/swarm";
 const swarmStatePath = path.join(swarmRuntimeDir, "state.json");
 const delegatedDroneName = process.env.CODEX_ARCHITECT_DRONE || "CodexDrone1";
-const delegateArchitectTower = process.env.CODEX_ARCHITECT_DELEGATE_TOWER === "1";
+const delegateArchitectTower = process.env.CODEX_ARCHITECT_DELEGATE_TOWER !== "0";
 const buildCommandDelayMs = Number(process.env.CODEX_BUILD_COMMAND_DELAY_MS || 150);
 const openaiApiKey = process.env.OPENAI_API_KEY || "";
 const commandModel = process.env.CODEX_COMMAND_MODEL || "gpt-5-mini";
@@ -440,6 +440,12 @@ function interpretArchitectCommand(lower) {
     return { action: "demolish" };
   }
 
+  if (/\b(add|attach|append|put|place|build|make|create|construct)\b/.test(lower) &&
+      /\b(tower|turret|watchtower|spire)\b/.test(lower) &&
+      /\b(to|onto|on|beside|next to|near|this|that|wall|castle|fortress|structure|building)\b/.test(lower)) {
+    return { action: "add_tower" };
+  }
+
   if (/\b(build|make|create|construct|spawn|summon|freestyle)\b/.test(lower) &&
       /\b(wall|walls|rampart|battlement|battlements)\b/.test(lower) &&
       /\b(castle|fortress|fort|two towers|towers)\b/.test(lower)) {
@@ -496,6 +502,7 @@ async function interpretArchitectCommandWithOpenAI(command, speaker) {
     '{"action":"effect","effect":"flood"} for requests to flood, drown, submerge, soak, or waterlog a nearby structure.',
     '{"action":"effect","effect":"freeze"} for requests to freeze, ice over, snow over, frost, or blizzard a nearby structure.',
     '{"action":"effect","effect":"curse"} for requests to curse, haunt, corrupt, darken, or make a nearby structure spooky/evil.',
+    '{"action":"add_tower"} for requests to add/attach one tower to an existing wall, castle, fortress, or structure.',
     '{"action":"castle_wall"} for requests to build a castle/fortress wall, rampart, battlement, or a wall with two towers.',
     '{"action":"fortress"} for requests to build, make, create, summon, upgrade, or freestyle a castle/fortress/fort/keep here.',
     '{"action":"none"} for anything else.',
@@ -559,6 +566,7 @@ async function interpretArchitectCommandWithCodexCli(command, speaker) {
     '{"action":"effect","effect":"flood"} for requests to flood, drown, submerge, soak, or waterlog a nearby structure.',
     '{"action":"effect","effect":"freeze"} for requests to freeze, ice over, snow over, frost, or blizzard a nearby structure.',
     '{"action":"effect","effect":"curse"} for requests to curse, haunt, corrupt, darken, or make a nearby structure spooky/evil.',
+    '{"action":"add_tower"} for requests to add/attach one tower to an existing wall, castle, fortress, or structure.',
     '{"action":"castle_wall"} for requests to build a castle/fortress wall, rampart, battlement, or a wall with two towers.',
     '{"action":"fortress"} for requests to build, make, create, summon, upgrade, or freestyle a castle/fortress/fort/keep here.',
     '{"action":"none"} for anything else.',
@@ -590,7 +598,7 @@ function shouldUseLlmArchitectParser(command) {
 }
 
 function isValidArchitectAction(parsed) {
-  if (["demolish", "fortress", "castle_wall"].includes(parsed?.action)) return true;
+  if (["demolish", "fortress", "castle_wall", "add_tower"].includes(parsed?.action)) return true;
   return parsed?.action === "effect" && ["lava_burn", "flood", "freeze", "curse"].includes(parsed.effect);
 }
 
@@ -683,6 +691,14 @@ async function runArchitectCommand(speaker, command, originalText = "") {
     return;
   }
 
+  if (command.action === "add_tower") {
+    const towerOrigin = await resolveAddTowerOrigin(speaker, originalText, origin);
+    say(`adding one tower at ${formatBlockPosition(towerOrigin)}; delegating block placement to ${delegatedDroneName}`);
+    await delegateTowerBuild(towerOrigin, "added tower");
+    say(`${delegatedDroneName} has the tower job.`);
+    return;
+  }
+
   if (command.action === "fortress") {
     const buildOrigin = { x: origin.x, y: origin.y - 8, z: origin.z };
     say(`freestyling a fortress around ${formatBlockPosition(buildOrigin)}`);
@@ -703,7 +719,7 @@ async function runArchitectCommand(speaker, command, originalText = "") {
 }
 
 async function resolveArchitectOrigin(speaker, command, originalText, playerPosition) {
-  if (!usesPhysicalReference(originalText) || !["demolish", "effect"].includes(command.action)) {
+  if (!usesPhysicalReference(originalText) || !["demolish", "effect", "add_tower"].includes(command.action)) {
     return blockPosition(playerPosition);
   }
 
@@ -715,6 +731,28 @@ async function resolveArchitectOrigin(speaker, command, originalText, playerPosi
   }
 
   return blockPosition(playerPosition);
+}
+
+async function resolveAddTowerOrigin(speaker, originalText, fallbackOrigin) {
+  try {
+    const context = await resolvePhysicalContext(speaker, originalText || "this wall");
+    const focus = context.focus?.position || fallbackOrigin;
+    const baseY = lowestNearbySolidY(context, focus) ?? fallbackOrigin.y - 1;
+    return { x: focus.x, y: baseY, z: focus.z };
+  } catch (error) {
+    console.error(`add tower context unavailable: ${error.message}`);
+    return { x: fallbackOrigin.x, y: fallbackOrigin.y - 1, z: fallbackOrigin.z };
+  }
+}
+
+function lowestNearbySolidY(context, focus) {
+  const nearby = context.blocks
+    .filter((block) => Math.abs(block.position.x - focus.x) <= 2 && Math.abs(block.position.z - focus.z) <= 2)
+    .map((block) => block.position.y);
+  if (nearby.length) return Math.min(...nearby);
+
+  const all = context.blocks.map((block) => block.position.y);
+  return all.length ? Math.min(...all) : null;
 }
 
 function usesPhysicalReference(text) {
@@ -1223,12 +1261,35 @@ async function executeDelegatedCastleWall(origin) {
     return;
   }
 
+  writeDelegatedTowerState(origin, droneJobs, "castle wall east tower");
+}
+
+async function delegateTowerBuild(origin, structure) {
+  const droneJobs = detailedTowerJobs(origin, delegatedDroneName);
+  if (!delegateArchitectTower) {
+    await sendCommandBatch(towerJobsToCommands(droneJobs));
+    return;
+  }
+
+  writeDelegatedTowerState(origin, droneJobs, structure);
+}
+
+function writeDelegatedTowerState(origin, droneJobs, structure) {
+  summonDroneToBuildSite(origin);
   writeDelegatedState({
     taskId: `codex-wall-${Date.now()}`,
-    structure: "castle wall east tower",
+    structure,
     origin,
     jobs: droneJobs,
   });
+}
+
+function summonDroneToBuildSite(origin) {
+  const x = origin.x;
+  const y = origin.y + 3;
+  const z = origin.z;
+  bot.chat(`/op ${delegatedDroneName}`);
+  bot.chat(`/tp ${delegatedDroneName} ${x} ${y} ${z}`);
 }
 
 function westTowerCommands(origin) {
