@@ -87,6 +87,8 @@ let followTarget = null;
 let escort = null;
 let movements = null;
 let visibility = process.env.CODEX_CHAT_VISIBILITY || "public";
+let flightAnchor = null;
+let flightAnchorBusy = false;
 
 bot.once("spawn", () => {
   movements = new Movements(bot);
@@ -129,6 +131,8 @@ bot.on("chat", async (speaker, message) => {
 });
 
 bot.on("physicsTick", () => {
+  tickFlightAnchor();
+
   if (escort) {
     tickEscort();
     return;
@@ -1558,6 +1562,43 @@ async function maintainFlightNearTarget(targetName, fallbackPosition = null) {
   const airborne = player ? !player.onGround : true;
   if (!airborne && target.y <= bot.entity.position.y + 1) return;
 
+  flightAnchor = {
+    targetName: playerName,
+    fallbackPosition: vectorPosition(target),
+    until: Date.now() + Number(process.env.CODEX_FLIGHT_ANCHOR_MS || 12000),
+    nextAt: 0,
+  };
+
+  await withTimeout(
+    bot.creative.flyTo(new Vec3(target.x, target.y + 1.5, target.z)),
+    Number(process.env.CODEX_FLY_TO_PLAYER_TIMEOUT_MS || 2500),
+  );
+}
+
+function tickFlightAnchor() {
+  if (!flightAnchor || !bot.creative || flightAnchorBusy) return;
+  const now = Date.now();
+  if (now > flightAnchor.until) {
+    flightAnchor = null;
+    return;
+  }
+  if (now < flightAnchor.nextAt) return;
+  flightAnchor.nextAt = now + 1000;
+  flightAnchorBusy = true;
+  holdFlightAnchor().finally(() => {
+    flightAnchorBusy = false;
+  });
+}
+
+async function holdFlightAnchor() {
+  await startCreativeFlight();
+  const player = bot.players[flightAnchor.targetName]?.entity;
+  const target = player?.position || flightAnchor.fallbackPosition;
+  if (!target) return;
+  if (player?.onGround && target.y <= bot.entity.position.y + 1) {
+    flightAnchor = null;
+    return;
+  }
   await withTimeout(
     bot.creative.flyTo(new Vec3(target.x, target.y + 1.5, target.z)),
     Number(process.env.CODEX_FLY_TO_PLAYER_TIMEOUT_MS || 2500),
