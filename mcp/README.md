@@ -142,6 +142,14 @@ instead of dumping the full block-job array.
 `validate` checks the current delegated state for duplicate job ids, malformed
 coordinates, invalid workers, and unknown vanilla block ids.
 
+For a quick local health check that does not need a live Minecraft server:
+
+```sh
+./mcp/codex-offline-check.sh
+```
+
+It verifies shell syntax, Node syntax, and the current swarm state/status tooling.
+
 Retry knobs:
 
 | Setting | Default | Notes |
