@@ -28,6 +28,9 @@ server-modded/
 # Grok build-pipeline interop output (state.json / .schem exports)
 grok/build-out/
 
+# Grok user-saved schematics (runtime library, like memory/) and flag markers
+grok/blueprints/saved/
+
 # Node (MCP server, mindcraft)
 node_modules/
 

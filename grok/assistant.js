@@ -68,12 +68,18 @@ const survey = require('./lib/survey')
 const build = require('./lib/build')
 const BUILD_OUT = path.join(DIR, 'build-out')   // our own interop dir; NEVER Codex's live state.json
 
+// ---- named FLAGS (spatial markers) + SCHEMATIC LIBRARY (save/reuse builds) ----
+const flags = require('./lib/flags')({ dir: path.join(DIR, 'memory'), enqueue, hands, log })
+const { wallBetween } = require('./lib/flags')
+const library = require('./lib/build/library')({ dir: path.join(DIR, 'blueprints', 'saved'), log })
+
 log(`backend=${hands.name} (godmode=${hands.godmode}) router=${ROUTER_PROVIDER}/${ROUTER_MODEL} architect=${architect.PROVIDER}/${architect.MODEL}`)
 
 // ---- one-shot tool schema (Phase 1: native tool calling) ----
 const originProps = {
-  origin: { type: 'string', enum: ['look', 'me'], description: '"look" = block the speaker looks at (use for "here"); "me" = speaker position' },
-  x: { type: 'integer' }, y: { type: 'integer' }, z: { type: 'integer' }
+  origin: { type: 'string', enum: ['look', 'me', 'flag'], description: '"look" = block the speaker looks at (use for "here"); "me" = speaker position; "flag" = a named flag marker (then also set "flag")' },
+  x: { type: 'integer' }, y: { type: 'integer' }, z: { type: 'integer' },
+  flag: { type: 'string', description: 'flag name to use as origin when origin="flag" (e.g. "A2")' }
 }
 const TOOLS = [
   { type: 'function', function: { name: 'build_structure', description: 'Build ONE named structure (quick, single BARE object — no interior furnishing). For anything FURNISHED, "nice", detailed, or multi-section (a furnished/nice house, grand castle, mansion, cathedral, "make it fancy/detailed", furnished rooms) use plan_build instead.',
@@ -98,6 +104,18 @@ const TOOLS = [
     parameters: { type: 'object', properties: { mode: { type: 'string', enum: ['come', 'follow', 'stop', 'goto', 'explore', 'tp', 'bring'] }, player: { type: 'string' }, x: { type: 'integer' }, y: { type: 'integer' }, z: { type: 'integer' }, reply: { type: 'string' } }, required: ['mode'] } } },
   { type: 'function', function: { name: 'world_cmd', description: 'World control. cmd: time (value day|night|noon|midnight), weather (value clear|rain|thunder), give (item + count to the speaker/player).',
     parameters: { type: 'object', properties: { cmd: { type: 'string', enum: ['time', 'weather', 'give'] }, value: { type: 'string' }, item: { type: 'string' }, count: { type: 'integer' }, player: { type: 'string' }, reply: { type: 'string' } }, required: ['cmd'] } } },
+  { type: 'function', function: { name: 'flag', description: 'Named spatial markers ("flags") the user plants and later references in builds. op: set (plant a flag named `name` at the origin — "flag A2 here" / "plant a flag called home"; origin "look" for "here"), list (say every flag + coords), remove (delete flag `name` + its marker), goto (teleport to flag `name`).',
+    parameters: { type: 'object', properties: { op: { type: 'string', enum: ['set', 'list', 'remove', 'goto'] }, name: { type: 'string', description: 'flag name (e.g. "A2")' }, ...originProps, reply: { type: 'string' } }, required: ['op'] } } },
+  { type: 'function', function: { name: 'build_between', description: 'Build a WALL spanning two named flags ("build a wall between A2 and B1"). flagA/flagB are flag names; optional block/material, height, thickness.',
+    parameters: { type: 'object', properties: { flagA: { type: 'string' }, flagB: { type: 'string' }, kindOrBlock: { type: 'string' }, block: { type: 'string' }, material: { type: 'string' }, height: { type: 'integer' }, thickness: { type: 'integer' }, reply: { type: 'string' } }, required: ['flagA', 'flagB'] } } },
+  { type: 'function', function: { name: 'save_build', description: 'Save the ACTIVE/last build to the schematic library for reuse ("save this as cozy_cottage").',
+    parameters: { type: 'object', properties: { name: { type: 'string' }, reply: { type: 'string' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'list_builds', description: 'Say the names of the saved builds in the library ("what have I saved", "list builds").',
+    parameters: { type: 'object', properties: { reply: { type: 'string' } } } } },
+  { type: 'function', function: { name: 'build_saved', description: 'Rebuild a previously SAVED build by name at a new spot ("build cozy_cottage here") — re-anchored to the new origin, additive + terrain-fit. A follow-up edit_build then modifies it.',
+    parameters: { type: 'object', properties: { name: { type: 'string' }, ...originProps, reply: { type: 'string' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'delete_build', description: 'Delete a saved build from the library by name.',
+    parameters: { type: 'object', properties: { name: { type: 'string' }, reply: { type: 'string' } }, required: ['name'] } } },
   { type: 'function', function: { name: 'answer', description: 'Pure conversation / answering questions (where are you, what\'s nearby, what can you do). No world change.',
     parameters: { type: 'object', properties: { reply: { type: 'string' } }, required: ['reply'] } } }
 ]
@@ -109,6 +127,9 @@ Guidance:
 - Anything FURNISHED or "nice/good/detailed", a home someone could live in, BIG or multi-section builds, a whole compound, "grand/epic/fancy", furnished rooms (bedroom/kitchen/library/great hall) → plan_build (the Architect authors a furnished, lit, terrain-fit blueprint; it builds additively without disturbing surroundings). When in doubt, prefer plan_build.
 - A follow-up that MODIFIES the build you just made ("make it taller", "raise the roof", "add a west tower", "remove the tower") → edit_build (non-destructive; only the changed part is touched).
 - Quick edits → fill_box / set_block / dig / clear_area / flatten.
+- FLAGS (named spatial markers): "flag A2 here" / "plant a flag called home" / "mark this as A2" → flag op:set (origin "look" for "here"). "list/show flags" → flag op:list. "remove/delete flag A2" → flag op:remove. "go to / teleport to flag A2" → flag op:goto.
+- "build a wall between A2 and B1" (two flag NAMES) → build_between (flagA=A2, flagB=B1). To build something AT a flag, use a normal build tool with origin:"flag" + flag:"A2".
+- SAVED BUILDS (schematic library): "save this as <name>" / "save this build" → save_build. "list builds" / "what have I saved" → list_builds. "build <saved name> here" / "place my <name> here" → build_saved (origin "look" for "here"). "delete build <name>" → delete_build. After build_saved, "make it taller / add a tower" → edit_build as usual.
 - Movement/teleport → move. Time/weather/give → world_cmd.
 - Questions & chit-chat ("where are you", "what's nearby", "what can you do") → answer, using world-state.
 Default origin to "look" when they say "here" or "where I'm looking". Pick sensible sizes if unspecified. Put a short (<15 words), warm message in the tool's "reply".`
@@ -192,6 +213,7 @@ bot.on('chat', async (username, message) => {
 const say = s => { if (s) { bot.chat(String(s).slice(0, 200)); history.push(`${USERNAME}: ${s}`); while (history.length > 30) history.shift() } }  // remember our own replies too
 
 function resolveOrigin(args, speaker) {
+  if (args.origin === 'flag' && args.flag) { const f = flags.get(args.flag); if (f) return { x: f.x, y: f.y, z: f.z } }
   if (args.here || args.origin === 'look') { const l = lookTarget(speaker); if (l) return round(l) }
   if (args.x != null && args.z != null) return { x: Math.round(+args.x), y: args.y != null ? Math.round(+args.y) : Math.round(bot.entity.position.y), z: Math.round(+args.z) }
   const e = bot.players[speaker]?.entity
@@ -207,7 +229,7 @@ async function dispatch(tool, args, speaker) {
   // the sendCommandFeedback gamerule, now disabled). But it STILL speaks the one short
   // acknowledgement line the model wrote, so it never feels mute to a command.
   // `answer` says its own reply below; plan_build emits its own start/finish lines.
-  if (args.reply && tool !== 'answer' && tool !== 'plan_build' && tool !== 'edit_build') say(args.reply)
+  if (args.reply && !SELF_REPLY.has(tool)) say(args.reply)
   const p = bot.entity.position
   const spEnt = bot.players[speaker]?.entity
   switch (tool) {
@@ -249,8 +271,108 @@ async function dispatch(tool, args, speaker) {
     }
     case 'plan_build': await runProject(args, speaker); break
     case 'edit_build': await runEdit(args, speaker); break
+    case 'flag': await runFlag(args, speaker); break
+    case 'build_between': await runBuildBetween(args, speaker); break
+    case 'save_build': await runSaveBuild(args); break
+    case 'list_builds': runListBuilds(); break
+    case 'build_saved': await runBuildSaved(args, speaker); break
+    case 'delete_build': runDeleteBuild(args); break
     default: log('unknown tool', tool)
   }
+}
+
+// Tools that speak their OWN reply line(s) below (so dispatch doesn't double-say).
+const SELF_REPLY = new Set(['answer', 'plan_build', 'edit_build', 'flag', 'build_between', 'save_build', 'list_builds', 'build_saved', 'delete_build'])
+
+// ---- FLAGS: set / list / remove / goto ----
+async function runFlag(args, speaker) {
+  const op = String(args.op || 'set').toLowerCase()
+  const dim = (bot.game && bot.game.dimension ? String(bot.game.dimension).replace(/^minecraft:/, '') : 'overworld')
+  if (op === 'list') {
+    const fl = flags.list()
+    say(fl.length ? 'Flags: ' + fl.map(f => `${f.name} (${f.x},${f.y},${f.z})`).join(', ') : 'No flags planted yet.')
+    return
+  }
+  if (op === 'remove' || op === 'delete') {
+    const name = args.name || args.flag
+    say(flags.remove(name) ? `Removed flag ${name}.` : `No flag named "${name}".`)
+    return
+  }
+  if (op === 'goto' || op === 'tp') {
+    const name = args.name || args.flag
+    const f = flags.get(name)
+    if (!f) { say(`No flag named "${name}".`); return }
+    hands.tp(USERNAME, f.x, f.y + 1, f.z)
+    say(args.reply || `Heading to flag ${f.name}.`)
+    return
+  }
+  // set (default)
+  const name = args.name || args.flag || 'flag'
+  const o = resolveOrigin(args.origin === 'flag' ? { origin: 'look' } : args, speaker)
+  const rec = flags.set(name, { x: o.x, y: o.y, z: o.z, dim })
+  await queueIdle()
+  say(args.reply || `Planted flag ${rec.name} at (${rec.x},${rec.y},${rec.z}).`)
+}
+
+// ---- build a wall spanning two flags ----
+async function runBuildBetween(args, speaker) {
+  const A = flags.get(args.flagA || args.a)
+  const B2 = flags.get(args.flagB || args.b)
+  if (!A) { say(`No flag named "${args.flagA || args.a}".`); return }
+  if (!B2) { say(`No flag named "${args.flagB || args.b}".`); return }
+  let block = B(args.block || args.material, '')
+  if (!block) {
+    const k = B(args.kindOrBlock, '')
+    const kindMap = { wall: 'stone_bricks', rampart: 'stone_bricks', barrier: 'stone_bricks', fence: 'oak_fence', hedge: 'oak_leaves' }
+    block = kindMap[k] || k || 'stone_bricks'
+  }
+  const n = wallBetween({ x: A.x, y: A.y, z: A.z }, { x: B2.x, y: B2.y, z: B2.z },
+    { block, height: clamp(args.height, 1, 24, 5), thickness: clamp(args.thickness, 1, 6, 1) }, hands)
+  await queueIdle()
+  log(`build_between ${A.name}->${B2.name} block=${block} ~${n} blocks`)
+  say(args.reply || `Wall up between ${A.name} and ${B2.name}.`)
+}
+
+// ---- SCHEMATIC LIBRARY: save / list / rebuild / delete ----
+async function runSaveBuild(args) {
+  const rec = memory.active()
+  if (!rec || !rec.blueprint) { say('Nothing to save yet — build something first.'); return }
+  const name = args.name || rec.project || 'build'
+  try {
+    const meta = await library.save(name, rec.blueprint, { project: rec.project, goal: rec.goal, origin: rec.origin })
+    say(`Saved "${name}" (${meta.regions} regions) to the library.`)
+  } catch (e) { log('save_build err', e.message); say('Could not save that build.') }
+}
+
+function runListBuilds() {
+  const b = library.list()
+  say(b.length ? 'Saved builds: ' + b.map(x => x.name).join(', ') : 'No saved builds yet.')
+}
+
+async function runBuildSaved(args, speaker) {
+  const name = args.name
+  const bp = library.load(name)
+  if (!bp) { say(`No saved build called "${name}".`); return }
+  const origin0 = resolveOrigin(args, speaker)
+  const site = survey.surveySite(bot, origin0, 20)
+  const origin = { x: origin0.x, y: site.groundY + 1, z: origin0.z }
+  library.reanchor(bp, origin)
+  say('Rebuilding that now…')   // ONE start line
+  let summary
+  try {
+    summary = await build.planAndBuild(
+      { blueprint: bp, origin, site, terrainFit: 'follow', emit: true,
+        statePath: path.join(BUILD_OUT, 'state.json'), schemPath: path.join(BUILD_OUT, 'last.schem') },
+      { architect, bot, hands, survey, log, memory })
+  } catch (e) { log('build_saved err', e.stack || e.message); say('Trouble rebuilding that — try again?'); return }
+  await queueIdle()
+  log(`build_saved "${name}" -> ${summary.project} regions=${summary.regionCount} jobs=${summary.jobs} placed=${summary.placed} additive=${summary.additive}`)
+  memory.save({ project: summary.project, origin, palette: summary.blueprint.palette, phasesDone: summary.regions, goal: `saved:${name}`, blueprint: summary.blueprint })
+  say(`Done — ${summary.project} rebuilt here.`)   // ONE finish line
+}
+
+function runDeleteBuild(args) {
+  say(library.remove(args.name) ? `Deleted "${args.name}" from the library.` : `No saved build called "${args.name}".`)
 }
 
 // ---- Phase 2: SURVEY → ARCHITECT → observed goal LOOP → VERIFY/repair ----
