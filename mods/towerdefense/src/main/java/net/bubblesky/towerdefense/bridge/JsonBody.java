@@ -58,6 +58,17 @@ final class JsonBody {
 		}
 	}
 
+	Double getDouble(String key) {
+		if (!has(key)) {
+			return null;
+		}
+		try {
+			return obj.get(key).getAsDouble();
+		} catch (Exception e) {
+			throw new AgentBridge.BridgeException(400, "field '" + key + "' must be a number");
+		}
+	}
+
 	String requireString(String key) {
 		if (!has(key)) {
 			throw new AgentBridge.BridgeException(400, "missing required string field: " + key);

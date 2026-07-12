@@ -24,7 +24,7 @@ const realize = require('./realize')
 const BUILD_MODE = String(process.env.GROK_BUILD_MODE || 'godmode').toLowerCase()
 
 async function planAndBuild(request, ctx) {
-  const { architect, bot, hands, survey, log = () => {}, memory } = ctx
+  const { architect, bot, hands, survey, log = () => {}, memory, shouldAbort } = ctx
   const origin = request.origin || { x: 0, y: 64, z: 0 }
 
   // 1) AUTHOR — a Layer-A blueprint (native or converted from the phased plan).
@@ -49,7 +49,7 @@ async function planAndBuild(request, ctx) {
   if (BUILD_MODE === 'fleet') {
     filled = await realizeWithFleet(d, bp, request, log)
   } else if (hands) {
-    filled = realize.realize(d.jobs, hands)   // godmode: /fill + /setblock
+    filled = realize.realize(d.jobs, hands, shouldAbort)   // godmode: /fill + /setblock (abortable)
   }
 
   // Optionally emit the shared state + schematic for Codex / interop. NOTE: by
@@ -64,7 +64,7 @@ async function planAndBuild(request, ctx) {
 }
 
 async function editBuild(op, bp, ctx) {
-  const { bot, hands, survey, log = () => {} } = ctx
+  const { bot, hands, survey, log = () => {}, shouldAbort } = ctx
   if (!bp) throw new Error('editBuild needs a blueprint')
   const touched = blueprint.transform(bp, op)
   log('edit', op.type || op.op, '->', touched.join(', '))
@@ -74,7 +74,7 @@ async function editBuild(op, bp, ctx) {
   const read = bot ? botReadBlock(bot) : (() => 'air')
   const d = diff(target, read, { structure: bp.name })
   let filled = null
-  if (hands) filled = realize.realize(d.jobs, hands)
+  if (hands) filled = realize.realize(d.jobs, hands, shouldAbort)
   const s = summarize(bp, d, filled, target)
   s.touched = touched
   return s

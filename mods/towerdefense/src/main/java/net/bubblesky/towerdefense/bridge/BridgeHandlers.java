@@ -20,8 +20,11 @@ import net.minecraft.registry.Registries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandOutput;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.BlockPos;
 
@@ -69,6 +72,166 @@ final class BridgeHandlers {
 		http.createContext("/fill", bridge.secure(this::fill));
 		http.createContext("/command", bridge.secure(this::command));
 		http.createContext("/batch", bridge.secure(this::batch));
+		// chat + player + status (one-server unification: agents run over the bridge)
+		http.createContext("/chat", bridge.secure(this::chat));
+		http.createContext("/say", bridge.secure(this::say));
+		http.createContext("/player", bridge.secure(this::player));
+		http.createContext("/players", bridge.secure(this::players));
+		http.createContext("/status/agent", bridge.secure(this::statusAgent));
+		http.createContext("/status", bridge.secure(this::status));
+		http.createContext("/test/chat", bridge.secure(this::testChat));
+	}
+
+	// ---------- GET /chat?since=<seq> ----------
+
+	private Object chat(HttpExchange exchange, JsonBody body) {
+		JsonBody q = query(exchange);
+		long since = q.getInt("since", 0);
+		List<Map<String, Object>> messages = BridgeState.chatSince(since);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("ok", true);
+		out.put("cursor", BridgeState.chatCursor());
+		out.put("messages", messages);
+		return out;
+	}
+
+	// ---------- POST /say {name?, message} ----------
+
+	private Object say(HttpExchange exchange, JsonBody body) {
+		String name = body.getString("name", "").trim();
+		String message = body.requireString("message");
+		String line = name.isEmpty() ? message : "<" + name + "> " + message;
+		bridge.runOnServer(() -> {
+			bridge.server().getPlayerManager().broadcast(Text.literal(line), false);
+			return null;
+		});
+		// Record so agents (including the speaker) see their own line via /chat.
+		long seq = BridgeState.recordChat(name.isEmpty() ? "server" : name, message);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("ok", true);
+		out.put("seq", seq);
+		out.put("line", line);
+		return out;
+	}
+
+	// ---------- POST /test/chat {player, text} — synthetic chat injection ----------
+
+	private Object testChat(HttpExchange exchange, JsonBody body) {
+		String player = body.requireString("player");
+		String text = body.requireString("text");
+		long seq = BridgeState.recordChat(player, text);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("ok", true);
+		out.put("seq", seq);
+		return out;
+	}
+
+	// ---------- GET /player?name=<n> ----------
+
+	private Object player(HttpExchange exchange, JsonBody body) {
+		JsonBody q = query(exchange);
+		String name = q.requireString("name");
+		Map<String, Object> out = bridge.runOnServer(() -> {
+			ServerPlayerEntity p = bridge.server().getPlayerManager().getPlayer(name);
+			if (p == null) {
+				Map<String, Object> miss = new LinkedHashMap<>();
+				miss.put("ok", false);
+				miss.put("error", "no player named '" + name + "' online");
+				miss.put("online", false);
+				return miss;
+			}
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("ok", true);
+			m.put("online", true);
+			m.put("name", p.getName().getString());
+			m.put("pos", posMap(p.getX(), p.getY(), p.getZ()));
+			m.put("yaw", round(p.getYaw()));
+			m.put("pitch", round(p.getPitch()));
+			m.put("lookingAt", lookingAt(p));
+			return m;
+		});
+		if (Boolean.FALSE.equals(out.get("ok"))) {
+			throw new BridgeException(404, (String) out.get("error"));
+		}
+		return out;
+	}
+
+	// ---------- GET /players ----------
+
+	private Object players(HttpExchange exchange, JsonBody body) {
+		return bridge.runOnServer(() -> {
+			List<Map<String, Object>> list = new ArrayList<>();
+			for (ServerPlayerEntity p : bridge.server().getPlayerManager().getPlayerList()) {
+				Map<String, Object> m = new LinkedHashMap<>();
+				m.put("name", p.getName().getString());
+				m.put("pos", posMap(p.getX(), p.getY(), p.getZ()));
+				m.put("yaw", round(p.getYaw()));
+				m.put("pitch", round(p.getPitch()));
+				list.add(m);
+			}
+			Map<String, Object> out = new LinkedHashMap<>();
+			out.put("ok", true);
+			out.put("players", list);
+			return out;
+		});
+	}
+
+	// ---------- POST /status/agent {name, activity, detail?, progress?} ----------
+
+	private Object statusAgent(HttpExchange exchange, JsonBody body) {
+		String name = body.requireString("name");
+		String activity = body.getString("activity", "");
+		String detail = body.getString("detail", "");
+		Double progress = body.has("progress") ? body.getDouble("progress") : null;
+		BridgeState.putStatus(name, activity, detail, progress);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("ok", true);
+		return out;
+	}
+
+	// ---------- GET /status ----------
+
+	private Object status(HttpExchange exchange, JsonBody body) {
+		List<Map<String, Object>> players = bridge.runOnServer(() -> {
+			List<Map<String, Object>> list = new ArrayList<>();
+			for (ServerPlayerEntity p : bridge.server().getPlayerManager().getPlayerList()) {
+				Map<String, Object> m = new LinkedHashMap<>();
+				m.put("name", p.getName().getString());
+				m.put("pos", posMap(p.getX(), p.getY(), p.getZ()));
+				list.add(m);
+			}
+			return list;
+		});
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("ok", true);
+		out.put("agents", BridgeState.statuses());
+		out.put("players", players);
+		return out;
+	}
+
+	/** Server-thread raycast (~64 blocks) from a player's eyes → the block they look at, or null. */
+	private Map<String, Object> lookingAt(ServerPlayerEntity p) {
+		HitResult hit = p.raycast(64.0, 1.0f, false);
+		if (hit == null || hit.getType() != HitResult.Type.BLOCK) {
+			return null;
+		}
+		BlockPos pos = ((BlockHitResult) hit).getBlockPos();
+		String blockName = BlockArgumentParser.stringifyBlockState(
+			bridge.server().getOverworld().getBlockState(pos));
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("x", pos.getX());
+		m.put("y", pos.getY());
+		m.put("z", pos.getZ());
+		m.put("block", blockName);
+		return m;
+	}
+
+	private static Map<String, Object> posMap(double x, double y, double z) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("x", round(x));
+		m.put("y", round(y));
+		m.put("z", round(z));
+		return m;
 	}
 
 	// ---------- GET /health ----------

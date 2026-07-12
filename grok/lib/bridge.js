@@ -101,10 +101,23 @@ function makeBridge(opts = {}) {
     command(cmd) { return request('POST', '/command', { command: String(cmd).replace(/^\//, '') }) },
     setTime(v) { return this.command(`time set ${['day', 'night', 'noon', 'midnight'].includes(v) ? v : 'day'}`) },
     setWeather(v) { return this.command(`weather ${['clear', 'rain', 'thunder'].includes(v) ? v : 'clear'}`) },
+    // tp/give mirror the godmode hands surface via /command (no vanilla protocol needed).
+    tp(who, x, y, z) { if (x == null) return Promise.resolve(); return this.command(`tp ${who} ${(+x).toFixed(1)} ${(+y).toFixed(1)} ${(+z).toFixed(1)}`) },
+    tpTo(who, target) { return this.command(`tp ${who} ${target}`) },
+    give(who, item, count) { return this.command(`give ${who} ${cleanBlock(item, 'diamond')} ${Math.max(1, Math.min(64, count | 0 || 1))}`) },
 
     // ---- batched build (one server-thread hop) ----
     // ops: [{op:'setblock',x,y,z,block}, {op:'fill',x1..z2,block}, {op:'command',command}]
-    batch(ops) { return request('POST', '/batch', { ops }) }
+    batch(ops) { return request('POST', '/batch', { ops }) },
+
+    // ---- chat + players + status (one-server unification) ----
+    chat(since = 0) { return request('GET', '/chat' + qs({ since: since | 0 })) },
+    sayAs(name, message) { return request('POST', '/say', { name: name || '', message: String(message) }) },
+    player(name) { return request('GET', '/player' + qs({ name })) },
+    players() { return request('GET', '/players') },
+    testChat(player, text) { return request('POST', '/test/chat', { player, text: String(text) }) },
+    postStatus(update) { return request('POST', '/status/agent', update) },
+    getStatus() { return request('GET', '/status') }
   }
 }
 

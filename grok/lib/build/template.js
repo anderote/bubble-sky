@@ -16,9 +16,9 @@ const OPP = { north: 'south', south: 'north', east: 'west', west: 'east' }
 
 function templateBlueprint(opts = {}) {
   const P = resolvePalette(opts.palette || opts.style || 'medieval')
-  const W = clampi(opts.width, 6, 24, 12)     // x span
-  const L = clampi(opts.length, 6, 24, 12)    // z span
-  const wallH = clampi(opts.wallH || opts.height, 4, 10, 6)
+  const W = clampi(opts.width, 6, 128, 12)    // x span (large builds honored)
+  const L = clampi(opts.length, 6, 128, 12)   // z span
+  const wallH = clampi(opts.wallH || opts.height, 4, 48, 6)
   const roomType = normalizeRoom(opts.roomType || opts.room)
   const battlements = opts.battlements !== false && /castle|keep|fort|medieval/.test(String(opts.style || opts.palette || 'medieval'))
   const roof = opts.roof || (battlements ? 'flat' : 'gable')

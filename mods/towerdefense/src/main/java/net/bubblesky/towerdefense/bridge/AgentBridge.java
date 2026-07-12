@@ -58,6 +58,15 @@ public final class AgentBridge {
 	public static void init() {
 		ServerLifecycleEvents.SERVER_STARTED.register(AgentBridge::start);
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> stop());
+		// Capture player chat into the shared ring buffer so agents can long-poll
+		// GET /chat. Fires on the server thread; BridgeState is synchronized.
+		net.fabricmc.fabric.api.message.v1.ServerMessageEvents.CHAT_MESSAGE.register((message, sender, params) -> {
+			try {
+				BridgeState.recordChat(sender.getName().getString(), message.getSignedContent());
+			} catch (Exception ignored) {
+				// never let chat capture break the game loop
+			}
+		});
 	}
 
 	private static void start(MinecraftServer server) {

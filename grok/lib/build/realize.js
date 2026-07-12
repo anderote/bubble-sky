@@ -10,15 +10,18 @@
 const voxel = require('./voxel')
 const state = require('./state')
 
-// Place jobs through hands. Returns { fills, sets, ops }.
-function realize(jobs, hands) {
+// Place jobs through hands. Returns { fills, sets, ops, aborted }.
+// `shouldAbort` (optional) is polled between runs so an interrupt ("stop") halts
+// placement early instead of enqueuing thousands more /fill+/setblock ops.
+function realize(jobs, hands, shouldAbort) {
   const runs = batchRuns(jobs)
-  let fills = 0, sets = 0
+  let fills = 0, sets = 0, aborted = false
   for (const r of runs) {
+    if (shouldAbort && shouldAbort()) { aborted = true; break }
     if (r.x2 > r.x1) { hands.fillBox(r.x1, r.y, r.z, r.x2, r.y, r.z, r.block); fills++ }
     else { hands.setBlock(r.x1, r.y, r.z, r.block); sets++ }
   }
-  return { fills, sets, ops: fills + sets, jobs: jobs.length }
+  return { fills, sets, ops: fills + sets, jobs: jobs.length, aborted }
 }
 
 // Collapse jobs (already phase/y/z/x sorted) into x-runs of the same block.
