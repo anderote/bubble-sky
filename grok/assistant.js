@@ -65,7 +65,8 @@ GODMODE EDITS (instant, need op). Every edit takes an origin: args.origin="look"
 - "wall": build a wall. args.length, args.height, args.block, args.axis ("x" or "z").
 - "platform": flat platform (disc). args.radius, args.block (default stone).
 - "tower": pillar args.n tall (1-40) where you stand, args.block (default cobblestone).
-- "room": a hollow building shell (walls+floor+roof, a door, windows). args.width, args.length, args.height, args.block (walls), args.floor. Use for "build me a house/room/hut/cabin".
+- "room": a hollow building shell (walls+floor+roof, a door, windows). args.width, args.length, args.height, args.block (walls), args.floor. Use for a plain room.
+- "build": construct a REAL structure (NOT a plain box — use this, never "fill", for named builds). args.structure = house|tower|round_tower|wall|bridge|road|pyramid|dome|platform|castle (aliases: cabin,hut,cottage,watchtower,keep,fort,fortress,igloo,path). Optional: size/width/length/height/radius, material (block name), roof_material, axis ("x"|"z"). Origin via look/me/x,z. Use for "build a castle/house/tower/wall/bridge/pyramid here".
 WORLD (godmode):
 - "time": args.value = "day"|"night"|"noon"|"midnight".
 - "weather": args.value = "clear"|"rain"|"thunder".
@@ -159,7 +160,16 @@ function execute(res, speaker) {
     case 'set': { const o = resolveOrigin({ here: args.here, origin: args.here ? 'look' : args.origin, x: args.x, y: args.y, z: args.z }, speaker); enqueue(`/setblock ${o.x} ${o.y} ${o.z} ${B(args.block, 'stone')}`) } break
     case 'wall': { const o = resolveOrigin(args, speaker); const len = clamp(args.length, 1, 128, 10); const h = clamp(args.height, 1, 40, 4); const blk = B(args.block, 'stone'); if ((args.axis || 'x') === 'z') fillBox(o.x, o.y, o.z, o.x, o.y + h - 1, o.z + len, blk); else fillBox(o.x, o.y, o.z, o.x + len, o.y + h - 1, o.z, blk); bot.chat(`building a ${len}-long, ${h}-tall wall`) } break
     case 'platform': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 8); const blk = B(args.block, 'stone'); fillBox(o.x - r, o.y - 1, o.z - r, o.x + r, o.y - 1, o.z + r, blk); bot.chat(`platform down, ${2 * r + 1} wide`) } break
-    case 'room': case 'house': case 'hut': case 'cabin': buildRoom(resolveOrigin(args, speaker), args); break
+    case 'room': buildRoom(resolveOrigin(args, speaker), args); break
+    case 'build': case 'house': case 'castle': {
+      const o = resolveOrigin(args, speaker)
+      let s = String(args.structure || (a === 'build' ? 'house' : a)).toLowerCase().replace(/[^a-z_]/g, '')
+      const ST = require('./structures')({ enqueue, fillBox, B, clamp, set: (x, y, z, b) => enqueue(`/setblock ${x} ${y} ${z} ${b}`) })
+      const gen = ST.gens[s] || ST.gens[ST.alias[s]]
+      if (!gen) { bot.chat(`not sure how to build "${s}" — try house, tower, castle, wall, bridge, pyramid, dome`); break }
+      try { gen(o, args) } catch (e) { log('build err', e.message); bot.chat('hit a snag building that') }
+      break
+    }
     case 'time': { const v = ({ day: 'day', night: 'night', noon: 'noon', midnight: 'midnight' })[String(args.value || 'day').toLowerCase()] || 'day'; enqueue(`/time set ${v}`); } break
     case 'weather': { const v = ({ clear: 'clear', rain: 'rain', thunder: 'thunder' })[String(args.value || 'clear').toLowerCase()] || 'clear'; enqueue(`/weather ${v}`); } break
     case 'give': { const who = args.player || speaker; enqueue(`/give ${who} ${B(args.item, 'diamond')} ${clamp(args.count, 1, 64, 1)}`); } break
