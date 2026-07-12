@@ -2,12 +2,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import mineflayer from "../mindcraft/upstream/node_modules/mineflayer/index.js";
+import pathfinderPackage from "../mindcraft/upstream/node_modules/mineflayer-pathfinder/index.js";
 import {
   IMPORTED_BLUEPRINTS_DIR,
   compileSchematicPlan,
   findSchematicByName,
   listImportedSchematics,
 } from "./blueprint-compiler.mjs";
+
+const { pathfinder, Movements, goals } = pathfinderPackage;
 
 const host = process.env.MINECRAFT_HOST || "192.168.86.188";
 const port = Number(process.env.MINECRAFT_PORT || 25565);
@@ -17,32 +20,42 @@ const workerPrefix = process.env.CODEX_SWARM_PREFIX || "CodexDrone";
 const workerCount = Number(process.env.CODEX_SWARM_COUNT || 4);
 const runtimeDir = process.env.CODEX_SWARM_RUNTIME || ".codex-runtime/swarm";
 const statePath = path.join(runtimeDir, "state.json");
+const playerMemoryPath = path.join(runtimeDir, "players.json");
 const announceOnJoin = process.env.CODEX_SWARM_ANNOUNCE_ON_JOIN !== "0";
 const reportIntervalMs = Number(process.env.CODEX_SWARM_REPORT_INTERVAL_MS || 60000);
 const milestoneStep = Number(process.env.CODEX_SWARM_REPORT_MILESTONE || 25);
 const jobChunkSize = Number(process.env.CODEX_SWARM_JOB_CHUNK_SIZE || 32);
+const ignoredSpeakers = new Set(parseList(process.env.CODEX_SWARM_IGNORED_SPEAKERS || "codex,claude,claudebot,grok"));
 
 const bot = mineflayer.createBot({ host, port, username, version, auth: "offline" });
+bot.loadPlugin(pathfinder);
 let lastReportAt = 0;
 let lastReportTaskId = null;
 let lastMilestone = -1;
 let lastCompletedPhases = new Set();
+let movements = null;
 
 bot.once("spawn", () => {
+  movements = new Movements(bot);
+  bot.pathfinder.setMovements(movements);
   if (announceOnJoin) {
     say("CodexBoss online. Use @swarm build cabin or @swarm build watchtower.");
   }
   console.log(`${username} joined ${host}:${port} at ${bot.entity.position}`);
+  recordVisiblePlayers("spawn");
   setInterval(reportProgress, 10000).unref();
+  setInterval(() => recordVisiblePlayers("scan"), 2500).unref();
 });
 
 bot.on("chat", async (speaker, message) => {
   if (speaker === bot.username) return;
+  if (isIgnoredSpeaker(speaker)) return;
 
   const command = addressedCommand(message);
   if (!command) return;
 
   console.log(`<${speaker}> ${message}`);
+  recordPlayer(speaker, bot.players[speaker]?.entity?.position, "chat");
   try {
     await runCommand(speaker, command);
   } catch (error) {
@@ -63,7 +76,7 @@ async function runCommand(speaker, commandText) {
   const lower = command.toLowerCase();
 
   if (!command || lower === "help") {
-    say("swarm: build cabin|watchtower [at x y z] | build schematic <name> [at x y z] | blueprints | blueprint | status | cancel");
+    say("swarm: build cabin|watchtower [at x y z] | build schematic <name> [at x y z] | burn/flood/freeze/curse this [at x y z] | come|follow me | status | cancel");
     return;
   }
 
@@ -75,6 +88,12 @@ async function runCommand(speaker, commandText) {
 
   if (lower === "status" || lower === "what are you doing") {
     showStatus();
+    return;
+  }
+
+  const recall = parseRecallCommand(command, speaker);
+  if (recall) {
+    await recallSwarm(recall.target);
     return;
   }
 
@@ -97,14 +116,14 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
-  const buildRequest = parseBuildCommand(command);
-  if (!buildRequest) {
-    say(`I do not know "${command}". Try @swarm build cabin, @swarm build watchtower, or @swarm build schematic castle.`);
+  const planRequest = parsePlanCommand(command);
+  if (!planRequest) {
+    say(`I do not know "${command}". Try @swarm build cabin, @swarm build schematic castle, or @swarm burn this castle with lava.`);
     return;
   }
 
-  const origin = parseOrigin(buildRequest.originText) || defaultOrigin();
-  const plan = await createPlan(buildRequest, origin);
+  const origin = resolveOrigin(planRequest.originText, speaker);
+  const plan = await createPlan(planRequest, origin);
   writeState(plan);
   writeWorkerProgressFiles(plan.taskId);
   lastReportTaskId = plan.taskId;
@@ -113,7 +132,46 @@ async function runCommand(speaker, commandText) {
   lastReportAt = Date.now();
 
   say(`planned ${plan.structure} at ${formatOrigin(origin)}: ${plan.jobs.length} block jobs for ${workerCount} drones`);
-  say(`${plan.source ? describeSource(plan.source) : "built-in blueprint"}; drones move near work and place with /setblock or /fill.`);
+  say(`${describePlanSource(plan)}; drones place exact block runs through the Bubble Sky bridge.`);
+}
+
+async function recallSwarm(target) {
+  const targetName = findPlayerName(target) || target;
+  const player = bot.players[targetName]?.entity;
+  const fallbackPosition = parseOrigin(target, bot.entity.position);
+  const rememberedPosition = rememberedPlayerPosition(targetName);
+  const targetPosition = player?.position ? vectorPosition(player.position) : fallbackPosition || rememberedPosition;
+  const isCoordinateTarget = Boolean(fallbackPosition);
+
+  const taskId = `recall-${Date.now()}`;
+  writeState({
+    status: "recall",
+    taskId,
+    target: isCoordinateTarget ? null : targetName,
+    targetPosition,
+    teleport: true,
+    workers: workerNames(),
+    jobs: [],
+    createdAt: new Date().toISOString(),
+  });
+  writeWorkerProgressFiles(taskId);
+  if (targetPosition) {
+    attemptTeleportSelf(targetName, targetPosition, isCoordinateTarget);
+    bot.pathfinder.setGoal(new goals.GoalNear(targetPosition.x, targetPosition.y, targetPosition.z, 3));
+    say(`recalling ${workerCount} drones and boss to ${isCoordinateTarget ? "coordinates" : targetName} at ${formatPosition(targetPosition)}`);
+  } else {
+    say(`recalling ${workerCount} drones to ${targetName}. No coordinates cached yet; I will keep looking and use /tp if the server allows it.`);
+  }
+}
+
+function parseRecallCommand(command, speaker) {
+  const lower = compact(command).toLowerCase();
+  if (/^(?:come|come here|follow me|recall|recall me|rally|rally up)$/.test(lower)) {
+    return { target: speaker };
+  }
+  const match = command.match(/^(?:come to|follow|recall|rally to)\s+(.+)$/i);
+  if (match) return { target: normalizeBuildTarget(match[1]) === "me" ? speaker : compact(match[1]) };
+  return null;
 }
 
 function showStatus() {
@@ -128,8 +186,10 @@ function showStatus() {
   const failed = progress.reduce((sum, entry) => sum + (entry.failedIds?.length || 0), 0);
   const summary = progressSummary(state);
   const active = summary.activeText;
+  const locations = workerLocationText(progress);
+  const failureText = firstFailureText(progress);
 
-  say(`${state.structure} ${state.status}: ${done.size}/${state.jobs.length} done (${summary.percent}%), ${failed} failed; ${summary.phaseText}${active ? `; ${active}` : ""}`);
+  say(`${state.structure} ${state.status}: ${done.size}/${state.jobs.length} done (${summary.percent}%), ${failed} failed; ${summary.phaseText}${failureText ? `; ${failureText}` : ""}${active ? `; ${active}` : ""}${locations ? `; ${locations}` : ""}`);
 }
 
 function showBlueprint() {
@@ -213,6 +273,22 @@ function phaseOrderForState(state) {
   return [...new Set((state.jobs || []).map((job) => job.phase))];
 }
 
+function workerLocationText(progress) {
+  const locations = progress
+    .filter((entry) => entry.position)
+    .map((entry) => `${entry.worker}@${entry.position.x},${entry.position.altitude},${entry.position.z}`);
+  if (locations.length === 0) return "";
+  return `drones ${locations.join(" ")}`;
+}
+
+function firstFailureText(progress) {
+  for (const entry of progress) {
+    const firstFailure = Object.values(entry.failures || {})[0];
+    if (firstFailure) return `first failure: ${String(firstFailure).slice(0, 120)}`;
+  }
+  return "";
+}
+
 function humanPhaseList(phases) {
   if (phases.length === 1) return `${phases[0]} phase`;
   if (phases.length === 2) return `${phases[0]} and ${phases[1]} phases`;
@@ -224,6 +300,11 @@ function describeSource(source) {
   const size = source.size ? `${source.size.x}x${source.size.y}x${source.size.z}` : "unknown size";
   const sourcePath = source.path ? path.relative(process.cwd(), source.path) : source.type;
   return `blueprint ${sourcePath} (${size})`;
+}
+
+function describePlanSource(plan) {
+  if (plan.source) return describeSource(plan.source);
+  return plan.kind === "effect" ? "effect plan" : "built-in blueprint";
 }
 
 async function createPlan(buildRequest, origin) {
@@ -246,7 +327,9 @@ async function createPlan(buildRequest, origin) {
     });
   }
 
-  const jobs = structure === "cabin" ? cabinJobs(origin) : watchtowerJobs(origin);
+  const jobs = buildRequest.kind === "effect"
+    ? structureEffectJobs(origin, buildRequest.effect)
+    : structure === "cabin" ? cabinJobs(origin) : watchtowerJobs(origin);
 
   assignJobs(jobs, workers, jobChunkSize);
   jobs.forEach((job, index) => {
@@ -256,12 +339,68 @@ async function createPlan(buildRequest, origin) {
   return {
     taskId: `${structure}-${Date.now()}`,
     status: "building",
+    kind: buildRequest.kind,
     structure,
     origin,
     workers,
     jobs,
     createdAt: new Date().toISOString(),
   };
+}
+
+function parsePlanCommand(command) {
+  return parseEffectCommand(command) || parseBuildCommand(command);
+}
+
+function parseEffectCommand(command) {
+  const normalized = normalizeEffectCommand(command);
+  const effect = effectForCommand(normalized);
+  if (!effect) return null;
+
+  const originText = extractOriginText(normalized);
+  return {
+    kind: "effect",
+    structure: effectStructureName(effect),
+    effect,
+    originText,
+  };
+}
+
+function normalizeEffectCommand(command) {
+  return compact(command)
+    .replace(/^(?:please|pls|hey|yo)\s+/i, "")
+    .replace(/\b(?:can|could|would)\s+you\s+/i, "")
+    .replace(/\b(?:for\s+me|for\s+us)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function effectForCommand(command) {
+  const lower = command.toLowerCase();
+  const hasTarget = /\b(this|that|nearby|castle|fortress|fort|tower|base|build|building|structure|house|village|wall|walls|area|place|thing)\b/.test(lower);
+  if (!hasTarget) return null;
+
+  if (/\b(burn|ignite|torch|melt|scorch|incinerate|set\s+.*on\s+fire|lava|volcano|hellscape)\b/.test(lower)) return "lava_burn";
+  if (/\b(flood|drown|submerge|soak|waterlog|water)\b/.test(lower)) return "flood";
+  if (/\b(freeze|ice|snow|blizzard|frost)\b/.test(lower)) return "freeze";
+  if (/\b(curse|haunt|spooky|evil|corrupt|darken|doom|ruin)\b/.test(lower)) return "curse";
+  return null;
+}
+
+function extractOriginText(command) {
+  const match = command.match(/\b(?:at|near|around)\s+(-?\d+(?:\.\d+)?(?:\s*,?\s*-?\d+(?:\.\d+)?){1,2}|here)$/i);
+  if (match) return match[1];
+  if (/\bhere\b/i.test(command)) return "here";
+  return undefined;
+}
+
+function effectStructureName(effect) {
+  return {
+    lava_burn: "lava burn",
+    flood: "flood",
+    freeze: "freeze",
+    curse: "curse",
+  }[effect] || "effect";
 }
 
 function assignJobs(jobs, workers, chunkSize) {
@@ -286,8 +425,12 @@ function parseBuildCommand(command) {
   const match = normalized.match(/^(?:build|make|construct|create)\s+(.+?)(?:\s+(?:at|near|around)\s+(.+))?$/i);
   if (!match) return null;
 
-  const target = normalizeBuildTarget(match[1]);
-  const originText = match[2];
+  let target = normalizeBuildTarget(match[1]);
+  let originText = match[2];
+  if (/\bhere$/i.test(target)) {
+    target = compact(target.replace(/\bhere$/i, ""));
+    originText = "here";
+  }
   const lowerTarget = target.toLowerCase();
 
   if (["cabin", "watchtower", "tower"].includes(lowerTarget)) {
@@ -389,12 +532,12 @@ function cabinJobs(origin) {
   }
 
   for (let z = z0 - 1; z <= z1 + 1; z += 1) {
-    jobs.push(job(x0 - 1, y + wallHeight + 1, z, "spruce_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]", "roof"));
-    jobs.push(job(x1 + 1, y + wallHeight + 1, z, "spruce_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]", "roof"));
-    jobs.push(job(x0, y + wallHeight + 2, z, "spruce_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]", "roof"));
-    jobs.push(job(x1, y + wallHeight + 2, z, "spruce_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]", "roof"));
-    jobs.push(job(x0 + 1, y + wallHeight + 3, z, "spruce_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]", "roof"));
-    jobs.push(job(x1 - 1, y + wallHeight + 3, z, "spruce_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]", "roof"));
+    jobs.push(job(x0 - 1, y + wallHeight + 1, z, "spruce_planks", "roof"));
+    jobs.push(job(x1 + 1, y + wallHeight + 1, z, "spruce_planks", "roof"));
+    jobs.push(job(x0, y + wallHeight + 2, z, "spruce_planks", "roof"));
+    jobs.push(job(x1, y + wallHeight + 2, z, "spruce_planks", "roof"));
+    jobs.push(job(x0 + 1, y + wallHeight + 3, z, "spruce_planks", "roof"));
+    jobs.push(job(x1 - 1, y + wallHeight + 3, z, "spruce_planks", "roof"));
     for (let x = x0 + 2; x <= x1 - 2; x += 1) {
       jobs.push(job(x, y + wallHeight + 4, z, "spruce_planks", "roof ridge"));
     }
@@ -457,6 +600,80 @@ function watchtowerJobs(origin) {
   return sortJobs(jobs);
 }
 
+function structureEffectJobs(origin, effect) {
+  const jobs = [];
+  const add = (phase, x, y, z, block) => jobs.push(job(x, y, z, block, phase));
+  const cuboid = (phase, x1, y1, z1, x2, y2, z2, block) => {
+    for (let yy = Math.min(y1, y2); yy <= Math.max(y1, y2); yy += 1) {
+      for (let zz = Math.min(z1, z2); zz <= Math.max(z1, z2); zz += 1) {
+        for (let xx = Math.min(x1, x2); xx <= Math.max(x1, x2); xx += 1) {
+          add(phase, xx, yy, zz, block);
+        }
+      }
+    }
+  };
+
+  const x0 = origin.x - 18;
+  const x1 = origin.x + 18;
+  const z0 = origin.z - 18;
+  const z1 = origin.z + 18;
+  const y0 = origin.y - 4;
+  const y1 = origin.y + 24;
+
+  if (effect === "flood") {
+    cuboid("basin", x0, y0, z0, x1, y0, z1, "water");
+    cuboid("surge", x0, origin.y + 2, z0, x1, origin.y + 3, z1, "water");
+    cuboid("cascade", origin.x - 8, origin.y + 8, origin.z - 8, origin.x + 8, origin.y + 9, origin.z + 8, "water");
+    cuboid("containment", x0, origin.y, z0, x1, origin.y + 8, z0, "blue_stained_glass");
+    cuboid("containment", x0, origin.y, z1, x1, origin.y + 8, z1, "blue_stained_glass");
+    cuboid("containment", x0, origin.y, z0, x0, origin.y + 8, z1, "blue_stained_glass");
+    cuboid("containment", x1, origin.y, z0, x1, origin.y + 8, z1, "blue_stained_glass");
+    return sortJobs(jobs);
+  }
+
+  if (effect === "freeze") {
+    cuboid("ice floor", x0, y0, z0, x1, y0, z1, "packed_ice");
+    cuboid("snow", x0, origin.y + 1, z0, x1, origin.y + 1, z1, "snow_block");
+    cuboid("ice cap", x0, origin.y + 10, z0, x1, origin.y + 10, z1, "ice");
+    for (let x = x0; x <= x1; x += 6) {
+      cuboid("icicles", x, origin.y + 2, z0, x, y1, z0, "blue_ice");
+      cuboid("icicles", x, origin.y + 2, z1, x, y1, z1, "blue_ice");
+    }
+    for (let z = z0; z <= z1; z += 6) {
+      cuboid("icicles", x0, origin.y + 2, z, x0, y1, z, "blue_ice");
+      cuboid("icicles", x1, origin.y + 2, z, x1, y1, z, "blue_ice");
+    }
+    return sortJobs(jobs);
+  }
+
+  if (effect === "curse") {
+    cuboid("corruption", x0, y0, z0, x1, y0, z1, "blackstone");
+    cuboid("soul ring", x0, origin.y, z0, x1, origin.y + 1, z0, "soul_sand");
+    cuboid("soul ring", x0, origin.y, z1, x1, origin.y + 1, z1, "soul_sand");
+    cuboid("soul ring", x0, origin.y, z0, x0, origin.y + 1, z1, "soul_sand");
+    cuboid("soul ring", x1, origin.y, z0, x1, origin.y + 1, z1, "soul_sand");
+    for (const [dx, dz] of [[-14, -14], [14, -14], [-14, 14], [14, 14], [0, -18], [0, 18]]) {
+      cuboid("spires", origin.x + dx, origin.y, origin.z + dz, origin.x + dx, origin.y + 10, origin.z + dz, "obsidian");
+      add("soul fire", origin.x + dx, origin.y + 11, origin.z + dz, "soul_fire");
+    }
+    cuboid("haunt", origin.x - 5, origin.y + 2, origin.z - 5, origin.x + 5, origin.y + 8, origin.z + 5, "purple_stained_glass");
+    return sortJobs(jobs);
+  }
+
+  cuboid("magma floor", x0, y0, z0, x1, y0, z1, "magma_block");
+  cuboid("ignition", x0, origin.y + 1, z0, x1, origin.y + 1, z1, "fire");
+  cuboid("lava shelf", origin.x - 9, origin.y + 12, origin.z - 9, origin.x + 9, origin.y + 12, origin.z + 9, "lava");
+  cuboid("lava crown", origin.x - 4, origin.y + 18, origin.z - 4, origin.x + 4, origin.y + 18, origin.z + 4, "lava");
+  cuboid("magma wall", x0, origin.y, z0, x1, origin.y + 4, z0, "magma_block");
+  cuboid("magma wall", x0, origin.y, z1, x1, origin.y + 4, z1, "magma_block");
+  cuboid("magma wall", x0, origin.y, z0, x0, origin.y + 4, z1, "magma_block");
+  cuboid("magma wall", x1, origin.y, z0, x1, origin.y + 4, z1, "magma_block");
+  for (const [dx, dz] of [[-16, -16], [16, -16], [-16, 16], [16, 16], [0, 0]]) {
+    cuboid("lava falls", origin.x + dx, origin.y, origin.z + dz, origin.x + dx, origin.y + 12, origin.z + dz, "lava");
+  }
+  return sortJobs(jobs);
+}
+
 function job(x, y, z, block, phase) {
   return { x, y, z, block, phase };
 }
@@ -509,11 +726,23 @@ function addressedCommand(message) {
   return null;
 }
 
-function parseOrigin(text) {
+function resolveOrigin(text, speaker) {
+  const speakerPosition = bot.players[speaker]?.entity?.position;
+  const fallback = defaultOrigin();
+  if (!text || compact(text).toLowerCase() === "here") {
+    return positionOrigin(speakerPosition, fallback, text ? 0 : 8);
+  }
+
+  const parsed = parseOrigin(text, speakerPosition || fallback);
+  if (parsed) return parsed;
+  return positionOrigin(speakerPosition, fallback, 8);
+}
+
+function parseOrigin(text, referencePosition) {
   if (!text) return null;
   const numbers = text.match(/-?\d+(?:\.\d+)?/g)?.map(Number) || [];
   if (numbers.length === 2) {
-    return { x: Math.round(numbers[0]), y: Math.floor(bot.entity.position.y), z: Math.round(numbers[1]) };
+    return { x: Math.round(numbers[0]), y: Math.floor(referencePosition.y), z: Math.round(numbers[1]) };
   }
   if (numbers.length >= 3) {
     return { x: Math.round(numbers[0]), y: Math.round(numbers[1]), z: Math.round(numbers[2]) };
@@ -526,8 +755,25 @@ function defaultOrigin() {
   return { x: Math.round(position.x), y: Math.floor(position.y), z: Math.round(position.z + 8) };
 }
 
+function positionOrigin(position, fallback, zOffset) {
+  if (!position) return fallback;
+  return { x: Math.round(position.x), y: Math.floor(position.y), z: Math.round(position.z + zOffset) };
+}
+
 function workerNames() {
   return Array.from({ length: workerCount }, (_, index) => `${workerPrefix}${index + 1}`);
+}
+
+function isIgnoredSpeaker(speaker) {
+  const normalized = String(speaker).toLowerCase();
+  return ignoredSpeakers.has(normalized) || normalized === username.toLowerCase() || normalized.startsWith(workerPrefix.toLowerCase());
+}
+
+function parseList(text) {
+  return String(text)
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 function readState() {
@@ -551,6 +797,57 @@ function writeWorkerProgressFiles(taskId) {
   for (const worker of workerNames()) {
     fs.writeFileSync(path.join(progressDir, `${worker}.json`), `${JSON.stringify({ taskId, worker, doneIds: [], failedIds: [] }, null, 2)}\n`);
   }
+}
+
+function recordVisiblePlayers(source) {
+  for (const [playerName, player] of Object.entries(bot.players)) {
+    recordPlayer(playerName, player?.entity?.position, source);
+  }
+}
+
+function recordPlayer(playerName, position, source) {
+  if (!playerName || !position) return;
+  const normalized = playerName.toLowerCase();
+  const memory = readPlayerMemory();
+  memory.players = memory.players || {};
+  memory.players[normalized] = {
+    name: playerName,
+    position: vectorPosition(position),
+    seenAt: new Date().toISOString(),
+    source,
+    observer: username,
+  };
+  writePlayerMemory(memory);
+}
+
+function rememberedPlayerPosition(playerName) {
+  const entry = readPlayerMemory().players?.[String(playerName).toLowerCase()];
+  return entry?.position || null;
+}
+
+function readPlayerMemory() {
+  try {
+    if (!fs.existsSync(playerMemoryPath)) return { players: {} };
+    return JSON.parse(fs.readFileSync(playerMemoryPath, "utf8"));
+  } catch (error) {
+    console.error(`failed to read player memory: ${error.message}`);
+    return { players: {} };
+  }
+}
+
+function writePlayerMemory(memory) {
+  fs.mkdirSync(runtimeDir, { recursive: true });
+  const tempPath = `${playerMemoryPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tempPath, `${JSON.stringify(memory, null, 2)}\n`);
+  fs.renameSync(tempPath, playerMemoryPath);
+}
+
+function attemptTeleportSelf(targetName, targetPosition, isCoordinateTarget) {
+  if (isCoordinateTarget && targetPosition) {
+    bot.chat(`/tp ${username} ${Math.round(targetPosition.x)} ${Math.round(targetPosition.y)} ${Math.round(targetPosition.z)}`);
+    return;
+  }
+  if (targetName) bot.chat(`/tp ${username} ${targetName}`);
 }
 
 function readAllProgress(taskId) {
@@ -583,4 +880,17 @@ function escapeRegex(text) {
 
 function formatOrigin(origin) {
   return `${origin.x}, ${origin.y}, ${origin.z}`;
+}
+
+function formatPosition(position) {
+  return `${Math.round(position.x)}, ${Math.round(position.y)}, ${Math.round(position.z)}`;
+}
+
+function vectorPosition(position) {
+  return { x: position.x, y: position.y, z: position.z };
+}
+
+function findPlayerName(name) {
+  const lower = String(name).toLowerCase();
+  return Object.keys(bot.players).find((playerName) => playerName.toLowerCase() === lower);
 }
