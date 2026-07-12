@@ -193,6 +193,11 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
+  if (isCapabilityQuestion(lower)) {
+    say(`yes. I can read what you're looking at, inspect nearby blocks/colors, continue visible builds like "keep building this red thing", and transform structures with commands like "burn this castle with lava".`, { to: speaker });
+    return;
+  }
+
   if (["where", "where are you", "pos", "position"].includes(lower)) {
     say(`I am at ${formatPosition(bot.entity.position)}.`, { to: speaker });
     return;
@@ -310,7 +315,11 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
-  say(`I heard "${command}", but I only know: ${helpLines.join(", ")}.`, { to: speaker });
+  say(`I heard "${command}". Try pointing at something and saying "do you see this", "keep building this red thing", or "burn this castle with lava".`, { to: speaker });
+}
+
+function isCapabilityQuestion(lower) {
+  return /\b(?:are you smart yet|smart yet|what can you do|what do you understand|can you see|do you understand this|are you smarter)\b/.test(lower);
 }
 
 function interpretArchitectCommand(lower) {
