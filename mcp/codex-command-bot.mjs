@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Vec3 } from "vec3";
+import minecraftData from "../mindcraft/upstream/node_modules/minecraft-data/index.js";
 import mineflayer from "../mindcraft/upstream/node_modules/mineflayer/index.js";
 import pathfinderPackage from "../mindcraft/upstream/node_modules/mineflayer-pathfinder/index.js";
 
@@ -38,6 +39,7 @@ const codexChatCliTimeoutMs = Number(process.env.CODEX_CHAT_CLI_TIMEOUT_MS || 12
 const commandContext = new AsyncLocalStorage();
 const botAliases = botHandleAliases(username);
 const primaryHandle = botAliases[0] || username;
+const vanillaBlocksByName = minecraftData(version)?.blocksByName || {};
 const supportedStructureKinds = ["bridge", "road", "platform", "house", "room", "tower", "wall", "dome", "pyramid"];
 const helpLines = [
   "help",
@@ -788,6 +790,7 @@ function isValidFreeformBuildCommand(command, origin) {
 
 function isSafeFreeformBlock(block) {
   const name = commandBlockName(block);
+  if (!isKnownVanillaBlock(name)) return false;
   return !new Set([
     "lava",
     "water",
@@ -801,6 +804,10 @@ function isSafeFreeformBlock(block) {
     "jigsaw",
     "barrier",
   ]).has(name);
+}
+
+function isKnownVanillaBlock(name) {
+  return Boolean(vanillaBlocksByName[name]);
 }
 
 function cuboidVolume(values) {
