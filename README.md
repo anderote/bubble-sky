@@ -23,15 +23,21 @@ server/      Fabric server install, config, world, mods/ drop-folder   (Workstre
 mods/        Java mod dev workspace (Gradle + Java 21)                  (Workstream A)
 mcp/         Mineflayer MCP server wiring for Claude Code               (Workstream B)
 mindcraft/   Autonomous LLM bots                                        (Workstream B)
+client/      Local Prism client helpers, including minimap install      (shared)
 docs/        Design spec                                               (shared)
 ```
+
+## Client helpers
+
+See [`client/README.md`](client/README.md) for local Prism client setup, including
+the Fabric/Xaero minimap installer for Minecraft 1.21.6.
 
 ## Toolchain
 
 | Tool | Version | Why |
 |------|---------|-----|
 | Java (Temurin) | **21** | Required by Fabric 1.21.6 |
-| Node | **20 LTS** | mindcraft breaks on 24+; MCP server needs Node |
+| Node | **22 LTS** | current Mineflayer packages require 22+; mindcraft warns against 24+ |
 | Fabric | server launcher + Fabric API | mod loader |
 
 ---
@@ -71,7 +77,7 @@ Making bots understand custom content is **out of scope for v1**.
 
 | Phase | Done when… | Owner |
 |-------|-----------|-------|
-| P0 Toolchain | Java 21 + Node 20 installed & pinned | A + B |
+| P0 Toolchain | Java 21 + Node 22 installed & pinned | A + B |
 | P1 Server up | Offline-mode server runs; human joins & walks around | A |
 | P2 MCP agent | Claude Code controls a bot (move/dig verified) | B |
 | P3 Autonomous bot | One mindcraft bot joins & acts on its own | B |

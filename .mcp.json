@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "minecraft": {
+      "command": "./mcp/run-minecraft-mcp.sh",
+      "args": []
+    }
+  }
+}

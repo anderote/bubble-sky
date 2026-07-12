@@ -1,0 +1,7 @@
+{
+  "name": "codex",
+  "model": "anthropic/claude-sonnet-4-6",
+  "embedding": {
+    "api": "anthropic"
+  }
+}

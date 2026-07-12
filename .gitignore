@@ -22,9 +22,14 @@ server/*.jar
 # Node (MCP server, mindcraft)
 node_modules/
 
+# Local bot/runtime state
+.codex-runtime/
+
 # Secrets
 keys.json
 .env
+*.pem
+.github-app.env
 
 # OS
 .DS_Store

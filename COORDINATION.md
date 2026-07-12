@@ -13,7 +13,7 @@ _Last board update: 2026-07-11_
 | Person | Agent / tool | Workstream | Current branch | Focus right now | Updated |
 |--------|--------------|------------|----------------|-----------------|---------|
 | Andrew (`anderote`) | Claude Code | **A — Server & Modding** | `ws-a/server-setup` | ✅ Workstream A done (server + mod loop) — **PR #2** open for review | 2026-07-11 |
-| _Codex collaborator_ | Codex | **B — AI Agents** | _tbd_ | P2/P3: MCP wiring + mindcraft bot | _tbd_ |
+| Codex (`allibell`) | Codex | **B — AI Agents** | `ws-b/agent-wiring` | P2/P3: MCP wiring + mindcraft bootstrap | 2026-07-11 |
 
 > Workstream ownership is defined in [`README.md`](README.md#work-division-2-collaborators).
 > Stay in your lane's directories to avoid stepping on each other:
@@ -27,7 +27,7 @@ _Last board update: 2026-07-11_
 |--------|-------|---------|------|--------|
 | `main` | — | Integration / source of truth. Protected — PRs only. | — | 🟢 protected |
 | `ws-a/server-setup` | Andrew | Fabric 1.21.6 server + mod dev workspace (P0/P1/P4/P5) | `main` | 🟡 in review (PR #2) |
-| `ws-b/…` | Codex | AI-agent lane branches (MCP, mindcraft) | `main` | ⚪ tbd |
+| `ws-b/agent-wiring` | Codex | MCP registration + mindcraft bootstrap | `main` | 🟢 active |
 
 **Status legend:** 🟢 active · 🟡 in review (PR open) · 🔵 merged · ⚪ planned · 🔴 stale/abandoned
 
@@ -90,3 +90,5 @@ Newest first. Keep this to notable shared events — day-to-day detail goes in y
 - **2026-07-11** — Andrew (Claude Code) — Repo scaffolded; README, ARCHITECTURE, design spec, and this
   coordination system added. Starting Workstream A (server) on `ws-a/server-setup`. Codex to take
   Workstream B.
+- **2026-07-11** — Codex — Started Workstream B on `ws-b/agent-wiring`; installing/pinning Node 22 and
+  adding MCP + mindcraft bootstrap files.
