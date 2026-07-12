@@ -32,9 +32,15 @@ const reportEveryJobs = Number(process.env.CODEX_DRONE_REPORT_EVERY_JOBS || 0);
 const reportMinIntervalMs = Number(process.env.CODEX_DRONE_REPORT_MIN_INTERVAL_MS || 90000);
 const reportPhaseChanges = process.env.CODEX_DRONE_REPORT_PHASES === "1";
 const reportTaskJoin = process.env.CODEX_DRONE_REPORT_TASK_JOIN === "1";
+const spawnTimeoutMs = Number(process.env.CODEX_SPAWN_TIMEOUT_MS || 45000);
 
 const bot = mineflayer.createBot({ host, port, username, version, auth: "offline" });
 bot.loadPlugin(pathfinder);
+
+const spawnWatchdog = setTimeout(() => {
+  console.error(`${username}: did not spawn within ${spawnTimeoutMs}ms; exiting for wrapper retry`);
+  process.exit(1);
+}, spawnTimeoutMs);
 
 let activeTaskId = null;
 let movements = null;
@@ -49,6 +55,7 @@ process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
 bot.once("spawn", async () => {
+  clearTimeout(spawnWatchdog);
   movements = new Movements(bot);
   bot.pathfinder.setMovements(movements);
   Item = require("prismarine-item")(bot.registry);

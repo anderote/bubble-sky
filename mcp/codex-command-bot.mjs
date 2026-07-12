@@ -29,6 +29,7 @@ const commandModel = process.env.CODEX_COMMAND_MODEL || "gpt-5-mini";
 const commandApiTimeoutMs = Number(process.env.CODEX_COMMAND_API_TIMEOUT_MS || 3500);
 const chatModel = process.env.CODEX_CHAT_MODEL || commandModel;
 const chatApiTimeoutMs = Number(process.env.CODEX_CHAT_API_TIMEOUT_MS || 8000);
+const spawnTimeoutMs = Number(process.env.CODEX_SPAWN_TIMEOUT_MS || 45000);
 const codexCliPath = process.env.CODEX_COMMAND_CLI || "/opt/homebrew/bin/codex";
 const codexCliEnabled = process.env.CODEX_COMMAND_CLI_ENABLED !== "0";
 const codexCliTimeoutMs = Number(process.env.CODEX_COMMAND_CLI_TIMEOUT_MS || 12000);
@@ -84,6 +85,11 @@ const bot = mineflayer.createBot({
 
 bot.loadPlugin(pathfinder);
 
+const spawnWatchdog = setTimeout(() => {
+  console.error(`${username}: did not spawn within ${spawnTimeoutMs}ms; exiting for wrapper retry`);
+  process.exit(1);
+}, spawnTimeoutMs);
+
 let followTarget = null;
 let escort = null;
 let movements = null;
@@ -93,6 +99,7 @@ let flightAnchorBusy = false;
 let airborneFollowNextAt = 0;
 
 bot.once("spawn", () => {
+  clearTimeout(spawnWatchdog);
   movements = new Movements(bot);
   bot.pathfinder.setMovements(movements);
   say(`${username} online. Tag @${primaryHandle} help. Chat visibility is ${visibility}.`);
@@ -552,7 +559,7 @@ async function interpretArchitectCommandWithOpenAI(command, speaker) {
     '{"action":"effect","effect":"curse"} for requests to curse, haunt, corrupt, darken, or make a nearby structure spooky/evil.',
     '{"action":"structure","kind":"bridge","delegateVehicle":true,"vehicle":"semi_truck"} for requests to build a bridge and delegate a semi/truck/vehicle to a drone.',
     '{"action":"structure","kind":"road"} for requests to build a generic structure. Valid kind values: bridge, road, platform, house, room, tower, wall, dome, pyramid.',
-    '{"action":"structure","kind":"tower","delegateStructure":true} for requests to delegate a whole tower to a drone.',
+    '{"action":"structure","kind":"tower","delegateStructure":true} for requests to delegate a whole generic structure to a drone.',
     '{"action":"castle_wall"} for requests to build a castle/fortress wall, rampart, battlement, or a wall with two towers.',
     '{"action":"fortress"} for requests to build, make, create, summon, upgrade, or freestyle a castle/fortress/fort/keep here.',
     '{"action":"none"} for anything else.',
@@ -618,7 +625,7 @@ async function interpretArchitectCommandWithCodexCli(command, speaker) {
     '{"action":"effect","effect":"curse"} for requests to curse, haunt, corrupt, darken, or make a nearby structure spooky/evil.',
     '{"action":"structure","kind":"bridge","delegateVehicle":true,"vehicle":"semi_truck"} for requests to build a bridge and delegate a semi/truck/vehicle to a drone.',
     '{"action":"structure","kind":"road"} for requests to build a generic structure. Valid kind values: bridge, road, platform, house, room, tower, wall, dome, pyramid.',
-    '{"action":"structure","kind":"tower","delegateStructure":true} for requests to delegate a whole tower to a drone.',
+    '{"action":"structure","kind":"tower","delegateStructure":true} for requests to delegate a whole generic structure to a drone.',
     '{"action":"castle_wall"} for requests to build a castle/fortress wall, rampart, battlement, or a wall with two towers.',
     '{"action":"fortress"} for requests to build, make, create, summon, upgrade, or freestyle a castle/fortress/fort/keep here.',
     '{"action":"none"} for anything else.',
@@ -1307,8 +1314,22 @@ async function executeStructureCommand(speaker, command, origin, originalText = 
 
   if (command.kind === "bridge") {
     const plan = bridgePlan(speaker, origin, originalText);
+    const bridgeBuildCommands = bridgeCommands(plan);
+    if (command.delegateStructure && !command.delegateVehicle) {
+      const bridgeJobs = structureJobsFromCommands(bridgeBuildCommands, delegatedDroneName, "bridge");
+      say(`delegating a bridge at ${formatBlockPosition(plan.origin)} to ${delegatedDroneName}`);
+      summonDroneToBuildSite(plan.origin);
+      writeDelegatedState({
+        taskId: `codex-bridge-${Date.now()}`,
+        structure: "generic bridge",
+        origin: plan.origin,
+        jobs: bridgeJobs,
+      });
+      return;
+    }
+
     say(`building a detailed bridge at ${formatBlockPosition(plan.origin)}${command.delegateVehicle ? `; delegating the ${command.vehicle === "semi_truck" ? "semi truck" : "vehicle"} to ${delegatedDroneName}` : ""}`);
-    await sendCommandBatch(bridgeCommands(plan));
+    await sendCommandBatch(bridgeBuildCommands);
 
     if (command.delegateVehicle) {
       const vehicleJobs = semiTruckJobs(plan.vehicleOrigin, delegatedDroneName, plan);
@@ -1334,6 +1355,19 @@ async function executeStructureCommand(speaker, command, origin, originalText = 
   }
 
   const commands = genericStructureCommands(command.kind, plan);
+  if (command.delegateStructure) {
+    const jobs = structureJobsFromCommands(commands, delegatedDroneName, command.kind);
+    say(`delegating a ${command.kind} at ${formatBlockPosition(plan.origin)} to ${delegatedDroneName}`);
+    summonDroneToBuildSite(plan.origin);
+    writeDelegatedState({
+      taskId: `codex-${command.kind}-${Date.now()}`,
+      structure: `generic ${command.kind}`,
+      origin: plan.origin,
+      jobs,
+    });
+    return;
+  }
+
   say(`building a ${command.kind} at ${formatBlockPosition(plan.origin)}`);
   await sendCommandBatch(commands);
   say(`${command.kind} complete around ${formatBlockPosition(plan.origin)}`);
@@ -1582,6 +1616,36 @@ function pyramidCommands(plan) {
   commands.push(fillCommand(x - 1, y, z - r, x + 1, y + 2, z - r, "air"));
   commands.push(fillCommand(x - 2, y - 1, z - r - 2, x + 2, y - 1, z - r, "cut_sandstone"));
   return commands;
+}
+
+function structureJobsFromCommands(commands, worker, structure) {
+  const jobs = [];
+  commands.forEach((command, commandIndex) => {
+    const phase = `${structure}-${String(commandIndex).padStart(4, "0")}`;
+    const fill = command.match(/^\/fill\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(\S+)$/);
+    if (fill) {
+      const [, x1, y1, z1, x2, y2, z2, block] = fill;
+      appendCuboidJobs(jobs, worker, phase, Number(x1), Number(y1), Number(z1), Number(x2), Number(y2), Number(z2), block);
+      return;
+    }
+
+    const setblock = command.match(/^\/setblock\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(\S+)$/);
+    if (setblock) {
+      const [, x, y, z, block] = setblock;
+      jobs.push({ id: `${phase}-${jobs.length}`, worker, phase, x: Number(x), y: Number(y), z: Number(z), block });
+    }
+  });
+  return jobs;
+}
+
+function appendCuboidJobs(jobs, worker, phase, x1, y1, z1, x2, y2, z2, block) {
+  for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y += 1) {
+    for (let z = Math.min(z1, z2); z <= Math.max(z1, z2); z += 1) {
+      for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x += 1) {
+        jobs.push({ id: `${phase}-${jobs.length}`, worker, phase, x, y, z, block });
+      }
+    }
+  }
 }
 
 function semiTruckJobs(origin, worker, plan) {
