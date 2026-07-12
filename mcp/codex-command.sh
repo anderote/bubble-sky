@@ -33,6 +33,18 @@ Environment:
 EOF
 }
 
+last_meaningful_line() {
+  tmux capture-pane -pt "$SESSION" -S -160 2>/dev/null |
+    awk 'NF { line=$0 } END { if (line) print line }'
+}
+
+saved_visibility() {
+  local state_path="${CODEX_CHAT_VISIBILITY_STATE:-$RUNTIME_DIR/chat-visibility.json}"
+  if [ -f "$state_path" ]; then
+    node -e 'const fs=require("fs"); const file=process.argv[1]; try { const state=JSON.parse(fs.readFileSync(file,"utf8")); if (state.visibility) console.log(state.visibility); } catch {}' "$state_path"
+  fi
+}
+
 node_bin() {
   if command -v fnm >/dev/null 2>&1; then
     cd "$ROOT_DIR"
@@ -68,8 +80,16 @@ case "${1:-}" in
   status)
     if tmux has-session -t "$SESSION" 2>/dev/null; then
       echo "$SESSION running"
+      last_line="$(last_meaningful_line || true)"
+      if [ -n "${last_line:-}" ]; then
+        echo "last: $last_line"
+      fi
     else
       echo "$SESSION not running"
+    fi
+    visibility="$(saved_visibility || true)"
+    if [ -n "${visibility:-}" ]; then
+      echo "saved visibility: $visibility"
     fi
     ;;
   logs)

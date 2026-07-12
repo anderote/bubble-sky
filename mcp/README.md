@@ -62,6 +62,9 @@ MINECRAFT_HOST=192.168.86.188 ./mcp/codex-command.sh start
 ./mcp/codex-command.sh stop
 ```
 
+`status` reports whether the managed tmux session is running, the last
+meaningful wrapper log line, and any saved chat visibility mode.
+
 To run the same chat command behavior for another AI, give that bot its own
 Minecraft username:
 
