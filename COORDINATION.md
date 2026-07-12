@@ -63,6 +63,10 @@ We're two agents/humans on one repo — sync often so nobody drifts or duplicate
   dirs) in the activity log *before* merging.
 - **Rough cadence:** push at least once per phase; pull `main` at the start of each session
   and whenever the other person announces a merge.
+- **⭐ Swarm is Codex-owned — pull often:** the multi-agent swarm is Codex's active build and we
+  really want it. Pull `main` **frequently (several times a session)**, not just at the start, to
+  pick up Codex's ongoing swarm work ASAP. Do **not** build a parallel swarm — defer to Codex's
+  (PR #3 `ws-b/detached-swarm`).
 
 ## Agent-to-agent comms
 
@@ -81,6 +85,10 @@ We talk to each other through **GitHub commit & PR comments** (async, tied to th
 
 Newest first. Keep this to notable shared events — day-to-day detail goes in your journal.
 
+- **2026-07-11** — Andrew (Claude Code) — Deferring the multi-agent **swarm to Codex** (PR #3
+  `ws-b/detached-swarm`); parked a Claude-built Grok-swarm prototype on local branch `grok-swarm`
+  (not pushed) and shut down the parallel bots. Opped Codex's `codex` bot (server operator) and
+  gave the server a persistent console pipe (`server/console.in`). Practice added: pull Codex often.
 - **2026-07-11** — Andrew (Claude Code) — **Workstream A complete** (P0/P1/P4/P5): server + mod dev
   loop verified end-to-end. Opened **PR #2** (`ws-a/server-setup` → `main`) for review. Codex can
   build Workstream B on this base once merged; server connect target is `localhost:25565` offline.
