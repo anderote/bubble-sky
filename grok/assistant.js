@@ -33,6 +33,9 @@ bot.loadPlugin(pathfinder)
 let followTarget = null
 const history = []
 let busy = false
+// A vague build we asked a clarifying question about, awaiting the user's answer.
+// { goal: <original request>, origin: {x,y,z}, asked: true }
+let pendingBuild = null
 
 // ---- throttled server-command queue (Grok is opped → /fill, /setblock, etc.) ----
 const cmdQueue = []
@@ -116,6 +119,8 @@ const TOOLS = [
     parameters: { type: 'object', properties: { name: { type: 'string' }, ...originProps, reply: { type: 'string' } }, required: ['name'] } } },
   { type: 'function', function: { name: 'delete_build', description: 'Delete a saved build from the library by name.',
     parameters: { type: 'object', properties: { name: { type: 'string' }, reply: { type: 'string' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'ask', description: 'Ask 1-2 SHORT clarifying questions BEFORE a VAGUE / open-ended build ("build a cozy cottage", "build a village", "make something cool") when a quick clarification (size / style / theme / location) would materially help. Do NOT use for specific requests ("build a 9x9 stone tower here") — build those directly. Never ask twice for the same request.',
+    parameters: { type: 'object', properties: { goal: { type: 'string', description: 'the ORIGINAL build request in the user\'s words (so it can be combined with their answer)' }, ...originProps, reply: { type: 'string', description: 'the 1-2 short questions to ask, phrased warmly (<25 words)' } }, required: ['goal', 'reply'] } } },
   { type: 'function', function: { name: 'answer', description: 'Pure conversation / answering questions (where are you, what\'s nearby, what can you do). No world change.',
     parameters: { type: 'object', properties: { reply: { type: 'string' } }, required: ['reply'] } } }
 ]
@@ -132,6 +137,10 @@ Guidance:
 - SAVED BUILDS (schematic library): "save this as <name>" / "save this build" → save_build. "list builds" / "what have I saved" → list_builds. "build <saved name> here" / "place my <name> here" → build_saved (origin "look" for "here"). "delete build <name>" → delete_build. After build_saved, "make it taller / add a tower" → edit_build as usual.
 - Movement/teleport → move. Time/weather/give → world_cmd.
 - Questions & chit-chat ("where are you", "what's nearby", "what can you do") → answer, using world-state.
+CLARIFYING QUESTIONS (build requests only):
+- If a build request is VAGUE / open-ended ("build a cozy cottage", "build a village", "make something cool") and 1-2 short questions about size / style / theme / location would materially help, call ask (put the ORIGINAL request in "goal", the questions in "reply", origin "look" for "here"). Keep it minimal & natural — never interrogate, max 2 questions, and only when it genuinely helps.
+- A SPECIFIC request ("build a 9x9 stone tower here") must NOT trigger ask — build it directly.
+- If your LAST turn asked a clarifying question (see the conversation history), treat the user's reply as the ANSWER: proceed to build with plan_build using the ORIGINAL request + their answer (combined into "goal"). Do NOT ask again.
 Default origin to "look" when they say "here" or "where I'm looking". Pick sensible sizes if unspecified. Put a short (<15 words), warm message in the tool's "reply".`
 
 bot.once('spawn', () => {
@@ -202,9 +211,16 @@ bot.on('chat', async (username, message) => {
     const { calls, content } = await askOneShot(username, message)
     if (!calls.length) { if (content) say(content); busy = false; return }
     for (const c of calls) {
-      const args = c.args || {}
-      log(`<${username}> ${message}  ->  ${c.name} ${JSON.stringify(args)}`)
-      await dispatch(c.name, args, username)
+      let name = c.name
+      let args = c.args || {}
+      // Loop guard: if we already asked a clarifying question and the model tries
+      // to ask AGAIN, treat this reply as the answer and build instead of re-asking.
+      if (name === 'ask' && pendingBuild && pendingBuild.asked) {
+        name = 'plan_build'
+        args = { goal: `${pendingBuild.goal} — ${message}` }
+      }
+      log(`<${username}> ${message}  ->  ${name} ${JSON.stringify(args)}`)
+      await dispatch(name, args, username, message)
     }
   } catch (e) { log('grok err', e.message) }
   busy = false
@@ -224,16 +240,24 @@ function resolveOrigin(args, speaker) {
 }
 const round = p => ({ x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) })
 
-async function dispatch(tool, args, speaker) {
+async function dispatch(tool, args, speaker, message) {
   // Grok is QUIET about the *work* — no per-block/per-phase spam (that flood came from
   // the sendCommandFeedback gamerule, now disabled). But it STILL speaks the one short
   // acknowledgement line the model wrote, so it never feels mute to a command.
-  // `answer` says its own reply below; plan_build emits its own start/finish lines.
+  // `answer`/`ask` say their own reply below; plan_build emits its own start/finish lines.
   if (args.reply && !SELF_REPLY.has(tool)) say(args.reply)
   const p = bot.entity.position
   const spEnt = bot.players[speaker]?.entity
   switch (tool) {
     case 'answer': say(args.reply); break
+    case 'ask': {
+      // Vague build → ask 1-2 short questions, remember the original request + origin
+      // so the user's next message (the answer) proceeds straight to plan_build.
+      const o = resolveOrigin(args, speaker)
+      pendingBuild = { goal: args.goal || message, origin: o, asked: true }
+      say(args.reply || 'Happy to! What size and style did you have in mind?')
+      break
+    }
     case 'move': {
       const mode = args.mode
       if (mode === 'come' || mode === 'follow') { followTarget = args.player || speaker; const e = bot.players[followTarget]?.entity; if (e) bot.pathfinder.setGoal(new goals.GoalFollow(e, 2), true) }
@@ -260,6 +284,7 @@ async function dispatch(tool, args, speaker) {
     case 'clear_area': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 12), h = clamp(args.height, 1, 60, 20); hands.clearArea(o.x, o.y, o.z, r, h); break }
     case 'flatten': { const o = resolveOrigin(args, speaker); const r = clamp(args.radius, 1, 60, 12), h = clamp(args.height, 1, 60, 12); hands.fillBox(o.x - r, o.y, o.z - r, o.x + r, o.y + h, o.z + r, 'air'); hands.fillBox(o.x - r, o.y - 1, o.z - r, o.x + r, o.y - 1, o.z + r, B(args.floor, 'grass_block')); break }
     case 'build_structure': {
+      pendingBuild = null
       const o = resolveOrigin(args, speaker)
       let kind = B(args.kind, 'house')
       const gen = structures.gens[kind] || structures.gens[structures.alias[kind]]
@@ -282,7 +307,7 @@ async function dispatch(tool, args, speaker) {
 }
 
 // Tools that speak their OWN reply line(s) below (so dispatch doesn't double-say).
-const SELF_REPLY = new Set(['answer', 'plan_build', 'edit_build', 'flag', 'build_between', 'save_build', 'list_builds', 'build_saved', 'delete_build'])
+const SELF_REPLY = new Set(['answer', 'ask', 'plan_build', 'edit_build', 'flag', 'build_between', 'save_build', 'list_builds', 'build_saved', 'delete_build'])
 
 // ---- FLAGS: set / list / remove / goto ----
 async function runFlag(args, speaker) {
@@ -484,7 +509,13 @@ function sanitizePlan(bp) {
 // chat lines. Also emits a shared state.json + .schem under build-out/ (NEVER
 // Codex's live state.json) for interop.
 async function runProject(args, speaker) {
-  const origin0 = resolveOrigin(args, speaker)
+  // If this build answers a pending clarifying question, reuse the origin captured
+  // when we asked (the user may be looking elsewhere now), unless they named an
+  // explicit flag/coords this turn.
+  let origin0
+  if (pendingBuild && pendingBuild.origin && args.origin !== 'flag' && args.x == null) origin0 = pendingBuild.origin
+  else origin0 = resolveOrigin(args, speaker)
+  pendingBuild = null
   // 1) SURVEY the terrain before planning. (silent)
   const site = survey.surveySite(bot, origin0, 20)
   log('site survey', JSON.stringify(site))

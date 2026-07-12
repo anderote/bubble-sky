@@ -15,6 +15,7 @@
 const { createLLM } = require('./llm')
 const { styleNames } = require('../palettes')
 const { templateBlueprint } = require('./build/template')
+const research = require('./research')
 
 function catalogText(skills) {
   const line = ([n, args, desc]) => `  - ${n} ${args} — ${desc}`
@@ -189,20 +190,35 @@ module.exports = function makeArchitect({ skills, log = () => {} }) {
   // output is an inspectable, diffable Layer-A blueprint, not an ad-hoc plan.
   async function planBlueprint({ goal, origin, memory, site }) {
     let design = keywordDesign(goal)
+    // WEB RESEARCH: for open-ended / "nice" / named-style requests, gather real
+    // references first and feed them into the design-params prompt. Bounded +
+    // graceful — never blocks or crashes a build. Quiet in chat (one log line).
+    let brief = null
+    if (research.shouldResearch(goal)) {
+      try {
+        const r = await research.research(goal)
+        if (r && (r.brief || r.palette)) {
+          brief = r
+          log(`research (${r._via || '?'}): ${(r.brief || '').replace(/\s+/g, ' ').slice(0, 90)}${r.sources && r.sources.length ? ` [${r.sources.length} src]` : ''}`)
+        } else if (r && r._fallback) log(`research fallback: ${r._fallback}`)
+      } catch (e) { log('research failed (continuing):', e.message) }
+    }
     try {
-      const params = await pickDesign({ goal, origin, memory, site })
+      const params = await pickDesign({ goal, origin, memory, site, brief })
       if (params) design = Object.assign(design, prune(params))
     } catch (e) { log('planBlueprint design pick failed, using keywords:', e.message) }
     design.origin = origin
     return templateBlueprint(design)
   }
 
-  async function pickDesign({ goal, origin, memory, site }) {
+  async function pickDesign({ goal, origin, memory, site, brief }) {
     const sys = `You are the ARCHITECT for a Minecraft building assistant. Choose DESIGN PARAMETERS for a build; the geometry is generated deterministically from them. Pick a cohesive style + a footprint that suits the request. Call submit_design. Do not chat.
 Styles: ${styleNames.join(', ')}. Room types: great_hall, bedroom, kitchen, library, living.
-Guidance: castles/keeps → battlements true, a tower, footprint 14-20. Houses/cottages → gable roof, no battlements, footprint 8-12. Cathedrals/halls → tall wallH (8-10). Respect the SITE (build near groundY; terrainFit "follow" hugs slopes).`
+Guidance: castles/keeps → battlements true, a tower, footprint 14-20. Houses/cottages → gable roof, no battlements, footprint 8-12. Cathedrals/halls → tall wallH (8-10). Respect the SITE (build near groundY; terrainFit "follow" hugs slopes).
+If a REFERENCE brief is provided (from web research), let it inform the style, palette feel, proportions and footprint so the build reflects real references.`
     const user = { goal, origin, existingProject: memory || null, site: site || null,
-      note: 'Pick style, footprint (width,length), wall height, the primary room type, and whether it has a tower/battlements.' }
+      reference: brief ? { brief: brief.brief, palette: brief.palette, features: brief.features, sources: brief.sources } : null,
+      note: 'Pick style, footprint (width,length), wall height, the primary room type, and whether it has a tower/battlements. If a reference brief is present, use it to guide those choices.' }
     const { toolCalls } = await llm.chat({
       system: sys, messages: [{ role: 'user', content: JSON.stringify(user) }],
       tools: [DESIGN_TOOL], toolChoice: { name: 'submit_design' }, maxTokens: 512, model: MODEL
