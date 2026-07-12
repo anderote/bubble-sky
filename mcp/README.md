@@ -82,6 +82,7 @@ Chat visibility can be changed at runtime:
 @codex visibility public
 @codex visibility private
 @codex visibility llm
+@codex visibility alone
 ```
 
 Modes:
@@ -91,6 +92,7 @@ Modes:
 | `public` | Bot replies are normal world chat. This is the default. |
 | `private` | Bot replies go back to the player who addressed `@codex`. |
 | `llm` | Bot replies are whispered to visible LLM players listed in `CODEX_LLM_PLAYERS` plus the player who addressed `@codex`. |
+| `alone` | Codex whispers only to the player who addressed it and keeps LLM/build-bot chatter such as Grok and drones out of Codex history/status. It does not server-mute other players' public chat. |
 
 Addressed prompts and bot replies are persisted to `.codex-runtime/chat-history.jsonl`
 by default. This lets someone log in later and ask:

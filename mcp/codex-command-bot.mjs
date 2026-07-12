@@ -40,7 +40,7 @@ const helpLines = [
   "help",
   "history [count]",
   "status",
-  "visibility public|private|llm",
+  "visibility public|private|llm|alone",
   "say <text>",
   "tell <player> <text>",
   "where",
@@ -90,20 +90,22 @@ let visibility = process.env.CODEX_CHAT_VISIBILITY || "public";
 bot.once("spawn", () => {
   movements = new Movements(bot);
   bot.pathfinder.setMovements(movements);
-  say(`${username} online. Tag @${primaryHandle} help. Chat visibility is public.`);
+  say(`${username} online. Tag @${primaryHandle} help. Chat visibility is ${visibility}.`);
   console.log(`${username} joined ${host}:${port} at ${bot.entity.position}`);
 });
 
 bot.on("chat", async (speaker, message) => {
   if (speaker === bot.username) return;
   if (isIgnoredSpeaker(speaker)) {
-    recordHistory({ type: "observed", speaker, text: message });
+    if (visibility !== "alone") {
+      recordHistory({ type: "observed", speaker, text: message });
+    }
     return;
   }
 
   const command = addressedCommand(message);
   if (!command) {
-    if (looksLikeLlmConversation(speaker, message)) {
+    if (shouldRecordAmbientChat(speaker, message)) {
       recordHistory({ type: "observed", speaker, text: message });
     }
     return;
@@ -167,10 +169,13 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
-  const visibilityMatch = lower.match(/^(?:visibility|vis|chat)\s+(public|private|llm|llms|team)$/);
+  const visibilityMatch = lower.match(/^(?:visibility|vis|chat)\s+(public|private|alone|llm|llms|team)$/);
   if (visibilityMatch) {
     visibility = normalizeVisibility(visibilityMatch[1]);
-    say(`chat visibility set to ${visibility}`, { forcePublic: true });
+    const message = visibility === "alone"
+      ? "chat visibility set to alone; I will whisper you and keep LLM/build-bot noise out of my history/status"
+      : `chat visibility set to ${visibility}`;
+    say(message, visibility === "alone" ? { to: speaker, forcePrivate: true } : { forcePublic: true });
     return;
   }
 
@@ -1583,7 +1588,7 @@ function showHistory(speaker, command) {
   const [, countText] = command.match(/^history(?:\s+(\d+))?$/i) || [];
   const requestedCount = Number(countText || 8);
   const count = Number.isFinite(requestedCount) ? Math.min(Math.max(requestedCount, 1), 12) : 8;
-  const entries = readHistory(count);
+  const entries = filterHistoryForVisibility(readHistory(count * 2)).slice(-count);
 
   if (entries.length === 0) {
     say("No saved LLM chat history yet.", { to: speaker, record: false });
@@ -1598,7 +1603,7 @@ function showHistory(speaker, command) {
 }
 
 function showStatus(speaker) {
-  const entries = readHistory(5);
+  const entries = filterHistoryForVisibility(readHistory(10)).slice(-5);
   const target = escort
     ? `escorting ${escort.playerName} to ${formatDestination(escort)}`
     : followTarget
@@ -1678,7 +1683,7 @@ function routeTargets(options) {
   if (options.forcePublic) return [];
   if (options.forcePrivate) return options.to ? [options.to] : [];
   const replyTarget = options.to || commandContext.getStore()?.speaker;
-  if (visibility === "private") return replyTarget ? [replyTarget] : [];
+  if (visibility === "private" || visibility === "alone") return replyTarget ? [replyTarget] : [];
   if (visibility === "llm") return uniqueTargets([...visibleLlms(), replyTarget]);
   return [];
 }
@@ -1720,6 +1725,11 @@ function looksLikeLlmConversation(speaker, message) {
   return llmMentionPattern().test(message);
 }
 
+function shouldRecordAmbientChat(speaker, message) {
+  if (!looksLikeLlmConversation(speaker, message)) return false;
+  return visibility !== "alone" || !isNoisyBotSpeaker(speaker);
+}
+
 function isBotLoopChatter(speaker, command) {
   if (!llmPlayers.includes(speaker.toLowerCase())) return false;
 
@@ -1730,6 +1740,16 @@ function isBotLoopChatter(speaker, command) {
 function isIgnoredSpeaker(speaker) {
   const lower = speaker.toLowerCase();
   return ignoredSpeakers.includes(lower) || /^codexdrone\d+$/i.test(speaker) || lower === "codexboss";
+}
+
+function isNoisyBotSpeaker(speaker) {
+  const lower = speaker.toLowerCase();
+  return llmPlayers.includes(lower) || isIgnoredSpeaker(speaker);
+}
+
+function filterHistoryForVisibility(entries) {
+  if (visibility !== "alone") return entries;
+  return entries.filter((entry) => entry.type !== "observed" || !isNoisyBotSpeaker(entry.speaker || ""));
 }
 
 function shouldRecordPrompt(command) {
