@@ -261,6 +261,12 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
+  if (isTurnAroundCommand(lower)) {
+    await bot.look(bot.entity.yaw + Math.PI, bot.entity.pitch || 0, true);
+    say("turned around");
+    return;
+  }
+
   if (isEnableFlightCommand(lower)) {
     bot.chat(`/gamemode creative ${username}`);
     await wait(300);
@@ -398,12 +404,17 @@ function isCapabilityQuestion(lower) {
 }
 
 function isEnableFlightCommand(lower) {
+  if (/^(?:fly|start flying|keep flying|stay flying)$/.test(lower)) return true;
   return /\b(?:creative|creative mode|fly|flight|flying)\b/.test(lower) &&
     /\b(?:turn on|enable|start|use|go into|switch to|stay|keep|remain)\b/.test(lower);
 }
 
 function isLandCommand(lower) {
   return /\b(?:land|stop flying|turn off fly|turn off flight|walk with me|walk now)\b/.test(lower);
+}
+
+function isTurnAroundCommand(lower) {
+  return /^(?:turn around|turn round|face behind you|look behind you|look behind)$/.test(lower);
 }
 
 async function answerGeneralChat(speaker, command) {
@@ -1083,7 +1094,8 @@ function effectStatus(effect) {
 
 function isInspectContextCommand(lower) {
   return /^(?:do you see|can you see|what(?:'s| is) this|what am i looking at|what is that|inspect this|look at this)\b/.test(lower) ||
-    /\b(?:see|inspect|describe)\s+(?:what i'?m looking at|this|that|this castle|this thing|the red thing)\b/.test(lower);
+    /\b(?:see|inspect|describe)\s+(?:what i'?m looking at|this|that|this castle|this thing|the red thing)\b/.test(lower) ||
+    /\b(?:look|see|inspect|describe)\s+(?:where i'?m pointing|what i'?m pointing at|the thing i'?m pointing at)\b/.test(lower);
 }
 
 function isContextExtendCommand(lower) {
