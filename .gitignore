@@ -1,0 +1,17 @@
+# Minecraft server runtime
+server/
+!server/mods/.gitkeep
+
+# Java / Gradle mod build
+**/build/
+**/.gradle/
+
+# Node (MCP server, mindcraft)
+node_modules/
+
+# Secrets
+keys.json
+.env
+
+# OS
+.DS_Store
