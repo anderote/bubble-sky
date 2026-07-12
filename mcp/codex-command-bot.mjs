@@ -24,6 +24,7 @@ const swarmRuntimeDir = process.env.CODEX_SWARM_RUNTIME || ".codex-runtime/swarm
 const swarmStatePath = path.join(swarmRuntimeDir, "state.json");
 const delegatedDroneName = process.env.CODEX_ARCHITECT_DRONE || "CodexDrone1";
 const delegateArchitectTower = process.env.CODEX_ARCHITECT_DELEGATE_TOWER !== "0";
+const delegatedJobLimit = Number(process.env.CODEX_DELEGATED_JOB_LIMIT || 50000);
 const buildCommandDelayMs = Number(process.env.CODEX_BUILD_COMMAND_DELAY_MS || 150);
 const openaiApiKey = process.env.OPENAI_API_KEY || "";
 const commandModel = process.env.CODEX_COMMAND_MODEL || "gpt-5-mini";
@@ -2097,6 +2098,7 @@ function lineRuns(jobs) {
 
 function writeDelegatedState(state) {
   fs.mkdirSync(path.dirname(swarmStatePath), { recursive: true });
+  validateDelegatedJobs(state);
   archiveExistingDelegatedState(state.taskId);
   const payload = {
     taskId: state.taskId,
@@ -2109,6 +2111,7 @@ function writeDelegatedState(state) {
     originalText: state.originalText || null,
     instructions: state.instructions || `Build ${state.structure} at ${formatBlockPosition(state.origin)}.`,
     origin: state.origin,
+    jobCount: state.jobs.length,
     jobs: state.jobs,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -2116,6 +2119,27 @@ function writeDelegatedState(state) {
   const tempPath = `${swarmStatePath}.${process.pid}.tmp`;
   fs.writeFileSync(tempPath, `${JSON.stringify(payload, null, 2)}\n`);
   fs.renameSync(tempPath, swarmStatePath);
+}
+
+function validateDelegatedJobs(state) {
+  const jobs = Array.isArray(state.jobs) ? state.jobs : [];
+  if (!jobs.length) throw new Error(`cannot delegate ${state.structure || "task"} with no jobs`);
+  if (Number.isFinite(delegatedJobLimit) && delegatedJobLimit > 0 && jobs.length > delegatedJobLimit) {
+    throw new Error(`cannot delegate ${state.structure || "task"} with ${jobs.length} jobs; limit is ${delegatedJobLimit}`);
+  }
+
+  const ids = new Set();
+  for (const job of jobs) {
+    if (!job?.id || ids.has(job.id)) throw new Error(`delegated ${state.structure || "task"} has duplicate or missing job id`);
+    ids.add(job.id);
+    if (job.worker !== delegatedDroneName) throw new Error(`delegated ${state.structure || "task"} has job for unexpected worker ${job.worker || "unknown"}`);
+    if (![job.x, job.y, job.z].every((value) => Number.isInteger(value))) {
+      throw new Error(`delegated ${state.structure || "task"} has non-integer coordinates in job ${job.id}`);
+    }
+    if (!isKnownVanillaBlock(commandBlockName(job.block))) {
+      throw new Error(`delegated ${state.structure || "task"} has unknown block ${job.block} in job ${job.id}`);
+    }
+  }
 }
 
 function archiveExistingDelegatedState(nextTaskId) {
