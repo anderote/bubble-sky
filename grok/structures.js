@@ -122,7 +122,36 @@ module.exports = function makeStructures(ctx) {
     for (let z = z1; z <= z2; z++) { if ((z - z1) % 2 === 0) { set(x1, y, z, mat); set(x2, y, z, mat) } }
   }
 
-  const gens = { house, tower, round_tower, wall, bridge, road, pyramid, dome, platform, castle }
+  function room(o, a) {
+    const w = clamp(a.width || a.size, 3, 40, 7), l = clamp(a.length || a.size, 3, 40, 7), h = clamp(a.height, 3, 20, 5)
+    const mat = B(a.material || a.block, 'oak_planks'), floor = B(a.floor, mat)
+    const [x1, x2] = centre(o.x, w), [z1, z2] = centre(o.z, l), y0 = o.y, y1 = o.y + h
+    fillBox(x1, y0, z1, x2, y1, z2, mat)                       // solid shell
+    air(x1 + 1, y0 + 1, z1 + 1, x2 - 1, y1 - 1, z2 - 1)        // hollow interior
+    if (floor !== mat) fillBox(x1 + 1, y0, z1 + 1, x2 - 1, y0, z2 - 1, floor)
+    set(o.x, y0 + 1, z2, 'air'); set(o.x, y0 + 2, z2, 'air')   // doorway
+    set(o.x, y0 + 1, z2, 'oak_door[half=lower,facing=north]'); set(o.x, y0 + 2, z2, 'oak_door[half=upper,facing=north]')
+    set(x1, y0 + 2, o.z, 'glass_pane'); set(x2, y0 + 2, o.z, 'glass_pane'); set(o.x, y0 + 2, z1, 'glass_pane') // windows
+    set(o.x, y0 + 1, o.z, 'lantern')                           // light
+  }
+
+  const gens = { house, tower, round_tower, wall, bridge, road, pyramid, dome, platform, castle, room }
   const alias = { home: 'house', hut: 'house', cabin: 'house', cottage: 'house', watchtower: 'tower', keep: 'tower', circle_tower: 'round_tower', rampart: 'wall', fort: 'castle', fortress: 'castle', path: 'road', igloo: 'dome' }
-  return { gens, alias }
+
+  // Catalog for the Architect prompt: skill name, arg hints, one-line purpose.
+  // Every structure takes an origin {x,y,z} (bottom-centre) inside its args.
+  const catalog = [
+    ['house', '{x,y,z,width,length,height,material,floor,roof_material}', 'cottage: shell, door, windows, gable roof, lantern'],
+    ['tower', '{x,y,z,size,height,material}', 'square keep with floors + crenellations'],
+    ['round_tower', '{x,y,z,radius,height,material}', 'cylindrical tower with merlons'],
+    ['wall', '{x,y,z,length,height,material,axis}', 'straight crenellated wall along axis x|z'],
+    ['bridge', '{x,y,z,length,width,material,axis}', 'flat span with fence rails'],
+    ['road', '{x,y,z,length,width,material,axis}', 'cleared path strip'],
+    ['pyramid', '{x,y,z,base,material}', 'stepped solid pyramid'],
+    ['dome', '{x,y,z,radius,material}', 'hemispherical dome with doorway'],
+    ['platform', '{x,y,z,radius,material}', 'flat foundation slab one below origin'],
+    ['castle', '{x,y,z,size,height,material}', 'walls + 4 corner towers + gate (a whole compound)'],
+    ['room', '{x,y,z,width,length,height,material,floor}', 'single hollow room with door/windows/light']
+  ]
+  return { gens, alias, catalog }
 }
