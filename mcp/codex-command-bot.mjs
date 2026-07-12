@@ -2065,6 +2065,7 @@ function lineRuns(jobs) {
 
 function writeDelegatedState(state) {
   fs.mkdirSync(path.dirname(swarmStatePath), { recursive: true });
+  archiveExistingDelegatedState(state.taskId);
   const payload = {
     taskId: state.taskId,
     status: "building",
@@ -2080,6 +2081,23 @@ function writeDelegatedState(state) {
   const tempPath = `${swarmStatePath}.${process.pid}.tmp`;
   fs.writeFileSync(tempPath, `${JSON.stringify(payload, null, 2)}\n`);
   fs.renameSync(tempPath, swarmStatePath);
+}
+
+function archiveExistingDelegatedState(nextTaskId) {
+  if (!fs.existsSync(swarmStatePath)) return;
+  try {
+    const existing = JSON.parse(fs.readFileSync(swarmStatePath, "utf8"));
+    if (!existing?.taskId || existing.taskId === nextTaskId) return;
+
+    const archiveDir = path.join(path.dirname(swarmStatePath), "archive");
+    fs.mkdirSync(archiveDir, { recursive: true });
+    const archivedAt = new Date().toISOString();
+    const safeTaskId = String(existing.taskId).replace(/[^a-z0-9_.-]/gi, "_");
+    const archivePath = path.join(archiveDir, `${safeTaskId}-${Date.now()}.json`);
+    fs.writeFileSync(archivePath, `${JSON.stringify({ ...existing, archivedAt, replacedBy: nextTaskId }, null, 2)}\n`);
+  } catch (error) {
+    console.error(`failed to archive previous delegated state: ${error.message}`);
+  }
 }
 
 function fillCommand(x1, y1, z1, x2, y2, z2, block) {
