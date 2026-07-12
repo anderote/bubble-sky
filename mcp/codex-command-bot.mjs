@@ -706,6 +706,10 @@ async function runFreeformStructureBuild(speaker, command) {
     const delegate = Boolean(parsed?.delegate) || /\b(delegate|drone|codexdrone)\b/i.test(command);
     if (delegate) {
       const jobs = structureJobsFromCommands(commands, delegatedDroneName, "freeform");
+      if (jobs.length > 25000) {
+        say(`that generated ${jobs.length} block jobs, which is too much for one drone pass. I need a smaller build or a more specific part to delegate.`, { to: speaker });
+        return true;
+      }
       say(`delegating ${name} at ${formatBlockPosition(origin)} to ${delegatedDroneName}`);
       summonDroneToBuildSite(origin);
       writeDelegatedState({
@@ -759,17 +763,42 @@ function isValidFreeformBuildCommand(command, origin) {
   const blockPattern = "[a-z0-9_:\\[\\]=,]+";
   const fill = command.match(new RegExp(`^/fill\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(${blockPattern})$`));
   if (fill) {
-    const [, x1, y1, z1, x2, y2, z2] = fill.map((part) => part);
-    return coordinatesInsideBuildBox([x1, y1, z1, x2, y2, z2].map(Number), origin);
+    const [, x1, y1, z1, x2, y2, z2, block] = fill;
+    const coordinates = [x1, y1, z1, x2, y2, z2].map(Number);
+    return isSafeFreeformBlock(block) &&
+      coordinatesInsideBuildBox(coordinates, origin) &&
+      cuboidVolume(coordinates) <= 8000;
   }
 
   const setblock = command.match(new RegExp(`^/setblock\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)\\s+(${blockPattern})$`));
   if (setblock) {
-    const [, x, y, z] = setblock.map((part) => part);
-    return coordinatesInsideBuildBox([x, y, z].map(Number), origin);
+    const [, x, y, z, block] = setblock;
+    return isSafeFreeformBlock(block) && coordinatesInsideBuildBox([x, y, z].map(Number), origin);
   }
 
   return false;
+}
+
+function isSafeFreeformBlock(block) {
+  const name = commandBlockName(block);
+  return !new Set([
+    "lava",
+    "water",
+    "fire",
+    "soul_fire",
+    "tnt",
+    "command_block",
+    "chain_command_block",
+    "repeating_command_block",
+    "structure_block",
+    "jigsaw",
+    "barrier",
+  ]).has(name);
+}
+
+function cuboidVolume(values) {
+  const [x1, y1, z1, x2, y2, z2] = values;
+  return (Math.abs(x2 - x1) + 1) * (Math.abs(y2 - y1) + 1) * (Math.abs(z2 - z1) + 1);
 }
 
 function coordinatesInsideBuildBox(values, origin) {
