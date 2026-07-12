@@ -18,5 +18,8 @@
 	"entity.towerdefense.archer": "Archer",
 	"entity.towerdefense.man_at_arms": "Man-at-Arms",
 	"entity.towerdefense.undead_soldier": "Undead Soldier",
-	"entity.towerdefense.heavy_knight": "Heavy Knight"
+	"entity.towerdefense.heavy_knight": "Heavy Knight",
+
+	"key.categories.towerdefense": "Tower Defense",
+	"key.towerdefense.open_menu": "Open Tower Defense Menu"
 }

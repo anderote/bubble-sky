@@ -50,6 +50,23 @@ public final class TdCommand {
 		TOWERS.put("frost_tower", new TowerDef(ModBlocks.FROST_TOWER, 20));
 	}
 
+	/** Public, immutable view of a buyable tower (id + coin price) for client UIs. */
+	public record ShopEntry(String id, int price) {
+	}
+
+	/**
+	 * The storefront catalogue as an ordered list — the single source of truth
+	 * shared with the client Tower Defense menu so its shop always reflects the
+	 * real tower types and prices used by {@code /td buy}.
+	 */
+	public static java.util.List<ShopEntry> catalogue() {
+		java.util.List<ShopEntry> list = new java.util.ArrayList<>();
+		for (Map.Entry<String, TowerDef> e : TOWERS.entrySet()) {
+			list.add(new ShopEntry(e.getKey(), e.getValue().price()));
+		}
+		return list;
+	}
+
 	public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
 		dispatcher.register(CommandManager.literal("td")
 			.requires(src -> src.hasPermissionLevel(2))
