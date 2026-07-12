@@ -473,11 +473,27 @@ function interpretArchitectCommand(lower) {
     return { action: "fortress" };
   }
 
+  const structureCommand = interpretStructureBuildCommand(lower);
+  if (structureCommand) return structureCommand;
+
   if (/\b(repair|fix|upgrade|enhance|make.*sick|make.*badass)\b/.test(lower) &&
       /\b(castle|fortress|fort|base|this|here)\b/.test(lower)) {
     return { action: "fortress" };
   }
 
+  return null;
+}
+
+function interpretStructureBuildCommand(lower) {
+  if (!/\b(build|make|create|construct|spawn|summon)\b/.test(lower)) return null;
+  if (/\bbridge\b/.test(lower)) {
+    return {
+      action: "structure",
+      kind: "bridge",
+      delegateVehicle: /\b(delegate|drone|codexdrone)\b/.test(lower) && /\b(semi|truck|lorry|vehicle)\b/.test(lower),
+      vehicle: /\b(semi|truck|lorry)\b/.test(lower) ? "semi_truck" : null,
+    };
+  }
   return null;
 }
 
@@ -518,6 +534,8 @@ async function interpretArchitectCommandWithOpenAI(command, speaker) {
     '{"action":"effect","effect":"flood"} for requests to flood, drown, submerge, soak, or waterlog a nearby structure.',
     '{"action":"effect","effect":"freeze"} for requests to freeze, ice over, snow over, frost, or blizzard a nearby structure.',
     '{"action":"effect","effect":"curse"} for requests to curse, haunt, corrupt, darken, or make a nearby structure spooky/evil.',
+    '{"action":"structure","kind":"bridge","delegateVehicle":true,"vehicle":"semi_truck"} for requests to build a bridge and delegate a semi/truck/vehicle to a drone.',
+    '{"action":"structure","kind":"bridge"} for requests to build a bridge.',
     '{"action":"castle_wall"} for requests to build a castle/fortress wall, rampart, battlement, or a wall with two towers.',
     '{"action":"fortress"} for requests to build, make, create, summon, upgrade, or freestyle a castle/fortress/fort/keep here.',
     '{"action":"none"} for anything else.',
@@ -581,6 +599,8 @@ async function interpretArchitectCommandWithCodexCli(command, speaker) {
     '{"action":"effect","effect":"flood"} for requests to flood, drown, submerge, soak, or waterlog a nearby structure.',
     '{"action":"effect","effect":"freeze"} for requests to freeze, ice over, snow over, frost, or blizzard a nearby structure.',
     '{"action":"effect","effect":"curse"} for requests to curse, haunt, corrupt, darken, or make a nearby structure spooky/evil.',
+    '{"action":"structure","kind":"bridge","delegateVehicle":true,"vehicle":"semi_truck"} for requests to build a bridge and delegate a semi/truck/vehicle to a drone.',
+    '{"action":"structure","kind":"bridge"} for requests to build a bridge.',
     '{"action":"castle_wall"} for requests to build a castle/fortress wall, rampart, battlement, or a wall with two towers.',
     '{"action":"fortress"} for requests to build, make, create, summon, upgrade, or freestyle a castle/fortress/fort/keep here.',
     '{"action":"none"} for anything else.',
@@ -608,11 +628,12 @@ async function interpretArchitectCommandWithCodexCli(command, speaker) {
 }
 
 function shouldUseLlmArchitectParser(command) {
-  return /\b(build|make|create|construct|spawn|summon|freestyle|upgrade|enhance|repair|fix|delete|destroy|demolish|erase|wipe|nuke|trash|remove|obliterate|burn|ignite|torch|melt|scorch|incinerate|lava|flood|drown|submerge|waterlog|freeze|ice|snow|blizzard|frost|curse|haunt|spooky|evil|corrupt|darken|castle|fortress|fort|tower|towers|wall|walls|rampart|battlement|base|building|structure|house|village|area|dumpster|badass|sick|ugly|beneath|nearby|here)\b/i.test(command);
+  return /\b(build|make|create|construct|spawn|summon|freestyle|upgrade|enhance|repair|fix|delete|destroy|demolish|erase|wipe|nuke|trash|remove|obliterate|burn|ignite|torch|melt|scorch|incinerate|lava|flood|drown|submerge|waterlog|freeze|ice|snow|blizzard|frost|curse|haunt|spooky|evil|corrupt|darken|castle|fortress|fort|tower|towers|wall|walls|rampart|battlement|bridge|road|house|base|building|structure|vehicle|truck|semi|village|area|dumpster|badass|sick|ugly|beneath|nearby|here)\b/i.test(command);
 }
 
 function isValidArchitectAction(parsed) {
   if (["demolish", "fortress", "castle_wall"].includes(parsed?.action)) return true;
+  if (parsed?.action === "structure" && ["bridge"].includes(parsed.kind)) return true;
   return parsed?.action === "effect" && ["lava_burn", "flood", "freeze", "curse"].includes(parsed.effect);
 }
 
@@ -710,6 +731,11 @@ async function runArchitectCommand(speaker, command, originalText = "") {
     say(`freestyling a fortress around ${formatBlockPosition(buildOrigin)}`);
     await executeFortress(buildOrigin);
     say(`fortress pass complete around ${formatBlockPosition(buildOrigin)}`);
+    return;
+  }
+
+  if (command.action === "structure") {
+    await executeStructureCommand(speaker, command, origin, originalText);
     return;
   }
 
@@ -1242,6 +1268,156 @@ async function executeFortress(origin) {
   }
 
   await sendCommandBatch(commands);
+}
+
+async function executeStructureCommand(speaker, command, origin, originalText = "") {
+  if (command.kind !== "bridge") return;
+
+  const plan = bridgePlan(speaker, origin, originalText);
+  say(`building a detailed bridge at ${formatBlockPosition(plan.origin)}${command.delegateVehicle ? `; delegating the ${command.vehicle === "semi_truck" ? "semi truck" : "vehicle"} to ${delegatedDroneName}` : ""}`);
+  await sendCommandBatch(bridgeCommands(plan));
+
+  if (command.delegateVehicle) {
+    const vehicleJobs = semiTruckJobs(plan.vehicleOrigin, delegatedDroneName, plan);
+    summonDroneToBuildSite(plan.vehicleOrigin);
+    writeDelegatedState({
+      taskId: `codex-bridge-${Date.now()}`,
+      structure: "bridge semi truck",
+      origin: plan.vehicleOrigin,
+      jobs: vehicleJobs,
+    });
+    say(`${delegatedDroneName} has the semi truck detail job.`);
+  } else {
+    say(`bridge complete around ${formatBlockPosition(plan.origin)}`);
+  }
+}
+
+function bridgePlan(speaker, origin, text) {
+  const playerName = findPlayerName(speaker) || speaker;
+  const player = bot.players[playerName]?.entity;
+  const direction = bridgeDirection(player, text);
+  const length = /long|large|big|detailed|everything detailed/i.test(text) ? 38 : 24;
+  const width = /wide|truck|semi/i.test(text) ? 7 : 5;
+  const deckY = origin.y - 1;
+  const start = {
+    x: Math.round(origin.x + direction.dx * 2),
+    y: deckY,
+    z: Math.round(origin.z + direction.dz * 2),
+  };
+  const end = {
+    x: Math.round(start.x + direction.dx * (length - 1)),
+    y: deckY,
+    z: Math.round(start.z + direction.dz * (length - 1)),
+  };
+  const vehicleOffset = Math.floor(length * 0.55);
+  const vehicleOrigin = {
+    x: Math.round(start.x + direction.dx * vehicleOffset),
+    y: deckY + 1,
+    z: Math.round(start.z + direction.dz * vehicleOffset),
+  };
+  return { origin: start, start, end, deckY, length, width, direction, vehicleOrigin };
+}
+
+function bridgeDirection(player, text) {
+  const lower = String(text || "").toLowerCase();
+  if (/\b(north|south)\b/.test(lower)) return { axis: "z", dx: 0, dz: lower.includes("south") ? 1 : -1 };
+  if (/\b(east|west)\b/.test(lower)) return { axis: "x", dx: lower.includes("east") ? 1 : -1, dz: 0 };
+  const yaw = Number(player?.yaw || 0);
+  const xLook = -Math.sin(yaw);
+  const zLook = -Math.cos(yaw);
+  if (Math.abs(xLook) >= Math.abs(zLook)) return { axis: "x", dx: xLook >= 0 ? 1 : -1, dz: 0 };
+  return { axis: "z", dx: 0, dz: zLook >= 0 ? 1 : -1 };
+}
+
+function bridgeCommands(plan) {
+  const { start, end, deckY, width, direction } = plan;
+  const commands = [];
+  const half = Math.floor(width / 2);
+
+  if (direction.axis === "x") {
+    const x1 = Math.min(start.x, end.x);
+    const x2 = Math.max(start.x, end.x);
+    commands.push(fillCommand(x1, deckY - 1, start.z - half, x2, deckY - 1, start.z + half, "polished_deepslate"));
+    commands.push(fillCommand(x1, deckY, start.z - half, x2, deckY, start.z + half, "smooth_stone"));
+    commands.push(fillCommand(x1, deckY + 1, start.z - half, x2, deckY + 1, start.z - half, "dark_oak_fence"));
+    commands.push(fillCommand(x1, deckY + 1, start.z + half, x2, deckY + 1, start.z + half, "dark_oak_fence"));
+    commands.push(fillCommand(x1, deckY + 2, start.z - half, x2, deckY + 2, start.z - half, "chain"));
+    commands.push(fillCommand(x1, deckY + 2, start.z + half, x2, deckY + 2, start.z + half, "chain"));
+    for (let x = x1 + 4; x <= x2; x += 8) {
+      commands.push(fillCommand(x, deckY - 8, start.z - half + 1, x + 1, deckY - 2, start.z - half + 2, "stone_bricks"));
+      commands.push(fillCommand(x, deckY - 8, start.z + half - 2, x + 1, deckY - 2, start.z + half - 1, "stone_bricks"));
+      commands.push(setBlockCommand(x, deckY + 2, start.z - half, "lantern"));
+      commands.push(setBlockCommand(x, deckY + 2, start.z + half, "lantern"));
+    }
+  } else {
+    const z1 = Math.min(start.z, end.z);
+    const z2 = Math.max(start.z, end.z);
+    commands.push(fillCommand(start.x - half, deckY - 1, z1, start.x + half, deckY - 1, z2, "polished_deepslate"));
+    commands.push(fillCommand(start.x - half, deckY, z1, start.x + half, deckY, z2, "smooth_stone"));
+    commands.push(fillCommand(start.x - half, deckY + 1, z1, start.x - half, deckY + 1, z2, "dark_oak_fence"));
+    commands.push(fillCommand(start.x + half, deckY + 1, z1, start.x + half, deckY + 1, z2, "dark_oak_fence"));
+    commands.push(fillCommand(start.x - half, deckY + 2, z1, start.x - half, deckY + 2, z2, "chain"));
+    commands.push(fillCommand(start.x + half, deckY + 2, z1, start.x + half, deckY + 2, z2, "chain"));
+    for (let z = z1 + 4; z <= z2; z += 8) {
+      commands.push(fillCommand(start.x - half + 1, deckY - 8, z, start.x - half + 2, deckY - 2, z + 1, "stone_bricks"));
+      commands.push(fillCommand(start.x + half - 2, deckY - 8, z, start.x + half - 1, deckY - 2, z + 1, "stone_bricks"));
+      commands.push(setBlockCommand(start.x - half, deckY + 2, z, "lantern"));
+      commands.push(setBlockCommand(start.x + half, deckY + 2, z, "lantern"));
+    }
+  }
+
+  return commands;
+}
+
+function semiTruckJobs(origin, worker, plan) {
+  const jobs = [];
+  const add = (phase, x, y, z, block) => {
+    jobs.push({ id: `${phase}-${jobs.length}`, worker, phase, x, y, z, block });
+  };
+  const cuboid = (phase, x1, y1, z1, x2, y2, z2, block) => {
+    for (let yy = Math.min(y1, y2); yy <= Math.max(y1, y2); yy += 1) {
+      for (let zz = Math.min(z1, z2); zz <= Math.max(z1, z2); zz += 1) {
+        for (let xx = Math.min(x1, x2); xx <= Math.max(x1, x2); xx += 1) {
+          add(phase, xx, yy, zz, block);
+        }
+      }
+    }
+  };
+  const { x, y, z } = origin;
+  const alongX = plan.direction.axis === "x";
+  const forward = alongX ? plan.direction.dx : plan.direction.dz;
+  const hoodStart = -6 * forward;
+  const cabStart = -3 * forward;
+  const trailerStart = 1 * forward;
+  const trailerEnd = 10 * forward;
+
+  if (alongX) {
+    cuboid("trailer", x + Math.min(trailerStart, trailerEnd), y + 1, z - 2, x + Math.max(trailerStart, trailerEnd), y + 4, z + 2, "white_concrete");
+    cuboid("trailer_trim", x + Math.min(trailerStart, trailerEnd), y + 5, z - 2, x + Math.max(trailerStart, trailerEnd), y + 5, z + 2, "light_gray_concrete");
+    cuboid("cab", x + Math.min(cabStart, 0), y + 1, z - 2, x + Math.max(cabStart, 0), y + 4, z + 2, "red_concrete");
+    cuboid("hood", x + Math.min(hoodStart, cabStart), y + 1, z - 1, x + Math.max(hoodStart, cabStart), y + 2, z + 1, "red_concrete");
+    cuboid("windshield", x + Math.min(cabStart, 0), y + 4, z - 2, x + Math.max(cabStart, 0), y + 4, z - 2, "light_blue_stained_glass");
+    for (const wx of [-5, -2, 3, 8]) {
+      add("wheels", x + wx * forward, y, z - 3, "blackstone");
+      add("wheels", x + wx * forward, y, z + 3, "blackstone");
+    }
+    add("lights", x + hoodStart, y + 2, z - 1, "sea_lantern");
+    add("lights", x + hoodStart, y + 2, z + 1, "sea_lantern");
+  } else {
+    cuboid("trailer", x - 2, y + 1, z + Math.min(trailerStart, trailerEnd), x + 2, y + 4, z + Math.max(trailerStart, trailerEnd), "white_concrete");
+    cuboid("trailer_trim", x - 2, y + 5, z + Math.min(trailerStart, trailerEnd), x + 2, y + 5, z + Math.max(trailerStart, trailerEnd), "light_gray_concrete");
+    cuboid("cab", x - 2, y + 1, z + Math.min(cabStart, 0), x + 2, y + 4, z + Math.max(cabStart, 0), "red_concrete");
+    cuboid("hood", x - 1, y + 1, z + Math.min(hoodStart, cabStart), x + 1, y + 2, z + Math.max(hoodStart, cabStart), "red_concrete");
+    cuboid("windshield", x - 2, y + 4, z + Math.min(cabStart, 0), x - 2, y + 4, z + Math.max(cabStart, 0), "light_blue_stained_glass");
+    for (const wz of [-5, -2, 3, 8]) {
+      add("wheels", x - 3, y, z + wz * forward, "blackstone");
+      add("wheels", x + 3, y, z + wz * forward, "blackstone");
+    }
+    add("lights", x - 1, y + 2, z + hoodStart, "sea_lantern");
+    add("lights", x + 1, y + 2, z + hoodStart, "sea_lantern");
+  }
+
+  return jobs;
 }
 
 async function executeDelegatedCastleWall(origin) {
