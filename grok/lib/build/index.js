@@ -12,11 +12,16 @@
 // build then flows through the additive, site-aware compiler — so surroundings
 // are preserved and the same job state Codex consumes is produced.
 
+const path = require('path')
 const blueprint = require('./blueprint')
 const { compile } = require('./compile')
 const { anchorToSite, heightSampler } = require('./anchor')
 const { diff, botReadBlock } = require('./diff')
 const realize = require('./realize')
+
+// Build MODE: 'godmode' (default — /fill+/setblock via hands) or 'fleet' (a fleet
+// of player-builder bots physically place the blocks). Set GROK_BUILD_MODE=fleet.
+const BUILD_MODE = String(process.env.GROK_BUILD_MODE || 'godmode').toLowerCase()
 
 async function planAndBuild(request, ctx) {
   const { architect, bot, hands, survey, log = () => {}, memory } = ctx
@@ -39,9 +44,13 @@ async function planAndBuild(request, ctx) {
   const read = bot ? botReadBlock(bot) : (() => 'air')
   const d = diff(target, read, { structure: bp.name })
 
-  // 5) REALIZE — godmode filler places only the differing cells.
+  // 5) REALIZE — godmode filler (default) OR a fleet of player-builders.
   let filled = null
-  if (hands) filled = realize.realize(d.jobs, hands)
+  if (BUILD_MODE === 'fleet') {
+    filled = await realizeWithFleet(d, bp, request, log)
+  } else if (hands) {
+    filled = realize.realize(d.jobs, hands)   // godmode: /fill + /setblock
+  }
 
   // Optionally emit the shared state + schematic for Codex / interop. NOTE: by
   // default this writes to request.statePath (NOT Codex's live state.json) so a
@@ -69,6 +78,26 @@ async function editBuild(op, bp, ctx) {
   const s = summarize(bp, d, filled, target)
   s.touched = touched
   return s
+}
+
+// ---- fleet realize: write the shared state, then launch player-builders ----
+async function realizeWithFleet(d, bp, request, log) {
+  const statePath = request.statePath || path.join(process.cwd(), 'build-out', 'state.json')
+  try { realize.writeState(d, { structure: bp.name, workers: request.workers || [] }, statePath) }
+  catch (e) { log('fleet writeState err', e.message) }
+  try {
+    const { runFleet } = require('../../builders/fleet')
+    return await runFleet({
+      statePath,
+      count: +(process.env.GROK_FLEET_COUNT || request.fleetCount || 3),
+      host: process.env.MC_HOST || 'localhost',
+      port: +(process.env.MC_PORT || 25565),
+      version: process.env.MC_VERSION || '1.21.6',
+      consolePath: process.env.GROK_FLEET_CONSOLE || path.join(__dirname, '..', '..', '..', 'server', 'console.in'),
+      blocksPerSec: +(process.env.GROK_FLEET_BPS || 6),
+      log
+    })
+  } catch (e) { log('fleet realize err', e.stack || e.message); return { mode: 'fleet', error: e.message } }
 }
 
 // ---- author ----
