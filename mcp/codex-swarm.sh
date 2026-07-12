@@ -29,6 +29,7 @@ Usage:
   ./mcp/codex-swarm.sh start [count]
   ./mcp/codex-swarm.sh stop
   ./mcp/codex-swarm.sh status
+  ./mcp/codex-swarm.sh validate [state.json]
   ./mcp/codex-swarm.sh logs [boss|drone-number]
   ./mcp/codex-swarm.sh logfiles
 
@@ -124,6 +125,10 @@ case "$command" in
       NODE_BIN="$(node_bin)"
       CODEX_SWARM_RUNTIME="$RUNTIME_DIR" "$NODE_BIN" "$ROOT_DIR/mcp/codex-swarm-status.mjs"
     fi
+    ;;
+  validate)
+    NODE_BIN="$(node_bin)"
+    CODEX_SWARM_RUNTIME="$RUNTIME_DIR" MINECRAFT_VERSION="${MINECRAFT_VERSION:-1.21.6}" "$NODE_BIN" "$ROOT_DIR/mcp/codex-swarm-validate.mjs" "${2:-}"
     ;;
   logs)
     target="${2:-boss}"

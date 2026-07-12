@@ -132,12 +132,15 @@ Minecraft server is unreachable or repeatedly disconnects bots:
 ```sh
 MINECRAFT_HOST=192.168.86.188 CODEX_SWARM_COUNT=1 ./mcp/codex-swarm.sh start
 ./mcp/codex-swarm.sh status
+./mcp/codex-swarm.sh validate
 ./mcp/codex-swarm.sh logs 1
 ./mcp/codex-swarm.sh stop
 ```
 
 `status` prints the active tmux sessions plus a concise delegated-task summary
 instead of dumping the full block-job array.
+`validate` checks the current delegated state for duplicate job ids, malformed
+coordinates, invalid workers, and unknown vanilla block ids.
 
 Retry knobs:
 
