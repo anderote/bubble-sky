@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 import { AsyncLocalStorage } from "node:async_hooks";
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { Vec3 } from "vec3";
 import mineflayer from "../mindcraft/upstream/node_modules/mineflayer/index.js";
 import pathfinderPackage from "../mindcraft/upstream/node_modules/mineflayer-pathfinder/index.js";
@@ -27,11 +26,14 @@ const buildCommandDelayMs = Number(process.env.CODEX_BUILD_COMMAND_DELAY_MS || 1
 const openaiApiKey = process.env.OPENAI_API_KEY || "";
 const commandModel = process.env.CODEX_COMMAND_MODEL || "gpt-5-mini";
 const commandApiTimeoutMs = Number(process.env.CODEX_COMMAND_API_TIMEOUT_MS || 3500);
+const chatModel = process.env.CODEX_CHAT_MODEL || commandModel;
+const chatApiTimeoutMs = Number(process.env.CODEX_CHAT_API_TIMEOUT_MS || 8000);
 const codexCliPath = process.env.CODEX_COMMAND_CLI || "/opt/homebrew/bin/codex";
 const codexCliEnabled = process.env.CODEX_COMMAND_CLI_ENABLED !== "0";
 const codexCliTimeoutMs = Number(process.env.CODEX_COMMAND_CLI_TIMEOUT_MS || 12000);
+const codexChatCliEnabled = process.env.CODEX_CHAT_CLI_ENABLED !== "0";
+const codexChatCliTimeoutMs = Number(process.env.CODEX_CHAT_CLI_TIMEOUT_MS || 12000);
 const commandContext = new AsyncLocalStorage();
-const execFileAsync = promisify(execFile);
 const botAliases = botHandleAliases(username);
 const primaryHandle = botAliases[0] || username;
 const helpLines = [
@@ -320,11 +322,107 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
-  say(`I heard "${command}". Give me an action: come here, do you see this, keep building this red thing, build fortress here, or burn this castle with lava.`, { to: speaker });
+  await answerGeneralChat(speaker, command);
 }
 
 function isCapabilityQuestion(lower) {
   return /\b(?:are you smart(?: yet| now)?|smart yet|smart now|what can you do|what do you understand|can you see|do you understand this|are you smarter)\b/.test(lower);
+}
+
+async function answerGeneralChat(speaker, command) {
+  const answer = await answerGeneralChatWithOpenAI(speaker, command) ||
+    await answerGeneralChatWithCodexCli(speaker, command) ||
+    localGeneralChatAnswer(speaker, command);
+  say(answer, { to: speaker });
+}
+
+async function answerGeneralChatWithOpenAI(speaker, command) {
+  if (!openaiApiKey) return null;
+
+  const prompt = generalChatPrompt(speaker, command);
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), chatApiTimeoutMs);
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openaiApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: chatModel,
+        input: prompt,
+        reasoning: { effort: "minimal" },
+        max_output_tokens: 120,
+        store: false,
+      }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      console.error(`OpenAI chat failed: ${response.status} ${body.slice(0, 300)}`);
+      return null;
+    }
+
+    return cleanChatAnswer(extractResponseText(await response.json()));
+  } catch (error) {
+    console.error(`OpenAI chat error: ${error.message}`);
+    return null;
+  }
+}
+
+async function answerGeneralChatWithCodexCli(speaker, command) {
+  if (!codexCliEnabled || !codexChatCliEnabled) return null;
+
+  const outputPath = path.join(os.tmpdir(), `codex-chat-${process.pid}-${Date.now()}.txt`);
+  try {
+    await runCodexCli(generalChatPrompt(speaker, command), outputPath, codexChatCliTimeoutMs);
+    return cleanChatAnswer(fs.readFileSync(outputPath, "utf8"));
+  } catch (error) {
+    console.error(`Codex CLI chat error: ${error.message}`);
+    return null;
+  } finally {
+    fs.rmSync(outputPath, { force: true });
+  }
+}
+
+function generalChatPrompt(speaker, command) {
+  const recent = readHistory(8)
+    .map((entry) => `${entry.speaker || entry.bot || "chat"}: ${entry.text}`)
+    .join("\n");
+  const position = bot.entity?.position ? formatPosition(bot.entity.position) : "unknown";
+  return [
+    "You are codex, an AI living inside a Minecraft world.",
+    "Answer the addressed player naturally, like a capable in-game companion.",
+    "Keep it concise: one sentence, under 180 characters if possible.",
+    "Do not list a help menu unless they asked for help.",
+    "If they ask whether you are smart/capable, answer confidently and mention you can chat, move, inspect what they point at, and build/transform structures.",
+    `Your in-game position: ${position}`,
+    recent ? `Recent chat:\n${recent}` : "Recent chat: none",
+    `${speaker}: ${command}`,
+    "codex:",
+  ].join("\n");
+}
+
+function cleanChatAnswer(text) {
+  const answer = compact(String(text || "")
+    .replace(/^codex:\s*/i, "")
+    .replace(/^["']|["']$/g, ""));
+  if (!answer) return null;
+  return answer.slice(0, 220);
+}
+
+function localGeneralChatAnswer(speaker, command) {
+  const lower = command.toLowerCase();
+  if (/\b(thanks|thank you|ty)\b/.test(lower)) return `anytime, ${speaker}.`;
+  if (/\b(sorry|my bad)\b/.test(lower)) return `all good. I'm here and listening.`;
+  if (/\b(hello|hi|hey|yo)\b/.test(lower)) return `hey ${speaker}. I can chat normally now, and I can act on what you point at in-world.`;
+  if (/\b(are you smart|smart|capable|can you think)\b/.test(lower)) {
+    return `yes. I can chat, move, inspect what you're looking at, and build or transform structures from natural language.`;
+  }
+  if (/\?$/.test(command)) return `reasonable question. I can answer better with the chat model connected; in-world, I can still inspect, move, build, and transform things.`;
+  return `heard you. I'm not going to dump a help menu; talk to me normally or point at something and tell me what to do with it.`;
 }
 
 function interpretArchitectCommand(lower) {
@@ -465,20 +563,7 @@ async function interpretArchitectCommandWithCodexCli(command, speaker) {
   ].join("\n");
 
   try {
-    await execFileAsync(codexCliPath, [
-      "exec",
-      "--ephemeral",
-      "--ignore-rules",
-      "-s",
-      "read-only",
-      "--output-last-message",
-      outputPath,
-      prompt,
-    ], {
-      cwd: process.cwd(),
-      timeout: codexCliTimeoutMs,
-      maxBuffer: 1024 * 1024,
-    });
+    await runCodexCli(prompt, outputPath, codexCliTimeoutMs);
 
     const parsed = parseJsonObject(fs.readFileSync(outputPath, "utf8"));
     if (isValidArchitectAction(parsed)) {
@@ -528,6 +613,49 @@ function parseJsonObject(text) {
       return null;
     }
   }
+}
+
+function runCodexCli(prompt, outputPath, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(codexCliPath, [
+      "exec",
+      "--ephemeral",
+      "--ignore-rules",
+      "-s",
+      "read-only",
+      "--output-last-message",
+      outputPath,
+      prompt,
+    ], {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    let stdout = "";
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error(`timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      reject(new Error(`exited ${code}: ${(stderr || stdout).slice(0, 500)}`));
+    });
+  });
 }
 
 async function runArchitectCommand(speaker, command, originalText = "") {
