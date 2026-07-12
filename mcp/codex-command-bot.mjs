@@ -52,6 +52,8 @@ const helpLines = [
   "where",
   "come [player]",
   "follow [player|me]",
+  "turn on creative/fly",
+  "land",
   "escort me to <x>,<z>",
   "look at [player|me]",
   "what am I looking at",
@@ -259,6 +261,21 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
+  if (isEnableFlightCommand(lower)) {
+    bot.chat(`/gamemode creative ${username}`);
+    await wait(300);
+    await startCreativeFlight();
+    say("creative flight is on");
+    return;
+  }
+
+  if (isLandCommand(lower)) {
+    clearAirborneFollow();
+    await stopCreativeFlight();
+    say("landing");
+    return;
+  }
+
   if (lower === "stop") {
     followTarget = null;
     clearAirborneFollow();
@@ -378,6 +395,15 @@ async function runCommand(speaker, commandText) {
 
 function isCapabilityQuestion(lower) {
   return /\b(?:are you smart(?: yet| now)?|smart yet|smart now|what can you do|what do you understand|can you see|do you understand this|are you smarter)\b/.test(lower);
+}
+
+function isEnableFlightCommand(lower) {
+  return /\b(?:creative|creative mode|fly|flight|flying)\b/.test(lower) &&
+    /\b(?:turn on|enable|start|use|go into|switch to|stay|keep|remain)\b/.test(lower);
+}
+
+function isLandCommand(lower) {
+  return /\b(?:land|stop flying|turn off fly|turn off flight|walk with me|walk now)\b/.test(lower);
 }
 
 async function answerGeneralChat(speaker, command) {
