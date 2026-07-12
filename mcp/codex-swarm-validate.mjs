@@ -21,10 +21,20 @@ const workers = new Set();
 requireString(state.taskId, "taskId");
 requireString(state.status, "status");
 requireString(state.structure, "structure");
+if (state.source != null) requireBoundedString(state.source, "source", 80);
+if (state.assignedTo != null) requireBoundedString(state.assignedTo, "assignedTo", 80);
+if (state.requestedBy != null) requireBoundedString(state.requestedBy, "requestedBy", 80);
+if (state.originalText != null) requireBoundedString(state.originalText, "originalText", 800);
+if (state.instructions != null) requireBoundedString(state.instructions, "instructions", 1200);
 if (!state.origin || !["x", "y", "z"].every((key) => Number.isFinite(state.origin[key]))) {
   errors.push("origin must contain numeric x/y/z");
 }
 if (!jobs.length) errors.push("jobs must be a non-empty array");
+if (state.source === "codex-architect" && !["complete", "complete_with_failures"].includes(state.status)) {
+  if (!state.requestedBy) errors.push("requestedBy must be present for active codex-architect tasks");
+  if (!state.originalText) errors.push("originalText must be present for active codex-architect tasks");
+  if (!state.instructions) errors.push("instructions must be present for active codex-architect tasks");
+}
 
 for (const [index, job] of jobs.entries()) {
   const label = `jobs[${index}]`;
@@ -53,6 +63,9 @@ for (const [index, job] of jobs.entries()) {
 if (state.jobCount != null && Number(state.jobCount) !== jobs.length) {
   errors.push(`jobCount ${state.jobCount} does not match jobs.length ${jobs.length}`);
 }
+if (state.jobCount != null && !Number.isInteger(Number(state.jobCount))) {
+  errors.push("jobCount must be an integer");
+}
 
 if (errors.length) {
   console.error(`invalid swarm state ${statePath}`);
@@ -69,6 +82,14 @@ console.log(`workers: ${[...workers].sort().join(", ") || "none"}`);
 
 function requireString(value, field) {
   if (!value || typeof value !== "string") errors.push(`${field} must be a string`);
+}
+
+function requireBoundedString(value, field, maxLength) {
+  if (typeof value !== "string" || !value.trim()) {
+    errors.push(`${field} must be a non-empty string`);
+    return;
+  }
+  if (value.length > maxLength) errors.push(`${field} must be at most ${maxLength} characters`);
 }
 
 function commandBlockName(block) {
