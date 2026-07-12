@@ -2493,20 +2493,49 @@ function delegatedStatusText() {
     if (!fs.existsSync(swarmStatePath)) return "";
     const state = JSON.parse(fs.readFileSync(swarmStatePath, "utf8"));
     if (state.source !== "codex-architect") return "";
-    const progressPath = path.join(swarmRuntimeDir, "progress", `${state.assignedTo || delegatedDroneName}.json`);
-    const progress = fs.existsSync(progressPath) ? JSON.parse(fs.readFileSync(progressPath, "utf8")) : null;
-    if (!progress || progress.taskId !== state.taskId) {
+    const summary = delegatedTaskProgress(state.taskId);
+    const total = state.jobs?.length || 0;
+    const label = `${state.assignedTo || delegatedDroneName} ${state.structure}`;
+    if (state.status === "complete") {
+      return `${label}: complete, ${summary.done || state.completedJobs || total}/${total} jobs done, ${summary.failed || state.failedJobs || 0} failed`;
+    }
+    if (state.status === "complete_with_failures") {
+      return `${label}: complete with failures, ${summary.done || state.completedJobs || 0}/${total} jobs done, ${summary.failed || state.failedJobs || 0} failed`;
+    }
+    if (!summary.seen) {
       return `${state.assignedTo || delegatedDroneName} waiting on ${state.structure}`;
     }
-    const done = progress.doneIds?.length || 0;
-    const failed = progress.failedIds?.length || 0;
-    const total = state.jobs?.length || 0;
-    const active = progress.activeJob ? `, now ${progress.activeJob}` : "";
-    return `${state.assignedTo || delegatedDroneName} ${state.structure}: ${done}/${total} jobs done, ${failed} failed${active}`;
+    const active = summary.activeJob ? `, now ${summary.activeJob}` : "";
+    return `${label}: ${summary.done}/${total} jobs done, ${summary.failed} failed${active}`;
   } catch (error) {
     console.error(`failed to read delegated status: ${error.message}`);
     return "";
   }
+}
+
+function delegatedTaskProgress(taskId) {
+  const progressDir = path.join(swarmRuntimeDir, "progress");
+  const done = new Set();
+  const failed = new Set();
+  let activeJob = "";
+  let seen = false;
+  if (!fs.existsSync(progressDir)) return { seen, done: 0, failed: 0, activeJob };
+
+  for (const file of fs.readdirSync(progressDir)) {
+    if (!file.endsWith(".json")) continue;
+    try {
+      const progress = JSON.parse(fs.readFileSync(path.join(progressDir, file), "utf8"));
+      if (progress.taskId !== taskId) continue;
+      seen = true;
+      for (const id of progress.doneIds || []) done.add(id);
+      for (const id of progress.failedIds || []) failed.add(id);
+      if (progress.activeJob) activeJob = progress.activeJob;
+    } catch (error) {
+      console.error(`failed to read delegated progress ${file}: ${error.message}`);
+    }
+  }
+
+  return { seen, done: done.size, failed: failed.size, activeJob };
 }
 
 function say(message, options = {}) {
