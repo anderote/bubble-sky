@@ -2,6 +2,7 @@ package net.bubblesky.towerdefense.registry;
 
 import java.util.function.Function;
 import net.bubblesky.towerdefense.TowerDefenseMod;
+import net.bubblesky.towerdefense.item.AcidBucketItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ToolMaterial;
 import net.minecraft.registry.Registries;
@@ -42,6 +43,10 @@ public final class ModItems {
 	// Currency dropped by hostile mobs; spent at the (future) shop.
 	public static final Item COIN = register("coin",
 		Item::new, new Item.Settings());
+
+	// Places a full-charge acid source on use, then empties to a bucket.
+	public static final Item ACID_BUCKET = register("acid_bucket",
+		AcidBucketItem::new, new Item.Settings().maxCount(1));
 
 	public static Item register(String name, Function<Item.Settings, Item> factory, Item.Settings settings) {
 		RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(TowerDefenseMod.MOD_ID, name));

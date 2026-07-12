@@ -36,6 +36,7 @@ public final class ModItemGroups {
 			entries.add(ModItems.MACE);
 			entries.add(ModItems.WAR_HAMMER);
 			entries.add(ModItems.COIN);
+			entries.add(ModItems.ACID_BUCKET);
 			entries.add(ModBlocks.ARROW_TOWER);
 			entries.add(ModBlocks.CANNON_TOWER);
 			entries.add(ModBlocks.FROST_TOWER);

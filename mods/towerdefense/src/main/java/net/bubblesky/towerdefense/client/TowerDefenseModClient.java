@@ -3,9 +3,12 @@ package net.bubblesky.towerdefense.client;
 import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.client.render.TdBipedEntityRenderer;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
+import net.bubblesky.towerdefense.registry.ModBlocks;
 import net.bubblesky.towerdefense.registry.ModEntities;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
+import net.minecraft.client.render.BlockRenderLayer;
 import net.minecraft.entity.EntityType;
 import net.minecraft.util.Identifier;
 
@@ -25,6 +28,9 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		bind(ModEntities.MAN_AT_ARMS, "man_at_arms");
 		bind(ModEntities.UNDEAD_SOLDIER, "undead_soldier");
 		bind(ModEntities.HEAVY_KNIGHT, "heavy_knight");
+
+		// Acid renders as a translucent green liquid.
+		BlockRenderLayerMap.putBlock(ModBlocks.ACID, BlockRenderLayer.TRANSLUCENT);
 	}
 
 	private static void bind(EntityType<? extends TdEnemyEntity> type, String skin) {

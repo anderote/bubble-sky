@@ -5,7 +5,9 @@
 	"item.towerdefense.mace": "Mace",
 	"item.towerdefense.war_hammer": "War Hammer",
 	"item.towerdefense.coin": "Coin",
+	"item.towerdefense.acid_bucket": "Acid Bucket",
 
+	"block.towerdefense.acid": "Acid",
 	"block.towerdefense.arrow_tower": "Arrow Tower",
 	"block.towerdefense.cannon_tower": "Cannon Tower",
 	"block.towerdefense.frost_tower": "Frost Tower",

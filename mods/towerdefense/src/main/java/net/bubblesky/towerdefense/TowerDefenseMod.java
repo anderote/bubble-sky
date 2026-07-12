@@ -1,5 +1,6 @@
 package net.bubblesky.towerdefense;
 
+import net.bubblesky.towerdefense.bridge.AgentBridge;
 import net.bubblesky.towerdefense.command.TdCommand;
 import net.bubblesky.towerdefense.game.TdHud;
 import net.bubblesky.towerdefense.game.WaveManager;
@@ -61,6 +62,11 @@ public class TowerDefenseMod implements ModInitializer {
 			TdCommand.register(dispatcher));
 		WaveManager.register();
 		TdHud.register();
+
+		// Modded agent bridge: in-JVM HTTP API so AI agents can observe/act on the
+		// modded world without the vanilla protocol. Localhost-bound + token-gated;
+		// starts on SERVER_STARTED if enabled in config. See net.bubblesky.towerdefense.bridge.
+		AgentBridge.init();
 
 		LOGGER.info("[towerdefense] initialized: {} weapons + 3 towers (arrow/cannon/frost) + shop/upgrades + coin economy + wave game loop + 6-enemy roster + boss waves + HUD",
 			ModItems.WEAPON_COUNT);

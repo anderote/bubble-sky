@@ -1,0 +1,6 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "towerdefense:item/acid_bucket"
+	}
+}
