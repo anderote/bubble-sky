@@ -181,3 +181,9 @@ Environment knobs:
 | `CODEX_SWARM_BOSS` | `CodexBoss` | Planner username. |
 | `CODEX_SWARM_BUILD_MODE` | `command` | Uses `/setblock`; inventory mode is intentionally not implemented yet. |
 | `CODEX_SWARM_ANNOUNCE_ON_JOIN` | `0` | Keeps bot reconnects quiet by default. |
+| `CODEX_SWARM_REPORT_INTERVAL_MS` | `60000` | Boss progress report cadence while a build is active. |
+| `CODEX_SWARM_REPORT_MILESTONE` | `25` | Boss also reports when progress crosses this percentage step. |
+| `CODEX_DRONE_REPORT_EVERY_JOBS` | `80` | Drone checkpoint report cadence; set `0` to silence drone checkpoints. |
+| `CODEX_DRONE_REPORT_MIN_INTERVAL_MS` | `90000` | Minimum time between reports from the same drone. |
+| `CODEX_DRONE_REPORT_PHASES` | unset | Set to `1` if drones should publicly report phase changes. |
+| `CODEX_DRONE_REPORT_TASK_JOIN` | unset | Set to `1` if each drone should publicly announce joining a task. |

@@ -17,4 +17,6 @@
   visibility modes plus optional rich `/tellraw` formatting for opped bot accounts.
 - Added a tmux-backed swarm runner: `CodexBoss` plans cabin/watchtower builds and
   `CodexDroneN` botfolk execute assigned jobs from `.codex-runtime/swarm/state.json`.
+- Added sparse public swarm reporting: `CodexBoss` posts high-level build progress,
+  while drones only report phase/checkpoint updates.
 - Blocked on full P3 mindcraft behavior until `mindcraft/upstream/keys.json` contains an `ANTHROPIC_API_KEY`.

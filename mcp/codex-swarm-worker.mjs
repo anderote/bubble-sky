@@ -15,6 +15,10 @@ const statePath = path.join(runtimeDir, "state.json");
 const progressPath = path.join(runtimeDir, "progress", `${username}.json`);
 const commandBuild = process.env.CODEX_SWARM_BUILD_MODE !== "inventory";
 const announceOnJoin = process.env.CODEX_SWARM_ANNOUNCE_ON_JOIN !== "0";
+const reportEveryJobs = Number(process.env.CODEX_DRONE_REPORT_EVERY_JOBS || 80);
+const reportMinIntervalMs = Number(process.env.CODEX_DRONE_REPORT_MIN_INTERVAL_MS || 90000);
+const reportPhaseChanges = process.env.CODEX_DRONE_REPORT_PHASES === "1";
+const reportTaskJoin = process.env.CODEX_DRONE_REPORT_TASK_JOIN === "1";
 
 const bot = mineflayer.createBot({ host, port, username, version, auth: "offline" });
 bot.loadPlugin(pathfinder);
@@ -22,6 +26,8 @@ bot.loadPlugin(pathfinder);
 let activeTaskId = null;
 let movements = null;
 let stopping = false;
+let lastReportedPhase = null;
+let lastReportAt = 0;
 
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
@@ -50,8 +56,12 @@ async function workLoop() {
 
     if (state.taskId !== activeTaskId) {
       activeTaskId = state.taskId;
+      lastReportedPhase = null;
+      lastReportAt = 0;
       resetProgress(state.taskId);
-      safeChat(`${username} joining ${state.structure} build`);
+      if (reportTaskJoin) {
+        safeChat(`${username} joining ${state.structure} build`);
+      }
     }
 
     const progress = readProgress(state.taskId);
@@ -70,6 +80,7 @@ async function workLoop() {
 
 async function runJob(state, job, progress) {
   writeProgress({ ...progress, activeJob: `${job.phase}:${job.id}`, updatedAt: new Date().toISOString() });
+  maybeReportWork(state, job, progress);
 
   try {
     await moveNear(job.x, job.y, job.z, 5);
@@ -79,6 +90,18 @@ async function runJob(state, job, progress) {
     console.error(`${username}: failed ${job.id}: ${error.message}`);
     markFailed(state.taskId, job.id, error.message);
   }
+}
+
+function maybeReportWork(state, job, progress) {
+  const doneCount = progress.doneIds?.length || 0;
+  const phaseChanged = reportPhaseChanges && job.phase !== lastReportedPhase;
+  const checkpoint = reportEveryJobs > 0 && doneCount > 0 && doneCount % reportEveryJobs === 0;
+  const due = Date.now() - lastReportAt >= reportMinIntervalMs;
+  if (!due || (!phaseChanged && !checkpoint)) return;
+
+  lastReportedPhase = job.phase;
+  lastReportAt = Date.now();
+  safeChat(`${username}: ${state.structure} ${job.phase} pass, ${doneCount} jobs done.`);
 }
 
 async function placeJob(job) {

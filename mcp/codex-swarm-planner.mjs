@@ -12,14 +12,20 @@ const workerCount = Number(process.env.CODEX_SWARM_COUNT || 4);
 const runtimeDir = process.env.CODEX_SWARM_RUNTIME || ".codex-runtime/swarm";
 const statePath = path.join(runtimeDir, "state.json");
 const announceOnJoin = process.env.CODEX_SWARM_ANNOUNCE_ON_JOIN !== "0";
+const reportIntervalMs = Number(process.env.CODEX_SWARM_REPORT_INTERVAL_MS || 60000);
+const milestoneStep = Number(process.env.CODEX_SWARM_REPORT_MILESTONE || 25);
 
 const bot = mineflayer.createBot({ host, port, username, version, auth: "offline" });
+let lastReportAt = 0;
+let lastReportTaskId = null;
+let lastMilestone = -1;
 
 bot.once("spawn", () => {
   if (announceOnJoin) {
     say("CodexBoss online. Use @swarm build cabin or @swarm build watchtower.");
   }
   console.log(`${username} joined ${host}:${port} at ${bot.entity.position}`);
+  setInterval(reportProgress, 10000).unref();
 });
 
 bot.on("chat", async (speaker, message) => {
@@ -72,6 +78,9 @@ async function runCommand(speaker, commandText) {
   const plan = createPlan(structure, origin);
   writeState(plan);
   writeWorkerProgressFiles(plan.taskId);
+  lastReportTaskId = plan.taskId;
+  lastMilestone = 0;
+  lastReportAt = Date.now();
 
   say(`planned ${structure} at ${formatOrigin(origin)}: ${plan.jobs.length} block jobs for ${workerCount} drones`);
   say("Drones will move near assigned jobs and place with /setblock. Op CodexBoss/CodexDroneN if blocks do not appear.");
@@ -93,6 +102,53 @@ function showStatus() {
     .join(", ");
 
   say(`${state.structure} ${state.status}: ${done.size}/${state.jobs.length} done, ${failed} failed${active ? `; active ${active}` : ""}`);
+}
+
+function reportProgress() {
+  const state = readState();
+  if (!state?.taskId || state.status !== "building" || state.jobs.length === 0) return;
+
+  const summary = progressSummary(state);
+  if (state.taskId !== lastReportTaskId) {
+    lastReportTaskId = state.taskId;
+    lastMilestone = -1;
+    lastReportAt = 0;
+  }
+
+  if (summary.done >= state.jobs.length) {
+    writeState({ ...state, status: "complete", completedAt: new Date().toISOString() });
+    say(`${state.structure} complete: ${summary.done}/${state.jobs.length} jobs finished${summary.failed ? `, ${summary.failed} failed` : ""}.`);
+    return;
+  }
+
+  const safeMilestoneStep = Number.isFinite(milestoneStep) && milestoneStep > 0 ? milestoneStep : 25;
+  const milestone = Math.floor(summary.percent / safeMilestoneStep) * safeMilestoneStep;
+  const due = Date.now() - lastReportAt >= reportIntervalMs;
+  if (!due && milestone <= lastMilestone) return;
+
+  lastReportAt = Date.now();
+  lastMilestone = Math.max(lastMilestone, milestone);
+  say(`${state.structure} progress: ${summary.done}/${state.jobs.length} jobs (${summary.percent}%), ${summary.failed} failed; ${summary.phaseText}.`);
+}
+
+function progressSummary(state) {
+  const progress = readAllProgress(state.taskId);
+  const doneIds = new Set(progress.flatMap((entry) => entry.doneIds || []));
+  const failed = progress.reduce((sum, entry) => sum + (entry.failedIds?.length || 0), 0);
+  const activePhases = progress
+    .map((entry) => entry.activeJob?.split(":")[0])
+    .filter(Boolean);
+  const phaseCounts = countBy(activePhases);
+  const phaseText = Object.keys(phaseCounts).length
+    ? Object.entries(phaseCounts).map(([phase, count]) => `${count} drone${count === 1 ? "" : "s"} on ${phase}`).join(", ")
+    : "drones waiting for assignments";
+
+  return {
+    done: doneIds.size,
+    failed,
+    percent: Math.floor((doneIds.size / state.jobs.length) * 100),
+    phaseText,
+  };
 }
 
 function createPlan(structure, origin) {
@@ -298,6 +354,13 @@ function readAllProgress(taskId) {
     .filter((file) => file.endsWith(".json"))
     .map((file) => JSON.parse(fs.readFileSync(path.join(progressDir, file), "utf8")))
     .filter((entry) => entry.taskId === taskId);
+}
+
+function countBy(values) {
+  return values.reduce((counts, value) => {
+    counts[value] = (counts[value] || 0) + 1;
+    return counts;
+  }, {});
 }
 
 function say(message) {
