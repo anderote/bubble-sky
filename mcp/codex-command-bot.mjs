@@ -80,6 +80,11 @@ const botLoopPatterns = [
   /tag @/,
 ];
 
+if (process.env.CODEX_COMMAND_SELFTEST === "1") {
+  runCommandRoutingSelfTest();
+  process.exit(0);
+}
+
 const bot = mineflayer.createBot({
   host,
   port,
@@ -415,6 +420,50 @@ function isLandCommand(lower) {
 
 function isTurnAroundCommand(lower) {
   return /^(?:turn around|turn round|face behind you|look behind you|look behind)$/.test(lower);
+}
+
+function runCommandRoutingSelfTest() {
+  const cases = [
+    {
+      name: "addressed fly",
+      pass: addressedCommand("@codex fly") === "fly" &&
+        isEnableFlightCommand(normalizeCommand("fly").toLowerCase()),
+    },
+    {
+      name: "capability question",
+      pass: isCapabilityQuestion(normalizeCommand("are you smart yet").toLowerCase()),
+    },
+    {
+      name: "pointed context inspection",
+      pass: isInspectContextCommand(normalizeCommand("look where i'm pointing and describe").toLowerCase()),
+    },
+    {
+      name: "turn around action",
+      pass: isTurnAroundCommand(normalizeCommand("turn around").toLowerCase()),
+    },
+    {
+      name: "semantic context continuation",
+      pass: isContextExtendCommand(normalizeCommand("see that red thing continue building it into a baptism font").toLowerCase()) &&
+        shouldUseContextFreeformContinuation("see that red thing continue building it into a baptism font"),
+    },
+    {
+      name: "delegated context continuation",
+      pass: isContextExtendCommand(normalizeCommand("make your drone finish the wall tower").toLowerCase()) &&
+        shouldDelegateContextContinuation("make your drone finish the wall tower") &&
+        shouldUseContextFreeformContinuation("make your drone finish the wall tower"),
+    },
+    {
+      name: "alone visibility command",
+      pass: /^visibility\s+alone$/.test(addressedCommand("@codex visibility alone") || ""),
+    },
+  ];
+
+  const failed = cases.filter((testCase) => !testCase.pass);
+  if (failed.length) {
+    for (const testCase of failed) console.error(`routing selftest failed: ${testCase.name}`);
+    process.exit(1);
+  }
+  console.log(`command routing selftest passed (${cases.length} cases)`);
 }
 
 async function answerGeneralChat(speaker, command) {

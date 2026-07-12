@@ -24,6 +24,7 @@ bash -n ./mcp/codex-swarm.sh
 "$NODE_BIN" --check ./mcp/codex-swarm-worker.mjs
 "$NODE_BIN" --check ./mcp/codex-swarm-status.mjs
 "$NODE_BIN" --check ./mcp/codex-swarm-validate.mjs
+CODEX_COMMAND_SELFTEST=1 "$NODE_BIN" ./mcp/codex-command-bot.mjs
 
 ./mcp/codex-swarm.sh validate
 ./mcp/codex-swarm.sh status >/dev/null
