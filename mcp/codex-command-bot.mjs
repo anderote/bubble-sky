@@ -143,6 +143,12 @@ bot.on("physicsTick", () => {
   if (!player) return;
 
   const distance = bot.entity.position.distanceTo(player.position);
+  if (shouldFlyFollow(player, distance)) {
+    bot.pathfinder.setGoal(null);
+    setFlightAnchor(followTarget, vectorPosition(player.position));
+    return;
+  }
+
   if (distance > 3) {
     bot.pathfinder.setGoal(new goals.GoalFollow(player, 2), true);
   }
@@ -1551,6 +1557,12 @@ function positionMoved(before, after) {
     Math.abs(before.z - after.z) > 0.25;
 }
 
+function shouldFlyFollow(player, distance) {
+  if (!bot.creative || !player?.position) return false;
+  if (!player.onGround) return true;
+  return distance > 3 && player.position.y > bot.entity.position.y + 2;
+}
+
 async function maintainFlightNearTarget(targetName, fallbackPosition = null) {
   if (!bot.creative) return;
   await startCreativeFlight();
@@ -1562,17 +1574,23 @@ async function maintainFlightNearTarget(targetName, fallbackPosition = null) {
   const airborne = player ? !player.onGround : true;
   if (!airborne && target.y <= bot.entity.position.y + 1) return;
 
-  flightAnchor = {
-    targetName: playerName,
-    fallbackPosition: vectorPosition(target),
-    until: Date.now() + Number(process.env.CODEX_FLIGHT_ANCHOR_MS || 12000),
-    nextAt: 0,
-  };
+  setFlightAnchor(playerName, vectorPosition(target), { immediate: true });
 
   await withTimeout(
     bot.creative.flyTo(new Vec3(target.x, target.y + 1.5, target.z)),
     Number(process.env.CODEX_FLY_TO_PLAYER_TIMEOUT_MS || 2500),
   );
+}
+
+function setFlightAnchor(targetName, fallbackPosition, options = {}) {
+  const playerName = findPlayerName(targetName) || targetName;
+  const previousNextAt = flightAnchor?.targetName === playerName ? flightAnchor.nextAt : 0;
+  flightAnchor = {
+    targetName: playerName,
+    fallbackPosition,
+    until: Date.now() + Number(process.env.CODEX_FLIGHT_ANCHOR_MS || 12000),
+    nextAt: options.immediate ? 0 : previousNextAt,
+  };
 }
 
 function tickFlightAnchor() {
