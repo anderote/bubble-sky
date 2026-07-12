@@ -2,6 +2,7 @@ package net.bubblesky.towerdefense.game;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.entity.TdArcherEnemy;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
 import net.bubblesky.towerdefense.registry.ModEntities;
@@ -25,6 +26,8 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.Heightmap;
 
 /**
  * The endless, progressive wave manager — the heart of the game loop.
@@ -74,6 +77,13 @@ public final class WaveManager {
 
 	/** Ticks between staggered enemy spawns within a wave. */
 	private static final int SPAWN_INTERVAL = 15;
+	/** Short retry delay after a failed spawn (spot momentarily invalid). */
+	private static final int SPAWN_RETRY_TICKS = 5;
+	/** After this many consecutive failed attempts for one enemy, log + skip it so a
+	 *  permanently-bad spawn spot can't hang the wave forever. */
+	private static final int MAX_SPAWN_FAILURES = 40;
+	/** Blocks above the terrain surface to drop a spawned enemy (clears grass/snow). */
+	private static final int SURFACE_SPAWN_OFFSET = 1;
 	/** Length of the between-waves intermission (ticks; 20t = 1s). */
 	private static final int INTERMISSION_TICKS = 100;
 	/** Navigation speed multiplier used when steering enemies at the base. */
@@ -218,9 +228,15 @@ public final class WaveManager {
 				+ st.enemiesRemaining + " enemies!").formatted(Formatting.GOLD));
 		}
 		ServerWorld world = st.getArenaWorld(server);
-		if (world != null && !boss) {
-			// Boss-wave feedback fires from spawnBoss (so it lands at the gate).
-			TdFeedback.waveStart(world, st);
+		if (world != null) {
+			// Keep the base + spawn-gate chunks loaded for the whole match so enemies
+			// always spawn (heightmap/chunk available) and keep ticking/pathing even if
+			// every player walks off. Idempotent, so re-forcing each wave is harmless.
+			setArenaForced(world, st, true);
+			if (!boss) {
+				// Boss-wave feedback fires from spawnBoss (so it lands at the gate).
+				TdFeedback.waveStart(world, st);
+			}
 		}
 	}
 
@@ -255,9 +271,28 @@ public final class WaveManager {
 		if (st.spawnCooldown > 0) {
 			st.spawnCooldown--;
 		} else if (st.enemiesRemaining > 0) {
-			spawnEnemy(world, st);
-			st.enemiesRemaining--;
-			st.spawnCooldown = SPAWN_INTERVAL;
+			// Only drain the counter when a mob ACTUALLY spawned. A failed spawn (bad
+			// spot / momentarily unloaded chunk) retries shortly instead of silently
+			// emptying the wave. A safety cap skips a permanently-bad enemy so the wave
+			// can't hang forever.
+			boolean spawned = spawnEnemy(world, st);
+			if (spawned) {
+				st.enemiesRemaining--;
+				st.spawnFailures = 0;
+				st.spawnCooldown = SPAWN_INTERVAL;
+			} else {
+				st.spawnFailures++;
+				if (st.spawnFailures >= MAX_SPAWN_FAILURES) {
+					TowerDefenseMod.LOGGER.warn(
+						"[towerdefense] wave {} spawn failed {} times; skipping one enemy",
+						st.currentWave, st.spawnFailures);
+					st.enemiesRemaining--;
+					st.spawnFailures = 0;
+					st.spawnCooldown = SPAWN_INTERVAL;
+				} else {
+					st.spawnCooldown = SPAWN_RETRY_TICKS;
+				}
+			}
 			st.markDirty();
 		}
 		if (st.enemiesRemaining <= 0) {
@@ -293,17 +328,17 @@ public final class WaveManager {
 	}
 
 	// ---- enemy lifecycle ---------------------------------------------------
-	private static void spawnEnemy(ServerWorld world, TdArenaState st) {
+	/** Spawn one wave enemy. Returns {@code true} only if a mob actually appeared. */
+	private static boolean spawnEnemy(ServerWorld world, TdArenaState st) {
 		if (isBossWave(st.currentWave)) {
-			spawnBoss(world, st);
-			return;
+			return spawnBoss(world, st);
 		}
-		BlockPos sp = st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size()));
+		BlockPos sp = surfaceSpawn(world, st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size())));
 		List<EntityType<? extends TdEnemyEntity>> pool = rosterFor(st.currentWave);
 		EntityType<? extends TdEnemyEntity> type = pool.get(world.random.nextInt(pool.size()));
 		TdEnemyEntity mob = type.spawn(world, sp, SpawnReason.EVENT);
 		if (mob == null) {
-			return;
+			return false;
 		}
 		mob.addCommandTag(ENEMY_TAG);
 		mob.setPersistent();
@@ -330,6 +365,7 @@ public final class WaveManager {
 		}
 
 		steerToBase(mob, st);
+		return true;
 	}
 
 	/**
@@ -339,11 +375,11 @@ public final class WaveManager {
 	 * death hook pays the bonus bounty. Its own {@link TdFeedback#bossSpawn} fanfare
 	 * fires at the gate it emerges from.
 	 */
-	private static void spawnBoss(ServerWorld world, TdArenaState st) {
-		BlockPos sp = st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size()));
+	private static boolean spawnBoss(ServerWorld world, TdArenaState st) {
+		BlockPos sp = surfaceSpawn(world, st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size())));
 		TdEnemyEntity boss = ModEntities.HEAVY_KNIGHT.spawn(world, sp, SpawnReason.EVENT);
 		if (boss == null) {
-			return;
+			return false;
 		}
 		boss.addCommandTag(ENEMY_TAG);
 		boss.addCommandTag(BOSS_TAG);
@@ -367,6 +403,42 @@ public final class WaveManager {
 
 		steerToBase(boss, st);
 		TdFeedback.bossSpawn(world, st, sp, wave);
+		return true;
+	}
+
+	/**
+	 * Snap a spawn point to the terrain SURFACE at its (x,z) so enemies never spawn
+	 * buried inside a hill (which makes {@code type.spawn} return {@code null}). Uses
+	 * the world heightmap; the enemy lands a block above ground so it isn't stuck in
+	 * a block. The chunk is force-loaded for the match, so the heightmap is valid.
+	 */
+	private static BlockPos surfaceSpawn(ServerWorld world, BlockPos sp) {
+		int surfaceY = world.getTopY(Heightmap.Type.MOTION_BLOCKING, sp.getX(), sp.getZ());
+		return new BlockPos(sp.getX(), surfaceY + SURFACE_SPAWN_OFFSET, sp.getZ());
+	}
+
+	/**
+	 * Force-load (or release) the chunks holding the base and every spawn gate, so a
+	 * running match keeps spawning + ticking enemies regardless of where players are.
+	 * Called with {@code true} when a wave begins and {@code false} on reset/loss.
+	 */
+	private static void setArenaForced(ServerWorld world, TdArenaState st, boolean forced) {
+		if (st.base != null) {
+			ChunkPos c = new ChunkPos(st.base);
+			world.setChunkForced(c.x, c.z, forced);
+		}
+		for (BlockPos sp : st.spawnPoints) {
+			ChunkPos c = new ChunkPos(sp);
+			world.setChunkForced(c.x, c.z, forced);
+		}
+	}
+
+	/** Release the arena's force-loaded chunks (call before clearing arena state). */
+	public static void releaseArenaChunks(MinecraftServer server, TdArenaState st) {
+		ServerWorld world = st.getArenaWorld(server);
+		if (world != null) {
+			setArenaForced(world, st, false);
+		}
 	}
 
 	/**
@@ -470,6 +542,8 @@ public final class WaveManager {
 		for (Entity e : enemies(world, st)) {
 			e.discard();
 		}
+		// Stop pinning the arena's chunks now the match is over.
+		setArenaForced(world, st, false);
 		st.markDirty();
 		broadcast(server, Text.literal("Base destroyed! Survived " + st.wavesSurvived
 			+ " wave" + (st.wavesSurvived == 1 ? "" : "s") + ". Use /td restart to play again.")
