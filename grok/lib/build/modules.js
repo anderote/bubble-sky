@@ -312,12 +312,60 @@ function windowBand(o) {
   ])]
 }
 
+// Arrow slits / gothic windows punched along a footprint's four walls, using the
+// palette's `window` block (mcwwindows: …) when present, else vanilla glass. Faces
+// each block OUTWARD so mod windows read correctly on ramparts/façades.
+function arrowSlits(o) {
+  const { tag, x1, z1, x2, z2, y, P } = o
+  const every = o.every || 6, h = o.height || 2
+  const win = P.window || P.glass || 'glass_pane'
+  const modded = /:/.test(win)
+  const wb = (facing) => (modded ? `${win}[facing=${facing}]` : win)
+  const comps = []
+  const add = (x, z, facing) => { for (let dy = 0; dy < h; dy++) comps.push(pt(wb(facing), { x, y: y + dy, z })) }
+  for (let x = x1 + 2; x < x2 - 1; x += every) { add(x, z1, 'north'); add(x, z2, 'south') }
+  for (let z = z1 + 2; z < z2 - 1; z += every) { add(x1, z, 'west'); add(x2, z, 'east') }
+  return [region(`${tag}-slits`, `${tag} Slits`, 6, comps)]
+}
+
+// A paved main street (via) — an N-S strip and an E-W cross — through a compound,
+// laid one course into the ground (y = court level) in the palette's path block.
+function via(o) {
+  const { tag, cx, cz, x1, x2, z1, z2, y, P } = o
+  const hw = o.hw || 2
+  const block = o.block || P.path || 'stone_bricks'
+  return [region(tag, `${tag} Via`, 2, [
+    bl(block, { x: cx - hw, y, z: z1 }, { x: cx + hw, y, z: z2 }, false),   // main axis (N-S)
+    bl(block, { x: x1, y, z: cz - hw }, { x: x2, y, z: cz + hw }, false)    // cross axis (E-W)
+  ])]
+}
+
+// A forum centrepiece: a small stone well with water + four lamp posts, marking
+// the crossing of the via. Paved ring in the path block.
+function forum(o) {
+  const { tag, cx, cz, y, P } = o
+  const r = o.r || 2
+  const ring = P.trim || 'stone_bricks', wd = woodOf(P), light = P.light || 'lantern'
+  const comps = []
+  comps.push(bl(P.path || 'stone_bricks', { x: cx - r - 1, y, z: cz - r - 1 }, { x: cx + r + 1, y, z: cz + r + 1 }, false))
+  // well kerb (perimeter of a 3×3) + water
+  for (const [dx, dz] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) comps.push(pt(ring, { x: cx + dx, y: y + 1, z: cz + dz }))
+  comps.push(pt('water', { x: cx, y: y + 1, z: cz }))
+  // four lamp posts
+  for (const [dx, dz] of [[r, r], [r, -r], [-r, r], [-r, -r]]) {
+    for (let i = 1; i <= 3; i++) comps.push(pt(`${wd}_fence`, { x: cx + dx, y: y + i, z: cz + dz }))
+    comps.push(pt(`${light}[hanging=false]`, { x: cx + dx, y: y + 4, z: cz + dz }))
+  }
+  return [region(tag, `${tag} Forum`, 2, comps)]
+}
+
 module.exports = {
   // structure
   roomBox, floorSlab, story, interiorWall, doorway, doorRegion, staircase,
   squareTower, roundTower, curtainWall, gatehouse, courtyard,
   // trim / roofs / openings
   entrance, porch, chimney, spire, gableRoof, flatBattlementRoof, windowBand,
+  arrowSlits, via, forum,
   // low-level builders + helpers (used by archetypes.js)
   region, box, bl, wallSeg, cyl, pt, carve, sk, woodOf, clampi, doorComps,
   DIRV, OPP, resolvePalette

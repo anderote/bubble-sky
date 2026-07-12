@@ -197,72 +197,233 @@ module.exports = function makeFurniture(ctx) {
     return 1
   }
 
-  // ---- FURNISHED ROOMS: place furniture + light an EXISTING interior ----
+  // ---- MODDED FURNITURE helpers (mcwfurnitures / farmersdelight / blockus / vanilla depth) ----
+  // mcwfurnitures ship a piece per wood type; keep to the safe/known wood set.
+  const MCW_WOODS = new Set(['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'cherry', 'bamboo', 'crimson', 'warped'])
+  function furnWood(P) { const wd = wood(P); return MCW_WOODS.has(wd) ? wd : 'oak' }
+  const mcw = (wd, piece, state) => `mcwfurnitures:${wd}_${piece}${state ? `[${state}]` : ''}`
+  // Canonicalise a requested room type to one furnishRoom knows how to dress.
+  function normType(t) {
+    const k = String(t == null ? 'living' : t).toLowerCase()
+    const map = {
+      quarters: 'bedroom', bed: 'bedroom', dormitory: 'barracks', bunk: 'barracks',
+      principia: 'great_hall', hq: 'great_hall', hall: 'great_hall', dining: 'great_hall',
+      study: 'library', church: 'chapel', shrine: 'chapel', canteen: 'mess', refectory: 'mess',
+      armoury: 'armory', arsenal: 'armory', barn: 'granary', silo: 'granary',
+      storage: 'storeroom', pantry: 'storeroom', cellar: 'storeroom',
+      smithy: 'forge', craft: 'workshop', stables: 'stable', lounge: 'living'
+    }
+    const known = ['bedroom', 'kitchen', 'library', 'great_hall', 'living', 'mess', 'armory', 'granary', 'storeroom', 'barracks', 'chapel', 'forge', 'workshop', 'stable']
+    return map[k] || (known.includes(k) ? k : 'living')
+  }
+
+  // ---- FURNISHED ROOMS: place DENSE, CHARACTERFUL furniture + light an interior ----
   // Coords are the interior floor rectangle (x1,z1)-(x2,z2) at y1; ceiling ~ y2.
+  // Every room type lays out REAL furniture (mcwfurnitures/farmersdelight/blockus
+  // + vanilla depth) by function, plus decor accents and full lighting.
   function furnishRoom(a) {
     const P = pal(a.palette || a.style)
     let x1 = Math.min(a.x1, a.x2), x2 = Math.max(a.x1, a.x2)
     let z1 = Math.min(a.z1, a.z2), z2 = Math.max(a.z1, a.z2)
     const y = Math.round(a.y1 ?? a.y), yTop = Math.round(a.y2 ?? (y + 4))
-    const type = String(a.type || 'living').toLowerCase()
-    const f = face(a.facing)
+    const type = normType(a.type)
+    const wd = furnWood(P)
     const cx = (x1 + x2) >> 1, cz = (z1 + z2) >> 1
+    const iw = x2 - x1, il = z2 - z1
     const tall = (yTop - y) >= 6
     let n = 0
-
-    // Always start with a rug/floor accent + ensure the room is lit.
-    const lightEvery = 5
-    const litHanging = tall
-    const placeLight = (lx, lz) => {
-      if (litHanging) { set(lx, yTop - 1, lz, /end_rod/.test(B(P.light, '')) ? 'end_rod' : `${B(P.light, 'lantern')}[hanging=true]`) }
-      else set(lx, yTop - 1, lz, /end_rod/.test(B(P.light, '')) ? 'end_rod' : `${B(P.light, 'lantern')}[hanging=true]`)
-      n++
+    const put = (x, yy, z, b) => { set(x, yy, z, b); n++ }
+    const litB = B(P.light, 'lantern'); const isRod = /end_rod/.test(litB)
+    const hang = () => (isRod ? 'end_rod' : `${litB}[hanging=true]`)
+    const bannerC = B(P.banner, 'red')
+    const candleC = ['white', 'orange', 'yellow', 'brown']
+    // a lit candle cluster resting on top of a surface
+    const candle = (x, yy, z) => put(x, yy, z, `${candleC[(x + z) % candleC.length]}_candle[candles=${1 + Math.abs(x + z) % 3},lit=true]`)
+    // a wall banner facing into the room
+    const wallBanner = (x, z, facing) => put(x, y + Math.min(3, yTop - y - 1), z, `${bannerC}_wall_banner[facing=${facing}]`)
+    // ceiling lighting cadence so no interior spot is dark
+    const lightAll = (every = 5) => {
+      const e = Math.max(3, every)
+      for (let x = x1 + 1; x < x2; x += e) for (let z = z1 + 1; z < z2; z += e) put(x, yTop - 1, z, hang())
     }
-    // lighting cadence across the ceiling so no interior spot is dark
-    const lightAll = () => { for (let x = x1 + 1; x < x2; x += lightEvery) for (let z = z1 + 1; z < z2; z += lightEvery) placeLight(x, z) }
+    // guard for very small rooms
+    if (iw < 2 || il < 2) { lightAll(); return n }
 
     if (type === 'bedroom') {
-      bed({ x: x1 + 1, y, z: cz, facing: 'east', palette: P }); n += 2
-      set(x1 + 1, y, cz - 1, 'barrel[facing=up]'); set(x1 + 1, y + 1, cz - 1, `${B(P.light, 'lantern')}`); n += 2 // nightstand + lamp
-      wardrobe({ x: x2 - 1, y, z: z1 + 1, facing: 'west', palette: P }); n += 6
+      bed({ x: x1 + 1, y, z: z1 + 2, facing: 'south', palette: P }); n += 2
+      put(x1 + 1, y, z1 + 1, mcw(wd, 'drawer', 'facing=south')); candle(x1 + 1, y + 1, z1 + 1) // nightstand + candle
+      put(x2 - 1, y, z1 + 1, mcw(wd, 'wardrobe', 'facing=west'))
+      put(x2 - 1, y, z2 - 1, mcw(wd, 'desk', 'facing=west')); put(x2 - 2, y, z2 - 1, mcw(wd, 'chair', 'facing=east'))
+      put(x1 + 1, y, cz + 1, mcw(wd, 'bookshelf', 'facing=south'))
       rug({ x1: cx - 1, z1: cz - 1, x2: cx + 1, z2: cz + 1, y, palette: P }); n += 9
-      potted_plant({ x: x2 - 1, y, z: z2 - 1, plant: 'potted_fern' }); n += 1
+      potted_plant({ x: x2 - 1, y, z: z2 - 2, plant: 'potted_fern' }); n += 1
+      wallBanner(cx, z1, 'south')
       lightAll()
     } else if (type === 'kitchen') {
-      kitchen_counter({ x: x1 + 1, y, z: z1 + 1, facing: 'south', length: Math.max(2, z2 - z1 - 1), palette: P }); n += 8
-      table({ x: cx, y, z: cz, w: 2, l: 1, palette: P }); n += 4 // island
-      set(cx, y, cz, 'barrel[facing=up]')
-      wardrobe({ x: x2 - 1, y, z: z2 - 1, facing: 'west', palette: P }); n += 6 // pantry
+      // counter + sink run along the back wall, appliances interspersed
+      const runL = Math.max(2, iw - 1)
+      for (let i = 0; i < runL; i++) {
+        const x = x1 + 1 + i
+        const top = i === 0 ? mcw(wd, 'kitchen_sink', 'facing=south')
+          : i === 1 ? `farmersdelight:stove[facing=south]`
+            : i === 2 ? mcw(wd, 'kitchen_counter', 'facing=south')
+              : (i % 2 ? mcw(wd, 'kitchen_counter', 'facing=south') : mcw(wd, 'cupboard', 'facing=south'))
+        put(x, y, z1 + 1, top)
+      }
+      put(x1 + 1, y + 1, z1 + 1, 'farmersdelight:cooking_pot'); n += 0
+      put(x2 - 2, y, z1 + 2, 'farmersdelight:cutting_board')
+      // dining island
+      put(cx, y, cz, mcw(wd, 'table', 'facing=north')); put(cx + 1, y, cz, mcw(wd, 'table', 'facing=north'))
+      put(cx - 1, y, cz, mcw(wd, 'chair', 'facing=east')); put(cx + 2, y, cz, mcw(wd, 'chair', 'facing=west'))
+      put(cx, y, cz - 1, mcw(wd, 'stool', 'facing=north')); put(cx + 1, y, cz + 1, mcw(wd, 'stool', 'facing=south'))
+      put(x2 - 1, y, z2 - 1, 'barrel[facing=up]'); put(x2 - 1, y + 1, z2 - 1, 'barrel[facing=up]') // pantry stack
+      put(x1 + 1, y, z2 - 1, 'farmersdelight:rice_bale')
       lightAll()
     } else if (type === 'library') {
-      // bookshelf walls down the two long walls
-      bookshelf({ x: x1, y, z: z1 + 1, facing: 'north', width: Math.max(1, z2 - z1 - 1), height: Math.min(4, yTop - y - 1), palette: P })
-      bookshelf({ x: x2, y, z: z1 + 1, facing: 'north', width: Math.max(1, z2 - z1 - 1), height: Math.min(4, yTop - y - 1), palette: P })
-      table({ x: cx, y, z: cz, w: 2, l: 1, palette: P }); n += 4
-      chair({ x: cx - 1, y, z: cz, facing: 'east', palette: P }); chair({ x: cx + 2, y, z: cz, facing: 'west', palette: P }); n += 6
-      chandelier({ x: cx, y: yTop - 1, z: cz, palette: P, drop: tall ? 2 : 1 }); n += 8
-      lightAll()
-    } else if (type === 'great_hall') {
-      // long banquet table down the centre with benches both sides
-      const tz1 = z1 + 2, tz2 = z2 - 2
-      for (let z = tz1; z <= tz2; z++) { set(cx, y, z, `${wood(P)}_fence`); set(cx, y + 1, z, B(P.carpet, 'red_carpet')) ; n += 2 }
-      for (let z = tz1; z <= tz2; z++) { chair({ x: cx - 1, y, z, facing: 'east', palette: P }); chair({ x: cx + 1, y, z, facing: 'west', palette: P }); n += 6 }
-      fireplace({ x: cx, y, z: z1 + 1, facing: 'south', height: Math.max(4, yTop - y), palette: P }); n += 12
-      // banners on the side walls
-      for (let z = z1 + 2; z <= z2 - 2; z += 4) {
-        set(x1, y + 3, z, `${B(P.banner, 'red')}_wall_banner[facing=east]`)
-        set(x2, y + 3, z, `${B(P.banner, 'red')}_wall_banner[facing=west]`); n += 2
+      const h = Math.min(4, Math.max(2, yTop - y - 1))
+      // bookshelf walls: mcwfurnitures bookshelves + vanilla chiseled ones, both long walls
+      for (let z = z1 + 1; z <= z2 - 1; z++) {
+        for (let dy = 0; dy < h; dy++) {
+          put(x1, y + dy, z, dy === 1 ? 'chiseled_bookshelf[facing=east]' : mcw(wd, 'bookshelf', 'facing=east'))
+          put(x2, y + dy, z, dy === 1 ? 'chiseled_bookshelf[facing=west]' : mcw(wd, 'bookshelf', 'facing=west'))
+        }
       }
+      // reading tables down the centre with chairs
+      for (let z = z1 + 2; z <= z2 - 2; z += 3) {
+        put(cx, y, z, mcw(wd, 'table', 'facing=north')); candle(cx, y + 1, z)
+        put(cx - 1, y, z, mcw(wd, 'chair', 'facing=east')); put(cx + 1, y, z, mcw(wd, 'chair', 'facing=west'))
+      }
+      put(cx, y, z1 + 1, 'lectern[facing=south]')
+      chandelier({ x: cx, y: yTop - 1, z: cz, palette: P, drop: tall ? 2 : 1 }); n += 8
+      lightAll(6)
+    } else if (type === 'great_hall') {
+      // long banquet table down the centre (mcwfurnitures tables) + chairs both sides
+      const tz1 = z1 + 2, tz2 = z2 - 2
+      for (let z = tz1; z <= tz2; z++) {
+        put(cx, y, z, mcw(wd, 'table', 'facing=north'))
+        if ((z - tz1) % 3 === 1) candle(cx, y + 1, z)
+        put(cx - 1, y, z, mcw(wd, 'chair', 'facing=east')); put(cx + 1, y, z, mcw(wd, 'chair', 'facing=west'))
+      }
+      // head table on a dais + a throne
+      put(cx, y, tz2 + 1, mcw(wd, 'chair', 'facing=north'))
+      fireplace({ x: cx, y, z: z1 + 1, facing: 'south', height: Math.max(4, yTop - y), palette: P }); n += 12
+      // heraldry banners + wall sconces down both side walls
+      for (let z = z1 + 2; z <= z2 - 2; z += 3) { wallBanner(x1, z, 'east'); wallBanner(x2, z, 'west') }
+      for (let z = z1 + 3; z <= z2 - 3; z += 4) put(x1 + 1, y + 2, z, `${litB}`), put(x2 - 1, y + 2, z, `${litB}`)
+      // barrels of ale in the corners
+      put(x2 - 1, y, z1 + 1, 'barrel[facing=up]'); put(x1 + 1, y, z1 + 1, 'barrel[facing=up]')
       // chandeliers along the ridge
       for (let z = z1 + 3; z <= z2 - 3; z += 5) { chandelier({ x: cx, y: yTop - 1, z, palette: P, drop: 2 }); n += 8 }
       lightAll()
+    } else if (type === 'mess') {
+      // soldiers' mess: parallel trestle tables with benches + kitchen end
+      for (let x = x1 + 2; x <= x2 - 2; x += 3) {
+        for (let z = z1 + 2; z <= z2 - 2; z++) {
+          put(x, y, z, mcw(wd, 'table', 'facing=north'))
+          put(x - 1, y, z, mcw(wd, 'stool', 'facing=east')); put(x + 1, y, z, mcw(wd, 'stool', 'facing=west'))
+        }
+      }
+      put(x1 + 1, y, z1 + 1, `farmersdelight:stove[facing=east]`); put(x1 + 1, y + 1, z1 + 1, 'farmersdelight:cooking_pot')
+      put(x2 - 1, y, z1 + 1, mcw(wd, 'kitchen_counter', 'facing=west'))
+      put(x1 + 1, y, z2 - 1, 'barrel[facing=up]'); put(x2 - 1, y, z2 - 1, 'barrel[facing=up]')
+      wallBanner(cx, z1, 'south')
+      lightAll()
+    } else if (type === 'armory') {
+      // weapon/tool workshop feel: anvil, grindstone, smithing table, racks of drawers
+      put(x1 + 1, y, z1 + 1, 'anvil'); put(x1 + 2, y, z1 + 1, 'smithing_table'); put(x1 + 3, y, z1 + 1, 'grindstone[face=floor,facing=south]')
+      // drawer "racks" along both side walls with soul-lit sconces above
+      for (let z = z1 + 1; z <= z2 - 1; z += 2) {
+        put(x1, y, z, mcw(wd, 'double_drawer', 'facing=east')); put(x2, y, z, mcw(wd, 'double_drawer', 'facing=west'))
+        put(x1, y + 2, z, 'soul_lantern[hanging=false]'); put(x2, y + 2, z, 'soul_lantern[hanging=false]')
+      }
+      // barrels of supplies + a display stand of blockus stone in the centre
+      put(cx, y, cz, 'blockus:chiseled_diorite'); put(cx, y + 1, cz, 'lodestone')
+      put(x2 - 1, y, z2 - 1, 'barrel[facing=up]'); put(x2 - 2, y, z2 - 1, 'barrel[facing=up]')
+      put(x1 + 1, y, z2 - 1, 'chain'); put(x1 + 1, y + 1, z2 - 1, 'chain')
+      wallBanner(cx, z1, 'south')
+      lightAll()
+    } else if (type === 'granary') {
+      // grain store: stacked hay + straw/rice bales + crop crates + barrels
+      for (let x = x1 + 1; x <= x2 - 1; x += 2) for (let z = z1 + 1; z <= z2 - 1; z += 2) {
+        const stack = 1 + (Math.abs(x * 7 + z * 3) % Math.max(1, Math.min(3, yTop - y - 1)))
+        for (let dy = 0; dy < stack; dy++) put(x, y + dy, z, 'hay_block')
+      }
+      for (let z = z1 + 1; z <= z2 - 1; z += 3) { put(x1 + 1, y, z, 'farmersdelight:straw_bale'); put(x2 - 1, y, z, 'farmersdelight:rice_bale') }
+      put(x1 + 1, y, z1 + 1, 'barrel[facing=up]'); put(x2 - 1, y, z2 - 1, 'barrel[facing=up]')
+      lightAll()
+    } else if (type === 'storeroom') {
+      // barrels + shelves + crates
+      for (let z = z1 + 1; z <= z2 - 1; z++) {
+        put(x1, y, z, 'barrel[facing=up]'); put(x1, y + 1, z, 'barrel[facing=up]')
+        put(x2, y, z, mcw(wd, 'cupboard', 'facing=west'))
+      }
+      for (let x = x1 + 2; x <= x2 - 2; x += 2) { put(x, y, z1 + 1, 'barrel[facing=up]'); put(x, y, z2 - 1, 'farmersdelight:straw_bale') }
+      shelf({ x: x1 + 1, y: y + 2, z: z1, facing: 'south', length: Math.max(1, iw - 2), palette: P })
+      lightAll()
+    } else if (type === 'barracks') {
+      // rows of bunk beds along both long walls, footlocker + wall torch each
+      const beds = []
+      for (let z = z1 + 1; z + 1 <= z2 - 1; z += 3) beds.push(z)
+      for (const z of beds) {
+        bed({ x: x1 + 1, y, z, facing: 'south', palette: P }); n += 2
+        put(x1 + 1, y, z + 1, 'barrel[facing=up]')                    // footlocker
+        put(x1, y + 2, z, 'torch')
+        bed({ x: x2 - 1, y, z, facing: 'south', palette: P }); n += 2
+        put(x2 - 1, y, z + 1, mcw(wd, 'drawer', 'facing=west'))       // footlocker
+        put(x2, y + 2, z, 'torch')
+      }
+      // a weapons rack + banner at the head of the room
+      put(cx, y, z1 + 1, mcw(wd, 'double_drawer', 'facing=south')); wallBanner(cx, z1, 'south')
+      lightAll()
+    } else if (type === 'chapel') {
+      // pews facing an altar of blockus marble with candles + a lectern
+      for (let z = z1 + 2; z <= z2 - 3; z += 2) {
+        for (let x = x1 + 1; x <= cx - 1; x++) put(x, y, z, `${wd}_stairs[facing=north,half=bottom]`)
+        for (let x = cx + 1; x <= x2 - 1; x++) put(x, y, z, `${wd}_stairs[facing=north,half=bottom]`)
+      }
+      // altar
+      put(cx, y, z2 - 1, 'blockus:polished_marble'); put(cx - 1, y, z2 - 1, 'blockus:marble'); put(cx + 1, y, z2 - 1, 'blockus:marble')
+      candle(cx - 1, y + 1, z2 - 1); candle(cx + 1, y + 1, z2 - 1)
+      put(cx, y, z2 - 2, 'lectern[facing=north]')
+      // aisle carpet + tall windows dressing via banners
+      for (let z = z1 + 1; z <= z2 - 1; z++) put(cx, y, z, B(P.carpet, 'red_carpet'))
+      wallBanner(x1, cz, 'east'); wallBanner(x2, cz, 'west')
+      if (tall) { chandelier({ x: cx, y: yTop - 1, z: cz, palette: P, drop: 3 }); n += 8 }
+      lightAll()
+    } else if (type === 'forge') {
+      put(x1 + 1, y, z1 + 1, 'blast_furnace[facing=south]'); put(x1 + 2, y, z1 + 1, 'furnace[facing=south]')
+      put(x1 + 3, y, z1 + 1, 'smithing_table'); put(cx, y, cz, 'anvil'); put(cx + 1, y, cz, 'grindstone[face=floor,facing=south]')
+      put(x2 - 1, y, z1 + 1, 'blockus:limestone'); put(x2 - 1, y + 1, z1 + 1, 'magma_block') // forge hearth
+      put(x2 - 1, y, z2 - 1, 'barrel[facing=up]'); put(x1 + 1, y, z2 - 1, 'water_cauldron[level=3]') // quench
+      put(cx, y, z2 - 1, mcw(wd, 'double_drawer', 'facing=north'))
+      lightAll()
+    } else if (type === 'workshop') {
+      put(x1 + 1, y, z1 + 1, 'crafting_table'); put(x1 + 2, y, z1 + 1, 'fletching_table'); put(x1 + 3, y, z1 + 1, 'cartography_table')
+      put(cx, y, cz, mcw(wd, 'desk', 'facing=south')); put(cx, y, cz - 1, mcw(wd, 'chair', 'facing=north'))
+      for (let z = z1 + 1; z <= z2 - 1; z += 2) put(x2, y, z, mcw(wd, 'cupboard', 'facing=west'))
+      put(x1 + 1, y, z2 - 1, 'barrel[facing=up]'); put(x1 + 2, y, z2 - 1, 'loom[facing=north]')
+      lightAll()
+    } else if (type === 'stable') {
+      // stalls partitioned by fences, hay + water + feed
+      for (let x = x1 + 2; x <= x2 - 1; x += 3) for (let dy = 0; dy < Math.min(2, yTop - y - 1); dy++) put(x, y + dy, cz, `${wd}_fence`)
+      for (let x = x1 + 1; x <= x2 - 1; x += 3) {
+        put(x, y, z1 + 1, 'hay_block'); put(x, y, z2 - 1, 'water_cauldron[level=3]')
+        put(x + 1, y, z2 - 1, 'farmersdelight:rice_bale')
+      }
+      put(x1 + 1, y, cz, mcw(wd, 'double_drawer', 'facing=east'))
+      lightAll()
     } else { // living
-      sofa({ x: x1 + 1, y, z: cz - 1, facing: 'east', length: 3, palette: P }); n += 5
+      // couch (mcwfurnitures modular sofa) facing a coffee table + fireplace + shelves
+      put(x1 + 1, y, cz - 1, 'mcwfurnitures:white_modern_couch[facing=east,type=left]')
+      put(x1 + 1, y, cz, 'mcwfurnitures:white_modern_couch[facing=east,type=middle]')
+      put(x1 + 1, y, cz + 1, 'mcwfurnitures:white_modern_couch[facing=east,type=right]')
+      put(cx, y, cz, mcw(wd, 'coffee_table', 'facing=north'))
       rug({ x1: cx - 1, z1: cz - 1, x2: cx + 1, z2: cz + 1, y, palette: P }); n += 9
-      table({ x: cx, y, z: cz, w: 1, l: 1, palette: P }); n += 2
       fireplace({ x: x2 - 1, y, z: cz, facing: 'west', height: Math.max(4, yTop - y), palette: P }); n += 12
-      bookshelf({ x: x1 + 1, y, z: z2, facing: 'east', width: Math.min(4, x2 - x1 - 2), height: 2, palette: P })
-      potted_plant({ x: x1 + 1, y, z: z1 + 1, plant: 'potted_azalea_bush' }); n += 1
+      for (let dy = 0; dy < Math.min(3, yTop - y - 1); dy++) { put(x1, y + dy, z2 - 1, mcw(wd, 'bookshelf', 'facing=east')); put(x1, y + dy, z2 - 2, mcw(wd, 'bookshelf', 'facing=east')) }
+      put(cx + 1, y, z1 + 1, mcw(wd, 'drawer', 'facing=south')); candle(cx + 1, y + 1, z1 + 1)
+      potted_plant({ x: x2 - 1, y, z: z1 + 1, plant: 'potted_azalea_bush' }); n += 1
+      wallBanner(cx, z1, 'south')
       lightAll()
     }
     return n
@@ -288,7 +449,7 @@ module.exports = function makeFurniture(ctx) {
     ['rug', '{x1,z1,x2,z2,y,color,border,palette}', 'carpet rectangle with optional border'],
     ['shelf', '{x,y,z,facing,length,palette}', 'trapdoor bracket shelf'],
     ['potted_plant', '{x,y,z,plant}', 'a filled flower pot (potted_*)'],
-    ['furnishRoom', '{type,x1,y1,z1,x2,y2,z2,palette,facing}', 'FURNISH + LIGHT an existing interior. type: bedroom|kitchen|library|great_hall|living']
+    ['furnishRoom', '{type,x1,y1,z1,x2,y2,z2,palette}', 'FURNISH + LIGHT an interior densely with real furniture (mcwfurnitures/farmersdelight/blockus + vanilla). type: bedroom|quarters|kitchen|library|great_hall|mess|armory|granary|storeroom|barracks|chapel|forge|workshop|stable|living']
   ]
 
   return { skills, catalog, wood }

@@ -15,7 +15,7 @@ const { resolvePalette } = require('../../palettes')
 const {
   roomBox, floorSlab, interiorWall, doorRegion, staircase, squareTower, roundTower,
   curtainWall, gatehouse, courtyard, entrance, porch, chimney, spire, gableRoof,
-  flatBattlementRoof, windowBand, region, box, sk, pt, woodOf, clampi
+  flatBattlementRoof, windowBand, arrowSlits, via, forum, region, box, sk, pt, woodOf, clampi
 } = M
 
 // ---- seeded RNG (stable per goal+origin, varied between builds) ----
@@ -32,6 +32,15 @@ function rng(seedStr) {
 function seedOf(o) { return String(o.seed || o.name || 'build') }
 
 const pick = (R, arr) => arr[Math.floor(R() * arr.length) % arr.length]
+// Consume the next room type from the LLM's ordered room program (opts._roomQueue,
+// seeded by planBlueprint from design.roomList); fall back to a seeded pick when the
+// program is exhausted or absent. Lets a designed program drive interior FUNCTION
+// while the archetype keeps correct geometry.
+function takeRoom(opts, fallback) {
+  const q = opts && opts._roomQueue
+  if (Array.isArray(q) && q.length) return q.shift()
+  return fallback
+}
 // dim: explicit value wins (clamped); else a seeded pick in [lo,hi]; else def.
 function dim(v, lo, hi, def, R) {
   const n = parseInt(v, 10)
@@ -124,10 +133,10 @@ function cottage(opts) {
     const mz = Math.floor(L / 2)
     regs.push(...interiorWall({ tag: 'part', x1: 1, z1: mz, x2: W - 1, z2: mz, y0: baseY, y1: topY, P }))
     regs.push(doorRegion('innerdoor', Math.floor(W / 2), baseY + 1, mz, 'south', P))
-    regs.push(furnish('r1', pick(R, ['living', 'kitchen']), 0, 0, W, mz, baseY, topY, P))
-    regs.push(furnish('r2', pick(R, ['bedroom', 'library', 'living']), 0, mz, W, L - mz, baseY, topY, P))
+    regs.push(furnish('r1', takeRoom(opts, pick(R, ['living', 'kitchen'])), 0, 0, W, mz, baseY, topY, P))
+    regs.push(furnish('r2', takeRoom(opts, pick(R, ['bedroom', 'library', 'living'])), 0, mz, W, L - mz, baseY, topY, P))
   } else {
-    regs.push(furnish('r1', 'living', 0, 0, W, L, baseY, topY, P))
+    regs.push(furnish('r1', takeRoom(opts, 'living'), 0, 0, W, L, baseY, topY, P))
   }
 
   regs.push(...gableRoof({ tag: 'roof', x: 0, z: 0, w: W, l: L, y: topY + 1, P }))
@@ -162,7 +171,7 @@ function house(opts) {
     regs.push(...gableRoof({ tag: `${wg.tag}-roof`, x: wg.x, z: wg.z, w: wg.w, l: wg.l, y: topY + 1, P }))
     const cxDoor = wg.x < 0 ? wg.x + wg.w : wg.x
     regs.push(doorRegion(`${wg.tag}-door`, cxDoor, baseY + 1, wg.z + Math.floor(wg.l / 2), 'east', P))
-    regs.push(furnish(`${wg.tag}-f`, pick(R, ['bedroom', 'library', 'living']), wg.x, wg.z, wg.w, wg.l, baseY, baseY + storyH, P))
+    regs.push(furnish(`${wg.tag}-f`, takeRoom(opts, pick(R, ['bedroom', 'library', 'living'])), wg.x, wg.z, wg.w, wg.l, baseY, baseY + storyH, P))
   }
 
   if (stories >= 2) regs.push(...staircase({ tag: 'stair', x: 2, y: baseY, z: 2, facing: 'east', storyH, P }))
@@ -171,14 +180,14 @@ function house(opts) {
   const mz = Math.floor(L / 2)
   regs.push(...interiorWall({ tag: 'gpart', x1: 1, z1: mz, x2: W - 1, z2: mz, y0: baseY, y1: baseY + storyH, P }))
   regs.push(doorRegion('gpartdoor', Math.floor(W / 2), baseY + 1, mz, 'south', P))
-  regs.push(furnish('g1', pick(R, ['great_hall', 'living', 'kitchen']), 0, 0, W, mz, baseY, baseY + storyH, P))
-  regs.push(furnish('g2', pick(R, ['kitchen', 'living']), 0, mz, W, L - mz, baseY, baseY + storyH, P))
+  regs.push(furnish('g1', takeRoom(opts, pick(R, ['great_hall', 'living', 'kitchen'])), 0, 0, W, mz, baseY, baseY + storyH, P))
+  regs.push(furnish('g2', takeRoom(opts, pick(R, ['kitchen', 'living'])), 0, mz, W, L - mz, baseY, baseY + storyH, P))
   if (stories >= 2) {
     const uy = baseY + storyH
     regs.push(...interiorWall({ tag: 'upart', x1: 1, z1: mz, x2: W - 1, z2: mz, y0: uy, y1: uy + storyH, P }))
     regs.push(doorRegion('upartdoor', Math.floor(W / 2), uy + 1, mz, 'south', P))
-    regs.push(furnish('u1', pick(R, ['bedroom', 'library']), 0, 0, W, mz, uy, uy + storyH, P))
-    regs.push(furnish('u2', pick(R, ['bedroom', 'living']), 0, mz, W, L - mz, uy, uy + storyH, P))
+    regs.push(furnish('u1', takeRoom(opts, pick(R, ['bedroom', 'library'])), 0, 0, W, mz, uy, uy + storyH, P))
+    regs.push(furnish('u2', takeRoom(opts, pick(R, ['bedroom', 'living'])), 0, mz, W, L - mz, uy, uy + storyH, P))
     regs.push(...windowBand({ tag: 'winU', x: 0, z: 0, w: W, l: L, y: uy + 2, P, spacing: 3, height: 2 }))
   }
 
@@ -203,10 +212,10 @@ function keep(opts) {
   regs.push(...staircase({ tag: 'stairA', x: 2, y: baseY, z: 2, facing: 'east', storyH, P }))
   if (stories >= 3) regs.push(...staircase({ tag: 'stairB', x: 2, y: baseY + storyH, z: L - 3, facing: 'east', storyH, P }))
 
-  const floorTypes = ['great_hall', 'bedroom', 'library', 'living']
+  const floorTypes = ['great_hall', 'bedroom', 'library', 'living', 'armory', 'kitchen']
   for (let s = 0; s < stories; s++) {
     const fy = baseY + s * storyH
-    regs.push(furnish(`lvl${s}`, s === 0 ? 'great_hall' : pick(R, floorTypes), 0, 0, W, L, fy, fy + storyH, P))
+    regs.push(furnish(`lvl${s}`, takeRoom(opts, s === 0 ? 'great_hall' : pick(R, floorTypes)), 0, 0, W, L, fy, fy + storyH, P))
     regs.push(...windowBand({ tag: `slit${s}`, x: 0, z: 0, w: W, l: L, y: fy + 2, P, spacing: 5, height: 1 }))
   }
 
@@ -215,6 +224,7 @@ function keep(opts) {
   if (R() < 0.75) for (const [cx, cz] of [[0, 0], [0, L], [W, 0], [W, L]]) regs.push(...squareTower({ tag: `turret-${cx}-${cz}`, cx, cz, r: 1, y0: baseY, h: (topY - baseY) + dim(null, 2, 4, 3, R), P, roof: 'battlement', stories: 1, storyH: topY }))
 
   regs.push(...entrance({ tag: 'ent', x: Math.floor(W / 2), y: baseY, z: 0, facing: 'south', P }))
+  regs.push(...arrowSlits({ tag: 'keep', x1: 0, z1: 0, x2: W, z2: L, y: baseY + Math.floor(storyH * stories / 2), P, every: 6 }))
   regs.push(exteriorDetail('kp', 0, 0, W, L, baseY, topY, P))
   return envelope(opts, P, regs)
 }
@@ -233,6 +243,7 @@ function castle(opts) {
   regs.push(...curtainWall({ tag: 'wallW', x1, z1, x2: x1 + th, z2, y0: baseY, h: wallH, P }))
   regs.push(...curtainWall({ tag: 'wallE', x1: x2 - th, z1, x2, z2, y0: baseY, h: wallH, P }))
   regs.push(...courtyard({ tag: 'court', x: x1 + th, z: z1 + th, w: W - 2 * th, l: L - 2 * th, y: baseY - 1, P }))
+  regs.push(...arrowSlits({ tag: 'curtain', x1, z1, x2, z2, y: baseY + Math.floor(wallH / 2), P, every: 8 }))
 
   const tr = Math.max(3, Math.round(wallH / 3))
   const th2 = wallH + dim(null, 4, 8, 6, R)
@@ -271,8 +282,8 @@ function tower(opts) {
   const regs = []
   regs.push(...roundTower({ tag: 'tower', cx, cz, r, y0: baseY, h, P, cone: true, balcony: true, stories, storyH }))
   for (let s = 0; s < stories - 1; s++) regs.push(...staircase({ tag: `stair${s}`, x: cx - r + 1, y: baseY + s * storyH, z: cz, facing: 'east', storyH, P }))
-  const types = ['library', 'bedroom', 'living', 'great_hall']
-  for (let s = 0; s < stories; s++) { const fy = baseY + s * storyH; regs.push(furnish(`lvl${s}`, s === 0 ? 'living' : pick(R, types), cx - r, cz - r, 2 * r, 2 * r, fy, fy + storyH, P)) }
+  const types = ['library', 'bedroom', 'living', 'great_hall', 'workshop']
+  for (let s = 0; s < stories; s++) { const fy = baseY + s * storyH; regs.push(furnish(`lvl${s}`, takeRoom(opts, s === 0 ? 'living' : pick(R, types)), cx - r, cz - r, 2 * r, 2 * r, fy, fy + storyH, P)) }
   regs.push(...entrance({ tag: 'ent', x: cx, y: baseY, z: cz - r, facing: 'south', P }))
   return envelope(opts, P, regs)
 }
@@ -309,48 +320,78 @@ function cathedral(opts) {
 
   regs.push(...entrance({ tag: 'ent', x: Math.floor(W / 2), y: baseY, z: 0, facing: 'south', P }))
   regs.push(region('portal', 'Portal', 6, [sk('archway', { x: Math.floor(W / 2), y: baseY, z: 0, width: 4, height: 5, axis: 'x', block: P.wall })]))
-  regs.push(furnish('nave', 'great_hall', 0, 0, W, L, baseY, topY, P))
+  const naveType = takeRoom(opts, /librar/.test(String(opts.roomType)) ? 'library' : /chapel|church|temple/.test(String(opts.archetype || opts.name || '')) ? 'chapel' : 'great_hall')
+  regs.push(furnish('nave', naveType, 0, 0, W, L, baseY, topY, P))
   regs.push(exteriorDetail('cat', 0, 0, W, L, baseY, topY, P))
   return envelope(opts, P, regs)
 }
 
-// ============================= FORT =============================
+// ============================= FORT (Roman castrum) =============================
+// A rampart + corner towers + N/S gatehouses around a paved parade, split by a
+// central VIA (cross street) with a FORUM (well) at the crossing. Interior
+// buildings are ACTUAL furnished rooms arranged in bands around the via —
+// barracks (bunk rows) up front, an armory + granary flanking the forum, and a
+// principia (HQ great hall) at the rear — with seeded variety so no two forts match.
 function fort(opts) {
   const P = pal(opts), R = rng(seedOf(opts))
-  const W = dim(opts.width, 26, 80, 40, R), L = dim(opts.length, 20, 64, 30, R)
+  const W = dim(opts.width, 30, 80, 44, R), L = dim(opts.length, 26, 64, 36, R)
   const wallH = dim(opts.wallH, 5, 12, 7)
-  const baseY = 1, th = 2
+  const baseY = 1, th = 2, storyH = 5
   const x1 = 0, z1 = 0, x2 = W, z2 = L
+  const cx = Math.floor(W / 2), cz = Math.floor(L / 2), viaHW = 2
   const regs = []
+
+  // --- rampart, corner towers, gatehouses, arrow slits ---
   regs.push(...curtainWall({ tag: 'rN', x1, z1, x2, z2: z1 + th, y0: baseY, h: wallH, P }))
   regs.push(...curtainWall({ tag: 'rS', x1, z1: z2 - th, x2, z2, y0: baseY, h: wallH, P }))
   regs.push(...curtainWall({ tag: 'rW', x1, z1, x2: x1 + th, z2, y0: baseY, h: wallH, P }))
   regs.push(...curtainWall({ tag: 'rE', x1: x2 - th, z1, x2, z2, y0: baseY, h: wallH, P }))
   regs.push(...courtyard({ tag: 'parade', x: x1 + th, z: z1 + th, w: W - 2 * th, l: L - 2 * th, y: baseY - 1, P }))
-  for (const [cx, cz] of [[x1, z1], [x1, z2], [x2, z1], [x2, z2]]) regs.push(...squareTower({ tag: `c-${cx}-${cz}`, cx, cz, r: 2, y0: baseY, h: wallH + 4, P, roof: 'battlement', stories: 1, storyH: wallH + 4 }))
-  regs.push(...gatehouse({ tag: 'gN', cx: Math.floor(W / 2), cz: z1 + 1, axis: 'x', y0: baseY, h: wallH + 3, gateW: 4, P }))
-  regs.push(...gatehouse({ tag: 'gS', cx: Math.floor(W / 2), cz: z2 - 1, axis: 'x', y0: baseY, h: wallH + 3, gateW: 4, P }))
+  for (const [tx, tz] of [[x1, z1], [x1, z2], [x2, z1], [x2, z2]]) regs.push(...squareTower({ tag: `c-${tx}-${tz}`, cx: tx, cz: tz, r: 2, y0: baseY, h: wallH + 4, P, roof: 'battlement', stories: 1, storyH: wallH + 4 }))
+  regs.push(...gatehouse({ tag: 'gN', cx, cz: z1 + 1, axis: 'x', y0: baseY, h: wallH + 3, gateW: 4, P }))
+  regs.push(...gatehouse({ tag: 'gS', cx, cz: z2 - 1, axis: 'x', y0: baseY, h: wallH + 3, gateW: 4, P }))
+  regs.push(...arrowSlits({ tag: 'rampart', x1, z1, x2, z2, y: baseY + Math.floor(wallH / 2), P, every: 7 }))
 
-  // Central principia (HQ hall) at the REAR of the parade ground, freeing the
-  // front strip for a full row of barracks (different z-band → no collision).
-  const pW = 8, pL = 8, px = Math.floor((W - pW) / 2), pz = z2 - th - pL - 2
+  // --- central via + forum ---
+  regs.push(...via({ tag: 'via', cx, cz, x1: th, x2: W - th, z1: th, z2: L - th, y: baseY - 1, hw: viaHW, block: P.trim }))
+  regs.push(...forum({ tag: 'forum', cx, cz, y: baseY - 1, r: 2, P }))
 
-  // Barracks rows lining the front of the parade ground.
-  const bw = 6, gap = 3
-  const bandZ = z1 + th + 2, bandL = Math.max(6, (pz - 2) - bandZ)
-  let bx = x1 + th + 2, rows = 0
-  while (bx + bw < x2 - th - 2 && rows < 8) {
-    regs.push(...roomBox({ tag: `barrack${rows}`, x: bx, z: bandZ, w: bw, l: bandL, baseY, storyH: 5, stories: 1, P }))
-    regs.push(...gableRoof({ tag: `barrack${rows}-roof`, x: bx, z: bandZ, w: bw, l: bandL, y: baseY + 6, P }))
-    regs.push(furnish(`barrack${rows}`, 'bedroom', bx, bandZ, bw, bandL, baseY, baseY + 5, P))
-    regs.push(...entrance({ tag: `barrack${rows}-door`, x: bx + Math.floor(bw / 2), y: baseY, z: bandZ, facing: 'south', P }))
-    bx += bw + gap; rows++
+  // interior usable rect + x-lanes flanking the via
+  const inx1 = th + 1, inx2 = W - th - 1, inz1 = th + 1, inz2 = L - th - 1
+  const leftX = inx1, leftW = (cx - viaHW - 1) - inx1
+  const rightX = cx + viaHW + 1, rightW = inx2 - rightX
+
+  // A furnished interior building fronting the via: shell + roof + door + windows.
+  const bld = (tag, bx, bz, bw, bl, type) => {
+    if (bw < 4 || bl < 4) return false
+    regs.push(...roomBox({ tag, x: bx, z: bz, w: bw, l: bl, baseY, storyH, stories: 1, P }))
+    if (pick(R, ['gable', 'gable', 'flat']) === 'flat') regs.push(flatBattlementRoof({ tag: `${tag}-roof`, x: bx, z: bz, w: bw, l: bl, y: baseY + storyH, P })[0])
+    else regs.push(...gableRoof({ tag: `${tag}-roof`, x: bx, z: bz, w: bw, l: bl, y: baseY + storyH + 1, P }))
+    const bcz = bz + Math.floor(bl / 2), nearSouth = bcz <= cz
+    regs.push(...entrance({ tag: `${tag}-door`, x: bx + Math.floor(bw / 2), y: baseY, z: nearSouth ? bz + bl : bz, facing: nearSouth ? 'north' : 'south', P }))
+    regs.push(...windowBand({ tag: `${tag}-win`, x: bx, z: bz, w: bw, l: bl, y: baseY + 2, P, spacing: 3, height: 1 }))
+    regs.push(furnish(tag, type, bx, bz, bw, bl, baseY, baseY + storyH, P))
+    return true
   }
 
-  regs.push(...roomBox({ tag: 'principia', x: px, z: pz, w: pW, l: pL, baseY, storyH: 6, stories: 1, P }))
-  regs.push(flatBattlementRoof({ tag: 'principia-roof', x: px, z: pz, w: pW, l: pL, y: baseY + 6, P })[0])
-  regs.push(furnish('principia', 'great_hall', px, pz, pW, pL, baseY, baseY + 6, P))
-  regs.push(...entrance({ tag: 'principia-door', x: px + Math.floor(pW / 2), y: baseY, z: pz, facing: 'south', P }))
+  // z-bands: front (barracks) | forum (armory/granary flank) | rear (principia + extras)
+  const frontZ = inz1, frontDepth = (cz - 4) - frontZ
+  const midZ = cz - 3, midDepth = 6
+  const rearZ = cz + 4, rearDepth = inz2 - rearZ
+
+  // FRONT: barracks each side of the via (bunk rows)
+  bld('barrackW', leftX, frontZ, Math.min(9, leftW), frontDepth, 'barracks')
+  bld('barrackE', rightX, frontZ, Math.min(9, rightW), frontDepth, 'barracks')
+  // FORUM band: armory (W) + granary (E) flank the well
+  bld('armory', leftX, midZ, Math.min(7, leftW), midDepth, 'armory')
+  bld('granary', inx2 - Math.min(7, rightW), midZ, Math.min(7, rightW), midDepth, 'granary')
+  // REAR: principia (HQ) centered, spanning the via + seeded corner buildings
+  const pW = Math.min(12, inx2 - inx1)
+  bld('principia', cx - Math.floor(pW / 2), rearZ, pW, rearDepth, 'great_hall')
+  const rearLeftW = (cx - Math.floor(pW / 2) - 1) - leftX
+  const rearRightW = inx2 - (cx + Math.ceil(pW / 2) + 1)
+  if (R() < 0.7) bld('mess', leftX, rearZ, Math.min(7, rearLeftW), rearDepth, pick(R, ['mess', 'workshop', 'forge']))
+  if (R() < 0.7) bld('store', inx2 - Math.min(7, rearRightW), rearZ, Math.min(7, rearRightW), rearDepth, pick(R, ['storeroom', 'stable']))
   return envelope(opts, P, regs)
 }
 
@@ -362,6 +403,8 @@ const ARCHETYPES = {
 
 function compose(design) {
   const fn = ARCHETYPES[String(design.archetype || '').toLowerCase()] || house
+  // Seed a mutable room-program queue the composers pop interior functions from.
+  design._roomQueue = Array.isArray(design.roomList) ? design.roomList.slice() : []
   return fn(design)
 }
 

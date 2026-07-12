@@ -7,8 +7,15 @@
 // Architect can compose them directly in a blueprint). ctx supplies hands-backed
 // primitives { set, fillBox, B, clamp } — no raw commands here.
 module.exports = function makeDetails(ctx) {
-  const { set, fillBox, B, clamp } = ctx
+  const { set, fillBox, clamp } = ctx
   const sort2 = (a, b) => [Math.min(a, b), Math.max(a, b)]
+  // Block-name coercer that PRESERVES a mod namespace (blockus:, mcwfurnitures:…)
+  // — unlike util.B which strips ":". So modded facade stone / shingle roofs pass
+  // through the detailing skills intact (states are appended by stairs()/slab()).
+  const B = (s, def) => {
+    const x = String(s == null ? '' : s).toLowerCase().replace(/^minecraft:/, '').replace(/[^a-z0-9_:]/g, '')
+    return x || def
+  }
 
   // Derive the stair/slab material base from any block or *_stairs name.
   //   stone_bricks -> stone_brick ; dark_oak_stairs -> dark_oak ; oak_planks -> oak

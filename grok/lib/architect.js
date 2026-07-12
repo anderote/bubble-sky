@@ -216,6 +216,9 @@ module.exports = function makeArchitect({ skills, log = () => {} }) {
     if (dims.wallH) design.wallH = dims.wallH
     if (dims.towerSpacing) design.towerSpacing = dims.towerSpacing
     design.origin = origin
+    // Normalise the LLM's room program (rooms[] or roomProgram csv) into an ordered
+    // list of room-type strings the composer consumes to assign interior functions.
+    design.roomList = roomListFrom(design)
     // Seed varied-but-stable composition choices from the request + placement,
     // so two "cottage" builds at different sites differ yet rebuild identically.
     design.seed = `${String(goal || '')}|${origin.x},${origin.z}`
@@ -228,25 +231,33 @@ module.exports = function makeArchitect({ skills, log = () => {} }) {
   }
 
   async function pickDesign({ goal, origin, memory, site, brief }) {
-    const sys = `You are the ARCHITECT for a Minecraft building assistant. Choose DESIGN PARAMETERS for a build; a COMPOSITIONAL geometry engine turns them into a varied, multi-room, multi-story building. Call submit_design. Do not chat.
-Styles: ${styleNames.join(', ')}. Room types: great_hall, bedroom, kitchen, library, living.
-ARCHETYPE (pick the one that best matches the request — this drives the whole silhouette + layout):
+    const sys = `You are the ARCHITECT for a Minecraft building assistant. Design a RICH, CHARACTERFUL building: choose the archetype/style/proportions AND a full ROOM PROGRAM (an ordered list of furnished spaces) + layout intent. A COMPOSITIONAL geometry engine turns your parameters into a varied, multi-room, multi-story, densely furnished building. Call submit_design. Do not chat.
+Styles: ${styleNames.join(', ')}.
+ROOM TYPES (each is auto-furnished with REAL furniture by function — pick the ones that fit the build):
+  great_hall (banquet tables, banners, chandeliers, fireplace), bedroom/quarters (bed, wardrobe, drawers, desk),
+  kitchen (counters, sink, stove, dining island), library (bookshelf walls, reading tables, lectern),
+  mess (trestle tables + benches + field kitchen), armory (anvil, racks, weapon store), granary (hay + bales + barrels),
+  storeroom (barrels + crates), barracks (bunk-bed rows + footlockers), chapel (pews + marble altar + candles),
+  forge (furnaces + anvil + quench), workshop (crafting stations), stable (stalls + hay + water), living (couch + hearth).
+ARCHETYPE (drives the whole silhouette + layout):
   - cottage — small home, sometimes L-shaped, chimney + porch + gable, 1-2 rooms.
   - house — central hall, optional wing, 2 stories with a staircase, multiple furnished rooms.
-  - manor — bigger house with 2 wings + chimney, multi-room + multi-story.
-  - keep — compact fortified tower-house, battlements, 2-4 floors.
-  - castle — curtain walls around a courtyard, corner + perimeter towers spaced by towerSpacing, a gatehouse, an inner keep (scales to 100x100+).
-  - tower / wizard_tower — tall round multi-floor tower, conical roof, balcony, windows per level.
+  - manor — bigger house with 2 offset wings + chimney, multi-room + multi-story.
+  - keep — compact fortified tower-house, battlements, 2-4 furnished floors.
+  - castle — curtain walls around a courtyard, corner + perimeter towers, gatehouse, an inner furnished keep (scales 100x100+).
+  - tower / wizard_tower — tall round multi-floor tower, conical roof, balcony, a furnished room per level.
   - cathedral / hall — long tall nave + transept + big windows + a bell tower/spire + buttresses.
-  - fort — rectangular rampart with gatehouses + interior barracks rows + a central hall.
-Guidance: HONOR EXPLICIT DIMENSIONS — if the user says "100x100" or "footprint 100" or "60 wide", set width/length to exactly that; if they say "walls 15 tall", set wallH to that; "towers every 25" → towerSpacing 25. Otherwise scale footprint to the archetype: cottage 8-12, house 12-18, manor 16-28, keep 12-22, cathedral 14-30 wide x 28-60 long, tower 9-13, GRAND castle/fort 40-120. Cathedrals/halls → tall wallH (12-24). Set stories for houses/keeps/manors, wings for houses/manors, towerSpacing for castles/forts. Respect the SITE (build near groundY; terrainFit "follow" hugs slopes).
-If a REFERENCE brief is provided (from web research), let it inform the style, palette feel, proportions and footprint so the build reflects real references.`
+  - fort — Roman castrum: rampart + gatehouses + a central VIA/forum + interior buildings (barracks, armory, granary, principia HQ).
+LAYOUT INTENT: use courtyard (castle/fort), wings (house/manor), a central axis/street (fort/compound), non-square footprints, a roofStyle, and façade features (arrow slits, battlements, big windows). Prefer non-square, multi-space layouts over one big box.
+PALETTE: you MAY supply a palette override object using role→block, and you may use the real mod blocks available on this server (blockus: stone/marble/limestone/gray_shingles roofs; mcwwindows: arrow slits/gothic windows; mcwfurnitures/farmersdelight for interiors). Otherwise the named style's palette is used.
+Guidance: HONOR EXPLICIT DIMENSIONS — "100x100"/"footprint 100"/"60 wide" → width/length exactly; "walls 15 tall" → wallH; "towers every 25" → towerSpacing 25. Else scale footprint to the archetype: cottage 8-12, house 12-18, manor 16-28, keep 12-22, cathedral 14-30 x 28-60, tower 9-13, GRAND castle/fort 40-120. Cathedrals/halls tall wallH 12-24. Set stories/wings, towerSpacing for castles/forts. Respect the SITE (build near groundY; terrainFit "follow" hugs slopes).
+Return a rooms[] program (ordered, with a type + optional size/contents), the primary roomType, and layout fields. If a REFERENCE brief is provided, let it inform style, palette, proportions and the room program.`
     const user = { goal, origin, existingProject: memory || null, site: site || null,
       reference: brief ? { brief: brief.brief, palette: brief.palette, features: brief.features, sources: brief.sources } : null,
-      note: 'Pick archetype, style, footprint (width,length), wall height, stories/wings, the primary room type, and towerSpacing for castles/forts. If a reference brief is present, use it to guide those choices.' }
+      note: 'Choose archetype, style, footprint (width,length), wall height, stories/wings, towerSpacing (castles/forts), a full rooms[] program (ordered furnished spaces), layout intent + façade features, and optionally a palette override that may use the mod blocks. Design something rich and non-square, not a single empty box.' }
     const { toolCalls } = await llm.chat({
       system: sys, messages: [{ role: 'user', content: JSON.stringify(user) }],
-      tools: [DESIGN_TOOL], toolChoice: { name: 'submit_design' }, maxTokens: 512, model: MODEL
+      tools: [DESIGN_TOOL], toolChoice: { name: 'submit_design' }, maxTokens: 8000, model: MODEL
     })
     return toolCalls[0] && toolCalls[0].args
   }
@@ -270,11 +281,28 @@ const DESIGN_TOOL = {
       stories: { type: 'integer', description: 'number of floors for houses/manors/keeps, 1-4' },
       wings: { type: 'integer', description: 'side wings for house/manor, 0-2' },
       courtyard: { type: 'boolean', description: 'open central courtyard (castle/fort)' },
+      axis: { type: 'boolean', description: 'organise interior buildings around a central street/via (fort/compound)' },
       towerCount: { type: 'integer', description: 'hint for how many towers a castle should carry' },
       towerSpacing: { type: 'integer', description: 'blocks between perimeter towers on castles/forts (e.g. 25)' },
-      roomProgram: { type: 'string', description: 'comma-separated room types to include (e.g. "great_hall,kitchen,bedroom,library")' },
+      rooms: {
+        type: 'array',
+        description: 'ORDERED room program — the furnished spaces to include, in build order. The geometry engine lays them out and auto-furnishes each by type.',
+        items: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', description: 'room function: great_hall|bedroom|quarters|kitchen|library|mess|armory|granary|storeroom|barracks|chapel|forge|workshop|stable|living' },
+            name: { type: 'string', description: 'optional label, e.g. "lords solar"' },
+            size: { type: 'string', description: 'approx size hint, e.g. "large", "8x6"' },
+            position: { type: 'string', description: 'placement hint, e.g. "ground floor front", "west wing", "rear"' },
+            contents: { type: 'string', description: 'notable furniture/features this room should hold' }
+          },
+          required: ['type']
+        }
+      },
+      roomProgram: { type: 'string', description: 'shorthand for rooms: comma-separated room types (e.g. "great_hall,kitchen,bedroom,library")' },
+      facade: { type: 'string', description: 'exterior features, e.g. "arrow slits, battlements, big gothic windows"' },
       roofStyle: { type: 'string', enum: ['gable', 'flat', 'hip', 'cone', 'spire'] },
-      roomType: { type: 'string', enum: ['great_hall', 'bedroom', 'kitchen', 'library', 'living'] },
+      roomType: { type: 'string', enum: ['great_hall', 'bedroom', 'quarters', 'kitchen', 'library', 'mess', 'armory', 'granary', 'storeroom', 'barracks', 'chapel', 'forge', 'workshop', 'stable', 'living'] },
       roof: { type: 'string', enum: ['gable', 'flat'] },
       battlements: { type: 'boolean' },
       tower: { type: 'boolean' },
@@ -282,6 +310,17 @@ const DESIGN_TOOL = {
     },
     required: ['archetype', 'style', 'width', 'length', 'roomType']
   }
+}
+
+// Normalise a design's room program into an ordered array of room-type strings.
+// Accepts rooms:[{type}|"type"] or roomProgram:"a,b,c". Empty → [] (composer uses
+// its own seeded picks).
+function roomListFrom(design) {
+  const out = []
+  const push = (t) => { const s = String(t || '').toLowerCase().trim().replace(/\s+/g, '_'); if (s) out.push(s) }
+  if (Array.isArray(design.rooms)) for (const r of design.rooms) push(typeof r === 'string' ? r : (r && r.type))
+  if (!out.length && typeof design.roomProgram === 'string') for (const t of design.roomProgram.split(',')) push(t)
+  return out
 }
 
 // Pull explicit dimensions out of the request so big asks aren't clamped away.

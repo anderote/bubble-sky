@@ -18,15 +18,16 @@
 // Rule of thumb baked into every palette: wall/trim/accent are SIMILAR-toned so
 // the variation is subtle, never garish; roof + light pick out the silhouette.
 
-const ROLES = ['wall', 'trim', 'accent', 'floor', 'roof', 'pillar', 'glass', 'light', 'path', 'foundation', 'detail']
+const ROLES = ['wall', 'trim', 'accent', 'floor', 'roof', 'pillar', 'glass', 'light', 'path', 'foundation', 'detail', 'window']
 
 const PALETTES = {
-  // Classic stone-brick + dark timber cottage/keep look.
+  // Classic stone-brick + dark timber cottage/keep look. blockus stone + shingles
+  // give the field + roof more character than plain vanilla.
   medieval: {
-    wall: 'stone_bricks', trim: 'dark_oak_log', accent: 'cobblestone', floor: 'spruce_planks',
-    roof: 'dark_oak_stairs', pillar: 'oak_log', glass: 'glass_pane', light: 'lantern',
-    path: 'gravel', foundation: 'cobblestone', detail: 'chiseled_stone_bricks',
-    carpet: 'red_carpet', bed: 'red', banner: 'red'
+    wall: 'stone_bricks', trim: 'dark_oak_log', accent: 'blockus:gray_stone_bricks', floor: 'spruce_planks',
+    roof: 'blockus:gray_shingles', pillar: 'oak_log', glass: 'glass_pane', light: 'lantern',
+    path: 'blockus:bluestone', foundation: 'cobblestone', detail: 'blockus:chiseled_limestone',
+    window: 'mcwwindows:oak_window2', carpet: 'red_carpet', bed: 'red', banner: 'red'
   },
   // Cosy whitewashed timber-frame cottage.
   cottage: {
@@ -49,19 +50,19 @@ const PALETTES = {
     path: 'light_gray_concrete', foundation: 'gray_concrete', detail: 'quartz_pillar',
     carpet: 'light_gray_carpet', bed: 'light_gray', banner: 'light_gray'
   },
-  // Warm tavern / rustic timber + cobble.
+  // Warm tavern / rustic timber + cobble (manor/estate).
   rustic: {
-    wall: 'spruce_planks', trim: 'stripped_dark_oak_log', accent: 'cobblestone', floor: 'dark_oak_planks',
-    roof: 'dark_oak_stairs', pillar: 'dark_oak_log', glass: 'glass_pane', light: 'lantern',
-    path: 'dirt_path', foundation: 'cobblestone', detail: 'bricks',
-    carpet: 'brown_carpet', bed: 'brown', banner: 'orange'
+    wall: 'spruce_planks', trim: 'stripped_dark_oak_log', accent: 'blockus:limestone', floor: 'dark_oak_planks',
+    roof: 'blockus:gray_shingles', pillar: 'dark_oak_log', glass: 'glass_pane', light: 'lantern',
+    path: 'dirt_path', foundation: 'cobblestone', detail: 'blockus:chiseled_limestone',
+    window: 'mcwwindows:spruce_window2', carpet: 'brown_carpet', bed: 'brown', banner: 'orange'
   },
-  // Heavy fortress stone.
+  // Heavy fortress stone with blockus marble/limestone dressing + shingle roofs.
   castle: {
-    wall: 'stone_bricks', trim: 'polished_andesite', accent: 'cobblestone', floor: 'polished_andesite',
-    roof: 'stone_brick_stairs', pillar: 'polished_blackstone', glass: 'glass_pane', light: 'lantern',
-    path: 'cobblestone', foundation: 'cobblestone', detail: 'chiseled_stone_bricks',
-    carpet: 'red_carpet', bed: 'red', banner: 'red'
+    wall: 'stone_bricks', trim: 'blockus:gray_stone_bricks', accent: 'blockus:small_marble_bricks', floor: 'blockus:marble_tiles',
+    roof: 'blockus:gray_shingles', pillar: 'blockus:marble_pillar', glass: 'glass_pane', light: 'lantern',
+    path: 'blockus:bluestone', foundation: 'cobblestone', detail: 'blockus:chiseled_limestone',
+    window: 'mcwwindows:stone_window2', carpet: 'red_carpet', bed: 'red', banner: 'red'
   }
 }
 
