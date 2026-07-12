@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import minecraftData from "../mindcraft/upstream/node_modules/minecraft-data/index.js";
 
@@ -7,6 +9,11 @@ const runtimeDir = process.env.CODEX_SWARM_RUNTIME || ".codex-runtime/swarm";
 const version = process.env.MINECRAFT_VERSION || "1.21.6";
 const statePath = process.argv[2] || path.join(runtimeDir, "state.json");
 const blocksByName = minecraftData(version)?.blocksByName || {};
+
+if (process.env.CODEX_SWARM_VALIDATE_SELFTEST === "1") {
+  runValidatorSelfTest();
+  process.exit(0);
+}
 
 if (!fs.existsSync(statePath)) {
   fail(`missing swarm state: ${statePath}`);
@@ -107,4 +114,65 @@ function readJson(file) {
 function fail(message) {
   console.error(message);
   process.exit(1);
+}
+
+function runValidatorSelfTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-swarm-validate-"));
+  try {
+    const valid = {
+      taskId: "codex-selftest-valid",
+      source: "codex-architect",
+      status: "pending",
+      structure: "selftest tower",
+      assignedTo: "CodexDrone1",
+      requestedBy: "tester",
+      originalText: "delegate a tower to your drone",
+      instructions: "Build the delegated selftest tower.",
+      origin: { x: 1, y: 64, z: 1 },
+      jobCount: 1,
+      jobs: [
+        { id: "job-1", worker: "CodexDrone1", phase: "base", x: 1, y: 64, z: 1, block: "stone" },
+      ],
+    };
+
+    const missingMetadata = {
+      ...valid,
+      taskId: "codex-selftest-missing-metadata",
+    };
+    delete missingMetadata.requestedBy;
+    delete missingMetadata.originalText;
+    delete missingMetadata.instructions;
+
+    const badBlock = {
+      ...valid,
+      taskId: "codex-selftest-bad-block",
+      jobs: [{ ...valid.jobs[0], id: "job-bad", block: "not_a_real_block" }],
+    };
+
+    const checks = [
+      { name: "valid active architect task", state: valid, shouldPass: true },
+      { name: "missing active architect metadata", state: missingMetadata, shouldPass: false },
+      { name: "unknown block", state: badBlock, shouldPass: false },
+    ];
+
+    for (const check of checks) {
+      const file = path.join(tempDir, `${check.name.replace(/\W+/g, "-")}.json`);
+      fs.writeFileSync(file, JSON.stringify(check.state));
+      const result = spawnSync(process.execPath, [process.argv[1], file], {
+        env: { ...process.env, CODEX_SWARM_VALIDATE_SELFTEST: "0" },
+        encoding: "utf8",
+      });
+      const passed = result.status === 0;
+      if (passed !== check.shouldPass) {
+        console.error(`swarm validator selftest failed: ${check.name}`);
+        if (result.stdout) console.error(result.stdout.trim());
+        if (result.stderr) console.error(result.stderr.trim());
+        process.exit(1);
+      }
+    }
+
+    console.log(`swarm validator selftest passed (${checks.length} cases)`);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }
