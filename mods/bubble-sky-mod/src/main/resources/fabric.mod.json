@@ -1,0 +1,24 @@
+{
+	"schemaVersion": 1,
+	"id": "bubble-sky",
+	"version": "${version}",
+	"name": "Bubble Sky",
+	"description": "Server-side, vanilla-compatible bubble-sky mod. Registers no custom blocks or items.",
+	"authors": [
+		"bubble-sky"
+	],
+	"contact": {},
+	"license": "MIT",
+	"environment": "server",
+	"entrypoints": {
+		"main": [
+			"net.bubblesky.mod.BubbleSkyMod"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~1.21.6",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

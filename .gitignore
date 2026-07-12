@@ -1,6 +1,19 @@
-# Minecraft server runtime
-server/
+# Minecraft server runtime — most of server/ is generated (jars, world, logs).
+# Track only the source/config needed to rebuild it.
+server/*
+!server/mods/
+!server/run.sh
+!server/README.md
+!server/server.properties.example
+server/mods/*
 !server/mods/.gitkeep
+
+# server files that are generated or local-only
+server/world/
+server/logs/
+server/eula.txt
+server/server.properties
+server/*.jar
 
 # Java / Gradle mod build
 **/build/

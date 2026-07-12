@@ -1,0 +1,13 @@
+# bubble-sky dev server config — copy to server.properties before first boot.
+# Key setting: online-mode=false so unlicensed bots (MCP + mindcraft) can join.
+motd=bubble-sky dev server
+server-port=25565
+online-mode=false
+gamemode=creative
+difficulty=peaceful
+level-name=world
+max-players=10
+view-distance=10
+spawn-protection=0
+allow-flight=true
+enable-command-block=true
