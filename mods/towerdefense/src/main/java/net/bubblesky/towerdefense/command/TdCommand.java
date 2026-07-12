@@ -76,24 +76,83 @@ public final class TdCommand {
 					.executes(ctx -> arena(ctx, IntegerArgumentType.getInteger(ctx, "distance")))))
 			.then(CommandManager.literal("restart").executes(TdCommand::restart))
 			.then(CommandManager.literal("status").executes(TdCommand::status))
-			.then(CommandManager.literal("reset").executes(TdCommand::reset)));
+			.then(CommandManager.literal("reset").executes(TdCommand::reset))
+			.then(CommandManager.literal("help").executes(TdCommand::help)));
 	}
 
+	/**
+	 * The in-game manual: what the game is, how to start, every command, the tower
+	 * roster + prices, the coin economy, the enemy/boss roster, and the HUD. Printed
+	 * by {@code /td help} and by a bare {@code /td} with no subcommand.
+	 */
 	private static int help(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();
-		src.sendFeedback(() -> Text.literal("Tower Defense commands:").formatted(Formatting.GOLD), false);
+
+		src.sendFeedback(() -> Text.literal("========= Tower Defense =========")
+			.formatted(Formatting.GOLD, Formatting.BOLD), false);
+
+		header(src, "What it is");
+		body(src, "A tower-defense game. You set up a base, then waves of enemies");
+		body(src, "march toward it. Build towers to stop them and survive as long");
+		body(src, "as you can — the base falls when its HP hits 0.");
+
+		header(src, "Quick start");
+		src.sendFeedback(() -> Text.literal("  1) ").formatted(Formatting.GRAY)
+			.append(Text.literal("/td arena").formatted(Formatting.YELLOW))
+			.append(Text.literal(" — stand where you want the base; sets base + 2 spawn gates.")
+				.formatted(Formatting.GRAY)), false);
+		src.sendFeedback(() -> Text.literal("  2) ").formatted(Formatting.GRAY)
+			.append(Text.literal("/td wave").formatted(Formatting.YELLOW))
+			.append(Text.literal(" — begin the assault!").formatted(Formatting.GRAY)), false);
+
+		header(src, "Commands");
 		line(src, "/td arena [dist]", "quick-setup: base here + 2 spawn gates (N/E) at dist blocks");
 		line(src, "/td base [hp]", "set the base to defend at your position (default 100 HP)");
 		line(src, "/td spawn", "add an enemy spawn point at your position");
+		line(src, "/td wave", "start the next wave (alias: /td start)");
 		line(src, "/td tower [type]", "place a tower where you're looking (free/op; default arrow_tower)");
 		line(src, "/td shop", "list buyable towers and their coin prices");
 		line(src, "/td buy <type>", "spend coins to build a tower where you're looking");
 		line(src, "/td upgrade", "spend coins to raise the tier of the tower you're looking at");
-		line(src, "/td wave", "start the next wave (alias: /td start)");
-		line(src, "/td restart", "reset then re-arena here for a fresh run (start with /td wave)");
 		line(src, "/td status", "show wave/base info (and the tower you're looking at)");
+		line(src, "/td restart", "reset then re-arena here for a fresh run (start with /td wave)");
 		line(src, "/td reset", "clear the arena (waves, enemies, spawns, base)");
+		line(src, "/td help", "show this guide");
+
+		header(src, "Towers");
+		int arrow = TOWERS.get("arrow_tower").price();
+		int cannon = TOWERS.get("cannon_tower").price();
+		int frost = TOWERS.get("frost_tower").price();
+		line(src, "arrow_tower", arrow + " coins — fast, single-target, cheap");
+		line(src, "cannon_tower", cannon + " coins — slow, splash/AoE damage");
+		line(src, "frost_tower", frost + " coins — slows enemies down");
+		body(src, "Aim at a tower and /td upgrade to raise its tier for coins.");
+
+		header(src, "Economy");
+		body(src, "Kill enemies to drop coins; walk over them to pick them up. Spend");
+		body(src, "coins with /td buy and /td upgrade. Tower kills also pay whoever");
+		body(src, "placed (or last upgraded) that tower.");
+
+		header(src, "Enemies & bosses");
+		body(src, "An escalating army — goblins, footmen, archers, knights, undead —");
+		body(src, "that grows bigger and tougher each wave. Every 5th wave a Warlord");
+		body(src, "boss marches on the base; slaying it pays bonus coins.");
+
+		header(src, "HUD");
+		body(src, "Bossbar: current wave + base HP.  Sidebar: your coins.");
+		body(src, "You lose when base HP reaches 0 — then /td restart to play again.");
+
+		src.sendFeedback(() -> Text.literal("=================================")
+			.formatted(Formatting.GOLD), false);
 		return 1;
+	}
+
+	private static void header(ServerCommandSource src, String title) {
+		src.sendFeedback(() -> Text.literal("» " + title).formatted(Formatting.AQUA, Formatting.BOLD), false);
+	}
+
+	private static void body(ServerCommandSource src, String text) {
+		src.sendFeedback(() -> Text.literal("  " + text).formatted(Formatting.GRAY), false);
 	}
 
 	private static void line(ServerCommandSource src, String cmd, String desc) {
