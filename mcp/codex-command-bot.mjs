@@ -20,6 +20,7 @@ const llmPlayers = parseList(process.env.CODEX_LLM_PLAYERS || "codex,claude,clau
 const ignoredSpeakers = parseList(process.env.CODEX_IGNORED_SPEAKERS || "codexdrone1,codexdrone2,codexdrone3,codexdrone4,codexboss,grokdev");
 const historyPath = process.env.CODEX_CHAT_HISTORY || ".codex-runtime/chat-history.jsonl";
 const historyLimit = Number(process.env.CODEX_CHAT_HISTORY_LIMIT || 2000);
+const visibilityStatePath = process.env.CODEX_CHAT_VISIBILITY_STATE || ".codex-runtime/chat-visibility.json";
 const swarmRuntimeDir = process.env.CODEX_SWARM_RUNTIME || ".codex-runtime/swarm";
 const swarmStatePath = path.join(swarmRuntimeDir, "state.json");
 const delegatedDroneName = process.env.CODEX_ARCHITECT_DRONE || "CodexDrone1";
@@ -103,7 +104,7 @@ const spawnWatchdog = setTimeout(() => {
 let followTarget = null;
 let escort = null;
 let movements = null;
-let visibility = process.env.CODEX_CHAT_VISIBILITY || "public";
+let visibility = loadInitialVisibility();
 let flightAnchor = null;
 let flightAnchorBusy = false;
 let airborneFollowNextAt = 0;
@@ -208,9 +209,10 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
-  const visibilityMatch = lower.match(/^(?:visibility|vis|chat)\s+(public|private|alone|llm|llms|team)$/);
-  if (visibilityMatch) {
-    visibility = normalizeVisibility(visibilityMatch[1]);
+  const requestedVisibility = visibilityCommandValue(lower);
+  if (requestedVisibility) {
+    visibility = requestedVisibility;
+    saveVisibility(visibility);
     const message = visibility === "alone"
       ? "chat visibility set to alone; I will whisper you and keep LLM/build-bot noise out of my history/status"
       : `chat visibility set to ${visibility}`;
@@ -454,7 +456,8 @@ function runCommandRoutingSelfTest() {
     },
     {
       name: "alone visibility command",
-      pass: /^visibility\s+alone$/.test(addressedCommand("@codex visibility alone") || ""),
+      pass: visibilityCommandValue(addressedCommand("@codex visibility alone") || "") === "alone" &&
+        visibilityCommandValue(addressedCommand("@codex alone") || "") === "alone",
     },
   ];
 
@@ -2998,6 +3001,44 @@ function handlePattern(handle) {
 function normalizeVisibility(value) {
   if (value === "llms" || value === "team") return "llm";
   return value;
+}
+
+function visibilityCommandValue(lower) {
+  const match = lower.match(/^(?:visibility|vis|chat)\s+(public|private|alone|llm|llms|team)$/);
+  if (match) return normalizeVisibility(match[1]);
+  if (lower === "alone") return "alone";
+  return null;
+}
+
+function isKnownVisibility(value) {
+  return ["public", "private", "alone", "llm"].includes(value);
+}
+
+function loadInitialVisibility() {
+  const explicit = process.env.CODEX_CHAT_VISIBILITY;
+  if (explicit) {
+    const normalized = normalizeVisibility(explicit);
+    return isKnownVisibility(normalized) ? normalized : "public";
+  }
+
+  try {
+    if (!fs.existsSync(visibilityStatePath)) return "public";
+    const parsed = JSON.parse(fs.readFileSync(visibilityStatePath, "utf8"));
+    const normalized = normalizeVisibility(parsed?.visibility || "");
+    return isKnownVisibility(normalized) ? normalized : "public";
+  } catch (error) {
+    console.error(`failed to read chat visibility state: ${error.message}`);
+    return "public";
+  }
+}
+
+function saveVisibility(value) {
+  try {
+    fs.mkdirSync(path.dirname(visibilityStatePath), { recursive: true });
+    fs.writeFileSync(visibilityStatePath, `${JSON.stringify({ visibility: value, updatedAt: new Date().toISOString() })}\n`);
+  } catch (error) {
+    console.error(`failed to save chat visibility state: ${error.message}`);
+  }
 }
 
 function botHandleAliases(name) {
