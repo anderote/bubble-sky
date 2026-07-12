@@ -89,6 +89,7 @@ let movements = null;
 let visibility = process.env.CODEX_CHAT_VISIBILITY || "public";
 let flightAnchor = null;
 let flightAnchorBusy = false;
+let airborneFollowNextAt = 0;
 
 bot.once("spawn", () => {
   movements = new Movements(bot);
@@ -145,7 +146,7 @@ bot.on("physicsTick", () => {
   const distance = bot.entity.position.distanceTo(player.position);
   if (shouldFlyFollow(player, distance)) {
     bot.pathfinder.setGoal(null);
-    setFlightAnchor(followTarget, vectorPosition(player.position));
+    tickAirborneFollow(followTarget);
     return;
   }
 
@@ -240,6 +241,8 @@ async function runCommand(speaker, commandText) {
 
   if (lower === "stop") {
     followTarget = null;
+    airborneFollowNextAt = 0;
+    flightAnchor = null;
     escort = null;
     bot.pathfinder.stop();
     clearControls();
@@ -282,6 +285,7 @@ async function runCommand(speaker, commandText) {
   if (comeMatch || lower === "come here" || lower === "here") {
     const targetName = resolveTargetName(comeMatch?.[1], speaker);
     followTarget = null;
+    airborneFollowNextAt = 0;
     escort = null;
     const targetPosition = await resolvePlayerPosition(targetName, { teleportToPlayer: true });
     await maintainFlightNearTarget(targetName, targetPosition);
@@ -299,6 +303,7 @@ async function runCommand(speaker, commandText) {
     await maintainFlightNearTarget(targetName, targetPosition);
     escort = null;
     followTarget = targetName;
+    airborneFollowNextAt = 0;
     say(`following ${targetName}`);
     return;
   }
@@ -1561,6 +1566,17 @@ function shouldFlyFollow(player, distance) {
   if (!bot.creative || !player?.position) return false;
   if (!player.onGround) return true;
   return distance > 3 && player.position.y > bot.entity.position.y + 2;
+}
+
+function tickAirborneFollow(targetName) {
+  const now = Date.now();
+  if (now < airborneFollowNextAt) return;
+  airborneFollowNextAt = now + Number(process.env.CODEX_AIRBORNE_FOLLOW_TP_MS || 1800);
+  flightAnchor = null;
+  bot.chat(`/tp ${username} ${targetName}`);
+  startCreativeFlight().catch((error) => {
+    console.error(`airborne follow flight failed: ${error.message}`);
+  });
 }
 
 async function maintainFlightNearTarget(targetName, fallbackPosition = null) {
