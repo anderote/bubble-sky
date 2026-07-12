@@ -37,6 +37,7 @@ const codexChatCliTimeoutMs = Number(process.env.CODEX_CHAT_CLI_TIMEOUT_MS || 12
 const commandContext = new AsyncLocalStorage();
 const botAliases = botHandleAliases(username);
 const primaryHandle = botAliases[0] || username;
+const supportedStructureKinds = ["bridge", "road", "platform", "house", "room", "tower", "wall", "dome", "pyramid"];
 const helpLines = [
   "help",
   "history [count]",
@@ -486,14 +487,29 @@ function interpretArchitectCommand(lower) {
 
 function interpretStructureBuildCommand(lower) {
   if (!/\b(build|make|create|construct|spawn|summon)\b/.test(lower)) return null;
-  if (/\bbridge\b/.test(lower)) {
+  const kind = structureKindFromText(lower);
+  if (kind) {
     return {
       action: "structure",
-      kind: "bridge",
+      kind,
       delegateVehicle: /\b(delegate|drone|codexdrone)\b/.test(lower) && /\b(semi|truck|lorry|vehicle)\b/.test(lower),
       vehicle: /\b(semi|truck|lorry)\b/.test(lower) ? "semi_truck" : null,
+      delegateStructure: /\b(delegate|drone|codexdrone)\b/.test(lower),
     };
   }
+  return null;
+}
+
+function structureKindFromText(lower) {
+  if (/\bbridge\b/.test(lower)) return "bridge";
+  if (/\b(road|path|street|highway)\b/.test(lower)) return "road";
+  if (/\b(platform|stage|pad|landing pad)\b/.test(lower)) return "platform";
+  if (/\b(house|home|cabin|hut)\b/.test(lower)) return "house";
+  if (/\b(room|chamber)\b/.test(lower)) return "room";
+  if (/\b(tower|spire|turret)\b/.test(lower)) return "tower";
+  if (/\b(wall|walls|barrier|fence)\b/.test(lower)) return "wall";
+  if (/\b(dome|igloo|observatory)\b/.test(lower)) return "dome";
+  if (/\b(pyramid|ziggurat)\b/.test(lower)) return "pyramid";
   return null;
 }
 
@@ -535,7 +551,8 @@ async function interpretArchitectCommandWithOpenAI(command, speaker) {
     '{"action":"effect","effect":"freeze"} for requests to freeze, ice over, snow over, frost, or blizzard a nearby structure.',
     '{"action":"effect","effect":"curse"} for requests to curse, haunt, corrupt, darken, or make a nearby structure spooky/evil.',
     '{"action":"structure","kind":"bridge","delegateVehicle":true,"vehicle":"semi_truck"} for requests to build a bridge and delegate a semi/truck/vehicle to a drone.',
-    '{"action":"structure","kind":"bridge"} for requests to build a bridge.',
+    '{"action":"structure","kind":"road"} for requests to build a generic structure. Valid kind values: bridge, road, platform, house, room, tower, wall, dome, pyramid.',
+    '{"action":"structure","kind":"tower","delegateStructure":true} for requests to delegate a whole tower to a drone.',
     '{"action":"castle_wall"} for requests to build a castle/fortress wall, rampart, battlement, or a wall with two towers.',
     '{"action":"fortress"} for requests to build, make, create, summon, upgrade, or freestyle a castle/fortress/fort/keep here.',
     '{"action":"none"} for anything else.',
@@ -575,7 +592,7 @@ async function interpretArchitectCommandWithOpenAI(command, speaker) {
     const parsed = parseJsonObject(text);
     if (isValidArchitectAction(parsed)) {
       console.log(`OpenAI normalized "${command}" -> ${parsed.action}`);
-      return parsed.action === "effect" ? { action: "effect", effect: parsed.effect } : { action: parsed.action };
+      return normalizeArchitectAction(parsed);
     }
   } catch (error) {
     console.error(`OpenAI command normalization error: ${error.message}`);
@@ -600,7 +617,8 @@ async function interpretArchitectCommandWithCodexCli(command, speaker) {
     '{"action":"effect","effect":"freeze"} for requests to freeze, ice over, snow over, frost, or blizzard a nearby structure.',
     '{"action":"effect","effect":"curse"} for requests to curse, haunt, corrupt, darken, or make a nearby structure spooky/evil.',
     '{"action":"structure","kind":"bridge","delegateVehicle":true,"vehicle":"semi_truck"} for requests to build a bridge and delegate a semi/truck/vehicle to a drone.',
-    '{"action":"structure","kind":"bridge"} for requests to build a bridge.',
+    '{"action":"structure","kind":"road"} for requests to build a generic structure. Valid kind values: bridge, road, platform, house, room, tower, wall, dome, pyramid.',
+    '{"action":"structure","kind":"tower","delegateStructure":true} for requests to delegate a whole tower to a drone.',
     '{"action":"castle_wall"} for requests to build a castle/fortress wall, rampart, battlement, or a wall with two towers.',
     '{"action":"fortress"} for requests to build, make, create, summon, upgrade, or freestyle a castle/fortress/fort/keep here.',
     '{"action":"none"} for anything else.',
@@ -616,7 +634,7 @@ async function interpretArchitectCommandWithCodexCli(command, speaker) {
     const parsed = parseJsonObject(fs.readFileSync(outputPath, "utf8"));
     if (isValidArchitectAction(parsed)) {
       console.log(`Codex CLI normalized "${command}" -> ${parsed.action}`);
-      return parsed.action === "effect" ? { action: "effect", effect: parsed.effect } : { action: parsed.action };
+      return normalizeArchitectAction(parsed);
     }
   } catch (error) {
     console.error(`Codex CLI command normalization error: ${error.message}`);
@@ -628,13 +646,27 @@ async function interpretArchitectCommandWithCodexCli(command, speaker) {
 }
 
 function shouldUseLlmArchitectParser(command) {
-  return /\b(build|make|create|construct|spawn|summon|freestyle|upgrade|enhance|repair|fix|delete|destroy|demolish|erase|wipe|nuke|trash|remove|obliterate|burn|ignite|torch|melt|scorch|incinerate|lava|flood|drown|submerge|waterlog|freeze|ice|snow|blizzard|frost|curse|haunt|spooky|evil|corrupt|darken|castle|fortress|fort|tower|towers|wall|walls|rampart|battlement|bridge|road|house|base|building|structure|vehicle|truck|semi|village|area|dumpster|badass|sick|ugly|beneath|nearby|here)\b/i.test(command);
+  return /\b(build|make|create|construct|spawn|summon|freestyle|upgrade|enhance|repair|fix|delete|destroy|demolish|erase|wipe|nuke|trash|remove|obliterate|burn|ignite|torch|melt|scorch|incinerate|lava|flood|drown|submerge|waterlog|freeze|ice|snow|blizzard|frost|curse|haunt|spooky|evil|corrupt|darken|castle|fortress|fort|tower|towers|wall|walls|rampart|battlement|bridge|road|path|street|platform|stage|pad|house|home|cabin|room|chamber|dome|igloo|observatory|pyramid|ziggurat|base|building|structure|vehicle|truck|semi|village|area|dumpster|badass|sick|ugly|beneath|nearby|here)\b/i.test(command);
 }
 
 function isValidArchitectAction(parsed) {
   if (["demolish", "fortress", "castle_wall"].includes(parsed?.action)) return true;
-  if (parsed?.action === "structure" && ["bridge"].includes(parsed.kind)) return true;
+  if (parsed?.action === "structure" && supportedStructureKinds.includes(parsed.kind)) return true;
   return parsed?.action === "effect" && ["lava_burn", "flood", "freeze", "curse"].includes(parsed.effect);
+}
+
+function normalizeArchitectAction(parsed) {
+  if (parsed.action === "effect") return { action: "effect", effect: parsed.effect };
+  if (parsed.action === "structure") {
+    return {
+      action: "structure",
+      kind: parsed.kind,
+      delegateVehicle: Boolean(parsed.delegateVehicle),
+      vehicle: parsed.vehicle === "semi_truck" ? "semi_truck" : null,
+      delegateStructure: Boolean(parsed.delegateStructure),
+    };
+  }
+  return { action: parsed.action };
 }
 
 function extractResponseText(data) {
@@ -1271,25 +1303,40 @@ async function executeFortress(origin) {
 }
 
 async function executeStructureCommand(speaker, command, origin, originalText = "") {
-  if (command.kind !== "bridge") return;
+  if (!supportedStructureKinds.includes(command.kind)) return;
 
-  const plan = bridgePlan(speaker, origin, originalText);
-  say(`building a detailed bridge at ${formatBlockPosition(plan.origin)}${command.delegateVehicle ? `; delegating the ${command.vehicle === "semi_truck" ? "semi truck" : "vehicle"} to ${delegatedDroneName}` : ""}`);
-  await sendCommandBatch(bridgeCommands(plan));
+  if (command.kind === "bridge") {
+    const plan = bridgePlan(speaker, origin, originalText);
+    say(`building a detailed bridge at ${formatBlockPosition(plan.origin)}${command.delegateVehicle ? `; delegating the ${command.vehicle === "semi_truck" ? "semi truck" : "vehicle"} to ${delegatedDroneName}` : ""}`);
+    await sendCommandBatch(bridgeCommands(plan));
 
-  if (command.delegateVehicle) {
-    const vehicleJobs = semiTruckJobs(plan.vehicleOrigin, delegatedDroneName, plan);
-    summonDroneToBuildSite(plan.vehicleOrigin);
-    writeDelegatedState({
-      taskId: `codex-bridge-${Date.now()}`,
-      structure: "bridge semi truck",
-      origin: plan.vehicleOrigin,
-      jobs: vehicleJobs,
-    });
-    say(`${delegatedDroneName} has the semi truck detail job.`);
-  } else {
-    say(`bridge complete around ${formatBlockPosition(plan.origin)}`);
+    if (command.delegateVehicle) {
+      const vehicleJobs = semiTruckJobs(plan.vehicleOrigin, delegatedDroneName, plan);
+      summonDroneToBuildSite(plan.vehicleOrigin);
+      writeDelegatedState({
+        taskId: `codex-bridge-${Date.now()}`,
+        structure: "bridge semi truck",
+        origin: plan.vehicleOrigin,
+        jobs: vehicleJobs,
+      });
+      say(`${delegatedDroneName} has the semi truck detail job.`);
+    } else {
+      say(`bridge complete around ${formatBlockPosition(plan.origin)}`);
+    }
+    return;
   }
+
+  const plan = genericStructurePlan(speaker, origin, originalText, command.kind);
+  if (command.kind === "tower" && command.delegateStructure) {
+    say(`delegating a tower at ${formatBlockPosition(plan.origin)} to ${delegatedDroneName}`);
+    delegateTowerBuild(plan.origin, "generic tower");
+    return;
+  }
+
+  const commands = genericStructureCommands(command.kind, plan);
+  say(`building a ${command.kind} at ${formatBlockPosition(plan.origin)}`);
+  await sendCommandBatch(commands);
+  say(`${command.kind} complete around ${formatBlockPosition(plan.origin)}`);
 }
 
 function bridgePlan(speaker, origin, text) {
@@ -1366,6 +1413,174 @@ function bridgeCommands(plan) {
     }
   }
 
+  return commands;
+}
+
+function genericStructurePlan(speaker, origin, text, kind) {
+  const playerName = findPlayerName(speaker) || speaker;
+  const player = bot.players[playerName]?.entity;
+  const direction = bridgeDirection(player, text);
+  const large = /long|large|big|detailed|huge|massive/i.test(text);
+  const distance = ["road", "wall"].includes(kind) ? 3 : 5;
+  return {
+    origin: {
+      x: Math.round(origin.x + direction.dx * distance),
+      y: origin.y - 1,
+      z: Math.round(origin.z + direction.dz * distance),
+    },
+    direction,
+    large,
+  };
+}
+
+function genericStructureCommands(kind, plan) {
+  if (kind === "road") return roadCommands(plan);
+  if (kind === "platform") return platformCommands(plan);
+  if (kind === "house") return houseCommands(plan);
+  if (kind === "room") return roomCommands(plan);
+  if (kind === "tower") return westTowerCommands(plan.origin);
+  if (kind === "wall") return wallCommands(plan);
+  if (kind === "dome") return domeCommands(plan);
+  if (kind === "pyramid") return pyramidCommands(plan);
+  return [];
+}
+
+function orientedRect(plan, length, halfWidth) {
+  const { origin, direction } = plan;
+  if (direction.axis === "x") {
+    const x1 = Math.min(origin.x, origin.x + direction.dx * (length - 1));
+    const x2 = Math.max(origin.x, origin.x + direction.dx * (length - 1));
+    return { x1, x2, z1: origin.z - halfWidth, z2: origin.z + halfWidth };
+  }
+  const z1 = Math.min(origin.z, origin.z + direction.dz * (length - 1));
+  const z2 = Math.max(origin.z, origin.z + direction.dz * (length - 1));
+  return { x1: origin.x - halfWidth, x2: origin.x + halfWidth, z1, z2 };
+}
+
+function roadCommands(plan) {
+  const length = plan.large ? 44 : 28;
+  const half = plan.large ? 3 : 2;
+  const { x1, x2, z1, z2 } = orientedRect(plan, length, half);
+  const y = plan.origin.y;
+  const commands = [
+    fillCommand(x1, y - 1, z1, x2, y - 1, z2, "cobblestone"),
+    fillCommand(x1, y, z1, x2, y, z2, "stone_bricks"),
+  ];
+  if (plan.direction.axis === "x") {
+    commands.push(fillCommand(x1, y + 1, z1, x2, y + 1, z1, "cobblestone_wall"));
+    commands.push(fillCommand(x1, y + 1, z2, x2, y + 1, z2, "cobblestone_wall"));
+    for (let x = x1 + 4; x <= x2; x += 8) commands.push(setBlockCommand(x, y + 2, z1, "lantern"), setBlockCommand(x, y + 2, z2, "lantern"));
+  } else {
+    commands.push(fillCommand(x1, y + 1, z1, x1, y + 1, z2, "cobblestone_wall"));
+    commands.push(fillCommand(x2, y + 1, z1, x2, y + 1, z2, "cobblestone_wall"));
+    for (let z = z1 + 4; z <= z2; z += 8) commands.push(setBlockCommand(x1, y + 2, z, "lantern"), setBlockCommand(x2, y + 2, z, "lantern"));
+  }
+  return commands;
+}
+
+function platformCommands(plan) {
+  const r = plan.large ? 12 : 8;
+  const { x, y, z } = plan.origin;
+  const commands = [
+    fillCommand(x - r, y - 2, z - r, x + r, y - 1, z + r, "polished_deepslate"),
+    fillCommand(x - r, y, z - r, x + r, y, z + r, "smooth_stone"),
+    fillCommand(x - r, y + 1, z - r, x + r, y + 1, z - r, "dark_oak_fence"),
+    fillCommand(x - r, y + 1, z + r, x + r, y + 1, z + r, "dark_oak_fence"),
+    fillCommand(x - r, y + 1, z - r, x - r, y + 1, z + r, "dark_oak_fence"),
+    fillCommand(x + r, y + 1, z - r, x + r, y + 1, z + r, "dark_oak_fence"),
+  ];
+  for (const [dx, dz] of [[-r, -r], [r, -r], [-r, r], [r, r]]) {
+    commands.push(setBlockCommand(x + dx, y + 2, z + dz, "lantern"));
+  }
+  return commands;
+}
+
+function houseCommands(plan) {
+  const { x, y, z } = plan.origin;
+  const r = plan.large ? 8 : 6;
+  const h = plan.large ? 7 : 5;
+  const commands = [
+    fillCommand(x - r - 1, y, z - r - 1, x + r + 1, y + h + 6, z + r + 1, "air"),
+    fillCommand(x - r, y - 1, z - r, x + r, y, z + r, "stone_bricks"),
+    fillCommand(x - r, y + 1, z - r, x + r, y + h, z - r, "spruce_planks"),
+    fillCommand(x - r, y + 1, z + r, x + r, y + h, z + r, "spruce_planks"),
+    fillCommand(x - r, y + 1, z - r, x - r, y + h, z + r, "spruce_planks"),
+    fillCommand(x + r, y + 1, z - r, x + r, y + h, z + r, "spruce_planks"),
+    fillCommand(x - r + 1, y + 1, z - r + 1, x + r - 1, y + h - 1, z + r - 1, "air"),
+    fillCommand(x - 1, y + 1, z - r, x + 1, y + 3, z - r, "air"),
+    fillCommand(x - 4, y + 3, z - r, x - 3, y + 4, z - r, "glass_pane"),
+    fillCommand(x + 3, y + 3, z - r, x + 4, y + 4, z - r, "glass_pane"),
+    setBlockCommand(x, y + 1, z - r, "oak_door[facing=north,half=lower]"),
+    setBlockCommand(x, y + 2, z - r, "oak_door[facing=north,half=upper]"),
+  ];
+  for (let layer = 0; layer <= r + 1; layer += 1) {
+    commands.push(fillCommand(x - r - 1 + layer, y + h + layer, z - r - 1, x + r + 1 - layer, y + h + layer, z + r + 1, "dark_oak_stairs"));
+  }
+  commands.push(fillCommand(x + r - 2, y + h + 1, z + r - 2, x + r - 1, y + h + 5, z + r - 1, "bricks"));
+  return commands;
+}
+
+function roomCommands(plan) {
+  const { x, y, z } = plan.origin;
+  const r = plan.large ? 9 : 6;
+  const h = plan.large ? 7 : 5;
+  return [
+    fillCommand(x - r, y - 1, z - r, x + r, y - 1, z + r, "polished_andesite"),
+    fillCommand(x - r, y, z - r, x + r, y + h, z - r, "smooth_quartz"),
+    fillCommand(x - r, y, z + r, x + r, y + h, z + r, "smooth_quartz"),
+    fillCommand(x - r, y, z - r, x - r, y + h, z + r, "smooth_quartz"),
+    fillCommand(x + r, y, z - r, x + r, y + h, z + r, "smooth_quartz"),
+    fillCommand(x - r, y + h, z - r, x + r, y + h, z + r, "smooth_quartz_slab"),
+    fillCommand(x - r + 1, y, z - r + 1, x + r - 1, y + h - 1, z + r - 1, "air"),
+    fillCommand(x - 2, y, z - r, x + 2, y + 3, z - r, "air"),
+    fillCommand(x - r + 2, y + 2, z - r, x - r + 4, y + 3, z - r, "glass_pane"),
+    fillCommand(x + r - 4, y + 2, z - r, x + r - 2, y + 3, z - r, "glass_pane"),
+  ];
+}
+
+function wallCommands(plan) {
+  const length = plan.large ? 42 : 28;
+  const { origin, direction } = plan;
+  const y = origin.y;
+  const commands = [];
+  if (direction.axis === "x") {
+    const x1 = Math.min(origin.x, origin.x + direction.dx * (length - 1));
+    const x2 = Math.max(origin.x, origin.x + direction.dx * (length - 1));
+    commands.push(fillCommand(x1, y, origin.z - 1, x2, y + 7, origin.z + 1, "deepslate_bricks"));
+    commands.push(fillCommand(Math.floor((x1 + x2) / 2) - 2, y, origin.z - 2, Math.floor((x1 + x2) / 2) + 2, y + 3, origin.z + 2, "air"));
+    for (let x = x1; x <= x2; x += 4) commands.push(fillCommand(x, y + 8, origin.z - 1, x + 1, y + 10, origin.z + 1, "polished_blackstone_bricks"));
+  } else {
+    const z1 = Math.min(origin.z, origin.z + direction.dz * (length - 1));
+    const z2 = Math.max(origin.z, origin.z + direction.dz * (length - 1));
+    commands.push(fillCommand(origin.x - 1, y, z1, origin.x + 1, y + 7, z2, "deepslate_bricks"));
+    commands.push(fillCommand(origin.x - 2, y, Math.floor((z1 + z2) / 2) - 2, origin.x + 2, y + 3, Math.floor((z1 + z2) / 2) + 2, "air"));
+    for (let z = z1; z <= z2; z += 4) commands.push(fillCommand(origin.x - 1, y + 8, z, origin.x + 1, y + 10, z + 1, "polished_blackstone_bricks"));
+  }
+  return commands;
+}
+
+function domeCommands(plan) {
+  const { x, y, z } = plan.origin;
+  const radii = plan.large ? [10, 9, 8, 6, 4, 2] : [7, 6, 5, 3, 1];
+  const commands = [fillCommand(x - radii[0] - 1, y, z - radii[0] - 1, x + radii[0] + 1, y + radii.length + 3, z + radii[0] + 1, "air")];
+  radii.forEach((r, layer) => {
+    commands.push(fillCommand(x - r, y + layer, z - r, x + r, y + layer, z + r, "cyan_stained_glass"));
+    if (r > 2) commands.push(fillCommand(x - r + 1, y + layer, z - r + 1, x + r - 1, y + layer, z + r - 1, "air"));
+  });
+  commands.push(fillCommand(x - 2, y, z - radii[0], x + 2, y + 3, z - radii[0], "air"));
+  return commands;
+}
+
+function pyramidCommands(plan) {
+  const { x, y, z } = plan.origin;
+  const r = plan.large ? 11 : 8;
+  const commands = [fillCommand(x - r - 1, y, z - r - 1, x + r + 1, y + r + 2, z + r + 1, "air")];
+  for (let layer = 0; layer <= r; layer += 1) {
+    const w = r - layer;
+    commands.push(fillCommand(x - w, y + layer, z - w, x + w, y + layer, z + w, "smooth_sandstone"));
+  }
+  commands.push(fillCommand(x - 1, y, z - r, x + 1, y + 2, z - r, "air"));
+  commands.push(fillCommand(x - 2, y - 1, z - r - 2, x + 2, y - 1, z - r, "cut_sandstone"));
   return commands;
 }
 
