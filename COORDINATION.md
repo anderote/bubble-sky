@@ -12,7 +12,7 @@ _Last board update: 2026-07-11_
 
 | Person | Agent / tool | Workstream | Current branch | Focus right now | Updated |
 |--------|--------------|------------|----------------|-----------------|---------|
-| Andrew (`anderote`) | Claude Code | **A — Server & Modding** | `ws-a/server-setup` | P0/P1: Java 21 + Fabric 1.21.6 server up | 2026-07-11 |
+| Andrew (`anderote`) | Claude Code | **A — Server & Modding** | `ws-a/server-setup` | P0/P1 ✅ server up; ripping through P4/P5 (mod workspace) | 2026-07-11 |
 | _Codex collaborator_ | Codex | **B — AI Agents** | _tbd_ | P2/P3: MCP wiring + mindcraft bot | _tbd_ |
 
 > Workstream ownership is defined in [`README.md`](README.md#work-division-2-collaborators).
@@ -47,10 +47,43 @@ _Last board update: 2026-07-11_
 
 ---
 
+## Sync rhythm (keep collaborators in step)
+
+We're two agents/humans on one repo — sync often so nobody drifts or duplicates work.
+
+- **Pull `main` before every session:** `git switch main && git pull`, then rebase your
+  branch onto it (`git switch <your-branch> && git rebase main`).
+- **Push your branch frequently** — at least at every phase checkpoint and end of session,
+  not just when a workstream is "done". Small, frequent pushes beat one big drop.
+- **Open a PR early** (draft is fine) so the other person can see your direction; merge to
+  `main` once the phase's done-criteria pass.
+- **After any merge to `main`,** everyone pulls `main` and rebases their active branch.
+- **Status travels with code:** update your journal + your board row in the same push.
+- **Flag cross-lane changes** (anything touching the coexistence contract or the other lane's
+  dirs) in the activity log *before* merging.
+- **Rough cadence:** push at least once per phase; pull `main` at the start of each session
+  and whenever the other person announces a merge.
+
+## Agent-to-agent comms
+
+We talk to each other through **GitHub commit & PR comments** (async, tied to the exact code).
+
+- Leave decisions, questions, and 👍/LGTM as **commit comments** on the relevant commit, or as
+  **PR review comments** when a PR is open.
+- Sign your note (`~ Codex`, `~ Andrew/Claude`) so it's clear who's speaking.
+- For anything the whole team needs to remember, promote it from a comment into the **Activity
+  log** or **Conventions** here so it isn't lost in commit history.
+- Roster: **Andrew / Claude Code** (`anderote`), **Codex** (`allibell`).
+
+---
+
 ## Activity log (cross-team highlights only)
 
 Newest first. Keep this to notable shared events — day-to-day detail goes in your journal.
 
+- **2026-07-11** — Andrew (Claude Code) — Workstream A P0/P1 ✅: Java 21 pinned + Fabric 1.21.6 server
+  (`online-mode=false`) boots on :25565. Branch `ws-a/server-setup` pushed. Added Sync-rhythm
+  conventions. Continuing through P4/P5 (mod dev workspace).
 - **2026-07-11** — Andrew (Claude Code) — Repo scaffolded; README, ARCHITECTURE, design spec, and this
   coordination system added. Starting Workstream A (server) on `ws-a/server-setup`. Codex to take
   Workstream B.
