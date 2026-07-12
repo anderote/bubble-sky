@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { Vec3 } from "vec3";
 import mineflayer from "../mindcraft/upstream/node_modules/mineflayer/index.js";
 import pathfinderPackage from "../mindcraft/upstream/node_modules/mineflayer-pathfinder/index.js";
 
@@ -14,6 +15,9 @@ const runtimeDir = process.env.CODEX_SWARM_RUNTIME || ".codex-runtime/swarm";
 const statePath = path.join(runtimeDir, "state.json");
 const progressPath = path.join(runtimeDir, "progress", `${username}.json`);
 const commandBuild = process.env.CODEX_SWARM_BUILD_MODE !== "inventory";
+const commandDelayMs = Number(process.env.CODEX_SWARM_COMMAND_DELAY_MS || 250);
+const batchSize = Number(process.env.CODEX_SWARM_BATCH_SIZE || 32);
+const verifyCommands = process.env.CODEX_SWARM_VERIFY_COMMANDS !== "0";
 const announceOnJoin = process.env.CODEX_SWARM_ANNOUNCE_ON_JOIN !== "0";
 const reportEveryJobs = Number(process.env.CODEX_DRONE_REPORT_EVERY_JOBS || 80);
 const reportMinIntervalMs = Number(process.env.CODEX_DRONE_REPORT_MIN_INTERVAL_MS || 90000);
@@ -44,7 +48,10 @@ bot.once("spawn", async () => {
 
 bot.on("kicked", (reason) => console.log("kicked", reason));
 bot.on("error", (error) => console.error("error", error));
-bot.on("end", (reason) => console.log("ended", reason));
+bot.on("end", (reason) => {
+  console.log("ended", reason);
+  if (!stopping) process.exit(1);
+});
 
 async function workLoop() {
   while (!stopping) {
@@ -58,37 +65,39 @@ async function workLoop() {
       activeTaskId = state.taskId;
       lastReportedPhase = null;
       lastReportAt = 0;
-      resetProgress(state.taskId);
+      ensureProgress(state.taskId);
       if (reportTaskJoin) {
         safeChat(`${username} joining ${state.structure} build`);
       }
     }
 
     const progress = readProgress(state.taskId);
-    const completed = new Set([...(progress.doneIds || []), ...(progress.failedIds || [])]);
-    const nextJob = state.jobs.find((job) => job.worker === username && !completed.has(job.id));
+    const allCompleted = readCompletedJobIds(state.taskId);
+    const nextJobs = nextAvailableJobs(state, allCompleted);
 
-    if (!nextJob) {
+    if (nextJobs.length === 0) {
       writeProgress({ ...progress, activeJob: null, updatedAt: new Date().toISOString() });
       await wait(2500);
       continue;
     }
 
-    await runJob(state, nextJob, progress);
+    await runJobs(state, nextJobs, progress);
   }
 }
 
-async function runJob(state, job, progress) {
-  writeProgress({ ...progress, activeJob: `${job.phase}:${job.id}`, updatedAt: new Date().toISOString() });
-  maybeReportWork(state, job, progress);
+async function runJobs(state, jobs, progress) {
+  const firstJob = jobs[0];
+  const lastJob = jobs[jobs.length - 1];
+  writeProgress({ ...progress, activeJob: `${firstJob.phase}:${firstJob.id}${jobs.length > 1 ? `..${lastJob.id}` : ""}`, updatedAt: new Date().toISOString() });
+  maybeReportWork(state, firstJob, progress);
 
   try {
-    await moveNear(job.x, job.y, job.z, 5);
-    await placeJob(job);
-    markDone(state.taskId, job.id);
+    await moveNear(firstJob.x, firstJob.y, firstJob.z, 5);
+    await placeJobs(jobs);
+    markDoneMany(state.taskId, jobs.map((job) => job.id));
   } catch (error) {
-    console.error(`${username}: failed ${job.id}: ${error.message}`);
-    markFailed(state.taskId, job.id, error.message);
+    console.error(`${username}: failed ${firstJob.id}..${lastJob.id}: ${error.message}`);
+    markFailedMany(state.taskId, jobs.map((job) => job.id), error.message);
   }
 }
 
@@ -104,14 +113,85 @@ function maybeReportWork(state, job, progress) {
   safeChat(`${username}: ${state.structure} ${job.phase} pass, ${doneCount} jobs done.`);
 }
 
-async function placeJob(job) {
+async function placeJobs(jobs) {
   if (commandBuild) {
-    bot.chat(`/setblock ${job.x} ${job.y} ${job.z} ${job.block}`);
-    await wait(120);
+    for (const run of lineRuns(jobs)) {
+      if (run.length === 1) {
+        const job = run[0];
+        bot.chat(`/setblock ${job.x} ${job.y} ${job.z} ${job.block}`);
+      } else {
+        const first = run[0];
+        const last = run[run.length - 1];
+        bot.chat(`/fill ${first.x} ${first.y} ${first.z} ${last.x} ${last.y} ${last.z} ${first.block}`);
+      }
+      await wait(commandDelayMs + Math.floor(Math.random() * 75));
+      if (verifyCommands) await verifyRun(run);
+    }
     return;
   }
 
   throw new Error("inventory build mode is not implemented yet; use CODEX_SWARM_BUILD_MODE=command");
+}
+
+async function verifyRun(run) {
+  const first = run[0];
+  const last = run[run.length - 1];
+  if (await runMatches(first, last)) return;
+
+  if (run.length === 1) {
+    bot.chat(`/setblock ${first.x} ${first.y} ${first.z} ${first.block}`);
+  } else {
+    bot.chat(`/fill ${first.x} ${first.y} ${first.z} ${last.x} ${last.y} ${last.z} ${first.block}`);
+  }
+  await wait(commandDelayMs + 150);
+
+  if (!(await runMatches(first, last))) {
+    throw new Error(`verification failed for ${first.block} at ${first.x},${first.y},${first.z}${run.length > 1 ? `..${last.x},${last.y},${last.z}` : ""}`);
+  }
+}
+
+async function runMatches(first, last) {
+  const expected = commandBlockName(first.block);
+  return (await blockMatches(first, expected)) && (await blockMatches(last, expected));
+}
+
+async function blockMatches(job, expectedName) {
+  const block = bot.blockAt(new Vec3(job.x, job.y, job.z));
+  return block?.name === expectedName;
+}
+
+function commandBlockName(block) {
+  return String(block).replace(/^minecraft:/, "").replace(/\[.*$/, "");
+}
+
+function lineRuns(jobs) {
+  const sorted = [...jobs].sort((a, b) => {
+    if (a.block !== b.block) return a.block.localeCompare(b.block);
+    if (a.y !== b.y) return a.y - b.y;
+    if (a.z !== b.z) return a.z - b.z;
+    return a.x - b.x;
+  });
+  const runs = [];
+  let current = [];
+
+  for (const job of sorted) {
+    const previous = current[current.length - 1];
+    if (
+      previous &&
+      previous.block === job.block &&
+      previous.y === job.y &&
+      previous.z === job.z &&
+      previous.x + 1 === job.x
+    ) {
+      current.push(job);
+    } else {
+      if (current.length) runs.push(current);
+      current = [job];
+    }
+  }
+
+  if (current.length) runs.push(current);
+  return runs;
 }
 
 async function moveNear(x, y, z, range) {
@@ -155,25 +235,70 @@ function readProgress(taskId) {
   }
 }
 
+function readCompletedJobIds(taskId) {
+  const progressDir = path.dirname(progressPath);
+  const completed = new Set();
+  try {
+    if (!fs.existsSync(progressDir)) return completed;
+    for (const file of fs.readdirSync(progressDir)) {
+      if (!file.endsWith(".json")) continue;
+      const entry = JSON.parse(fs.readFileSync(path.join(progressDir, file), "utf8"));
+      if (entry.taskId !== taskId) continue;
+      for (const id of entry.doneIds || []) completed.add(id);
+      for (const id of entry.failedIds || []) completed.add(id);
+    }
+  } catch (error) {
+    console.error(`${username}: failed to read global progress: ${error.message}`);
+  }
+  return completed;
+}
+
+function nextAvailableJobs(state, completed) {
+  const activePhase = state.jobs.find((job) => !completed.has(job.id))?.phase;
+  if (!activePhase) return [];
+  const safeBatchSize = Number.isFinite(batchSize) && batchSize > 0 ? Math.floor(batchSize) : 32;
+  return state.jobs
+    .filter((job) => job.phase === activePhase && job.worker === username && !completed.has(job.id))
+    .slice(0, safeBatchSize);
+}
+
 function writeProgress(progress) {
   fs.mkdirSync(path.dirname(progressPath), { recursive: true });
   fs.writeFileSync(progressPath, `${JSON.stringify(progress, null, 2)}\n`);
 }
 
-function resetProgress(taskId) {
-  writeProgress({ taskId, worker: username, doneIds: [], failedIds: [], activeJob: null, updatedAt: new Date().toISOString() });
+function ensureProgress(taskId) {
+  const progress = readProgress(taskId);
+  writeProgress({
+    taskId,
+    worker: username,
+    doneIds: progress.doneIds || [],
+    failedIds: progress.failedIds || [],
+    failures: progress.failures || {},
+    activeJob: null,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 function markDone(taskId, jobId) {
+  markDoneMany(taskId, [jobId]);
+}
+
+function markDoneMany(taskId, jobIds) {
   const progress = readProgress(taskId);
-  const doneIds = unique([...(progress.doneIds || []), jobId]);
+  const doneIds = unique([...(progress.doneIds || []), ...jobIds]);
   writeProgress({ ...progress, doneIds, activeJob: null, updatedAt: new Date().toISOString() });
 }
 
 function markFailed(taskId, jobId, reason) {
+  markFailedMany(taskId, [jobId], reason);
+}
+
+function markFailedMany(taskId, jobIds, reason) {
   const progress = readProgress(taskId);
-  const failedIds = unique([...(progress.failedIds || []), jobId]);
-  const failures = { ...(progress.failures || {}), [jobId]: reason };
+  const failedIds = unique([...(progress.failedIds || []), ...jobIds]);
+  const failures = { ...(progress.failures || {}) };
+  for (const jobId of jobIds) failures[jobId] = reason;
   writeProgress({ ...progress, failedIds, failures, activeJob: null, updatedAt: new Date().toISOString() });
 }
 

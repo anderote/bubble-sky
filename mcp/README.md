@@ -144,8 +144,15 @@ In game:
 ```text
 @swarm help
 @swarm build cabin
+@swarm build me a cabin
+@swarm we need a cabin
+@swarm give me a watchtower
+@swarm please make a watchtower near -40 72 40
 @swarm build cabin at -40 72 40
 @swarm build watchtower
+@swarm blueprints
+@swarm build schematic castle at -40 72 40
+@swarm blueprint
 @swarm status
 @swarm cancel
 ```
@@ -156,8 +163,21 @@ Operational commands:
 ./mcp/codex-swarm.sh status
 ./mcp/codex-swarm.sh logs boss
 ./mcp/codex-swarm.sh logs 1
+./mcp/codex-swarm.sh logfiles
+tail -f .codex-runtime/swarm/logs/boss.log
+tail -f .codex-runtime/swarm/logs/drone-1.log
 ./mcp/codex-swarm.sh stop
 ```
+
+`logs boss` and `logs 1` read recent tmux pane output. `logfiles` shows the
+persistent log directory. New swarm sessions pipe verbose boss/drone output into
+`.codex-runtime/swarm/logs/*.log`.
+
+The boss reports high-level progress in chat. For arbitrary schematics, semantic
+labels like "north wall" are not reliable because `.schem` files contain blocks,
+not architectural regions. Instead the boss announces phase completions such as
+clear, foundation, walls, stairs, roof, lighting, and detail, plus periodic
+`n/m jobs` progress. Ask `@swarm blueprint` for the current source file and size.
 
 The first implementation uses `/setblock` for reliable building, while drones
 still move near their assigned jobs so they appear to be working in-world. On an
@@ -172,6 +192,37 @@ op CodexDrone3
 op CodexDrone4
 ```
 
+### Schematic blueprints
+
+The swarm can compile WorldEdit/Sponge `.schem` files into the same per-block
+job plan used by the built-in cabin and watchtower.
+
+Put imported schematics here:
+
+```sh
+mcp/blueprints/imported/castle.schem
+```
+
+Then run in game:
+
+```text
+@swarm blueprints
+@swarm build schematic castle at -40 72 40
+```
+
+You can also compile without a running server to inspect the generated plan:
+
+```sh
+node ./mcp/compile-schematic.mjs castle --origin -40,72,40
+```
+
+Compiled plans are written under `mcp/blueprints/compiled/` by default. The
+planner compiles on demand from the imported `.schem`, clears the schematic
+volume first, then places non-air blocks bottom-up with coarse phases such as
+foundation, supports, walls, stairs, roof, lighting, and detail. Use vanilla
+block schematics for bot-facing builds. Drones observe a shared phase barrier,
+so no worker starts placing foundation blocks while another is still clearing.
+
 Environment knobs:
 
 | Setting | Default | Notes |
@@ -180,6 +231,10 @@ Environment knobs:
 | `CODEX_SWARM_PREFIX` | `CodexDrone` | Drone username prefix. |
 | `CODEX_SWARM_BOSS` | `CodexBoss` | Planner username. |
 | `CODEX_SWARM_BUILD_MODE` | `command` | Uses `/setblock`; inventory mode is intentionally not implemented yet. |
+| `CODEX_SWARM_COMMAND_DELAY_MS` | `250` | Per-drone delay between `/setblock` or `/fill` commands. Raise this if the server kicks drones for spam. |
+| `CODEX_SWARM_BATCH_SIZE` | `32` | Number of assigned jobs a drone consumes per work cycle. |
+| `CODEX_SWARM_JOB_CHUNK_SIZE` | `32` | Number of contiguous per-phase jobs the boss assigns to one drone before rotating to the next. |
+| `CODEX_SWARM_VERIFY_COMMANDS` | `1` | Drones verify `/setblock` and `/fill` endpoints and retry once before marking a batch failed. |
 | `CODEX_SWARM_ANNOUNCE_ON_JOIN` | `0` | Keeps bot reconnects quiet by default. |
 | `CODEX_SWARM_REPORT_INTERVAL_MS` | `60000` | Boss progress report cadence while a build is active. |
 | `CODEX_SWARM_REPORT_MILESTONE` | `25` | Boss also reports when progress crosses this percentage step. |

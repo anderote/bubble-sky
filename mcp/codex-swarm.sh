@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUNTIME_DIR="$ROOT_DIR/.codex-runtime/swarm"
+LOG_DIR="$RUNTIME_DIR/logs"
 HOST="${MINECRAFT_HOST:-192.168.86.188}"
 PORT="${MINECRAFT_PORT:-25565}"
 COUNT="${CODEX_SWARM_COUNT:-4}"
@@ -13,6 +14,10 @@ ANNOUNCE="${CODEX_SWARM_ANNOUNCE_ON_JOIN:-0}"
 BUILD_MODE="${CODEX_SWARM_BUILD_MODE:-command}"
 REPORT_INTERVAL_MS="${CODEX_SWARM_REPORT_INTERVAL_MS:-60000}"
 DRONE_REPORT_EVERY_JOBS="${CODEX_DRONE_REPORT_EVERY_JOBS:-80}"
+COMMAND_DELAY_MS="${CODEX_SWARM_COMMAND_DELAY_MS:-250}"
+BATCH_SIZE="${CODEX_SWARM_BATCH_SIZE:-32}"
+JOB_CHUNK_SIZE="${CODEX_SWARM_JOB_CHUNK_SIZE:-32}"
+VERIFY_COMMANDS="${CODEX_SWARM_VERIFY_COMMANDS:-1}"
 
 usage() {
   cat <<'EOF'
@@ -21,6 +26,7 @@ Usage:
   ./mcp/codex-swarm.sh stop
   ./mcp/codex-swarm.sh status
   ./mcp/codex-swarm.sh logs [boss|drone-number]
+  ./mcp/codex-swarm.sh logfiles
 
 In game:
   @swarm build cabin
@@ -35,6 +41,10 @@ Environment:
   CODEX_SWARM_PREFIX=CodexDrone
   CODEX_SWARM_BOSS=CodexBoss
   CODEX_SWARM_BUILD_MODE=command
+  CODEX_SWARM_COMMAND_DELAY_MS=250
+  CODEX_SWARM_BATCH_SIZE=32
+  CODEX_SWARM_JOB_CHUNK_SIZE=32
+  CODEX_SWARM_VERIFY_COMMANDS=1
   CODEX_SWARM_REPORT_INTERVAL_MS=60000
   CODEX_DRONE_REPORT_EVERY_JOBS=80
 EOF
@@ -66,7 +76,9 @@ start_session() {
     return
   fi
 
+  mkdir -p "$LOG_DIR"
   tmux new-session -d -s "$session" "while true; do $command; code=\$?; echo '$session exited' \$code '- restarting in 3s'; sleep 3; done"
+  tmux pipe-pane -o -t "$session" "cat >> '$LOG_DIR/${name}.log'"
   echo "started $session"
 }
 
@@ -76,12 +88,13 @@ case "$command" in
     COUNT="${2:-$COUNT}"
     mkdir -p "$RUNTIME_DIR"
     NODE_BIN="$(node_bin)"
+    npm install --prefix "$ROOT_DIR/mcp" >/dev/null
 
-    start_session boss "cd '$ROOT_DIR' && MINECRAFT_HOST='$HOST' MINECRAFT_PORT='$PORT' CODEX_SWARM_COUNT='$COUNT' CODEX_SWARM_PREFIX='$PREFIX' CODEX_SWARM_BOSS='$BOSS' CODEX_SWARM_RUNTIME='$RUNTIME_DIR' CODEX_SWARM_ANNOUNCE_ON_JOIN='$ANNOUNCE' CODEX_SWARM_REPORT_INTERVAL_MS='$REPORT_INTERVAL_MS' '$NODE_BIN' ./mcp/codex-swarm-planner.mjs"
+    start_session boss "cd '$ROOT_DIR' && MINECRAFT_HOST='$HOST' MINECRAFT_PORT='$PORT' CODEX_SWARM_COUNT='$COUNT' CODEX_SWARM_PREFIX='$PREFIX' CODEX_SWARM_BOSS='$BOSS' CODEX_SWARM_RUNTIME='$RUNTIME_DIR' CODEX_SWARM_JOB_CHUNK_SIZE='$JOB_CHUNK_SIZE' CODEX_SWARM_ANNOUNCE_ON_JOIN='$ANNOUNCE' CODEX_SWARM_REPORT_INTERVAL_MS='$REPORT_INTERVAL_MS' '$NODE_BIN' ./mcp/codex-swarm-planner.mjs"
 
     for index in $(seq 1 "$COUNT"); do
       name="${PREFIX}${index}"
-      start_session "drone-${index}" "cd '$ROOT_DIR' && MINECRAFT_HOST='$HOST' MINECRAFT_PORT='$PORT' CODEX_BOT_USERNAME='$name' CODEX_SWARM_RUNTIME='$RUNTIME_DIR' CODEX_SWARM_BUILD_MODE='$BUILD_MODE' CODEX_SWARM_ANNOUNCE_ON_JOIN='$ANNOUNCE' CODEX_DRONE_REPORT_EVERY_JOBS='$DRONE_REPORT_EVERY_JOBS' '$NODE_BIN' ./mcp/codex-swarm-worker.mjs"
+      start_session "drone-${index}" "cd '$ROOT_DIR' && MINECRAFT_HOST='$HOST' MINECRAFT_PORT='$PORT' CODEX_BOT_USERNAME='$name' CODEX_SWARM_RUNTIME='$RUNTIME_DIR' CODEX_SWARM_BUILD_MODE='$BUILD_MODE' CODEX_SWARM_COMMAND_DELAY_MS='$COMMAND_DELAY_MS' CODEX_SWARM_BATCH_SIZE='$BATCH_SIZE' CODEX_SWARM_VERIFY_COMMANDS='$VERIFY_COMMANDS' CODEX_SWARM_ANNOUNCE_ON_JOIN='$ANNOUNCE' CODEX_DRONE_REPORT_EVERY_JOBS='$DRONE_REPORT_EVERY_JOBS' '$NODE_BIN' ./mcp/codex-swarm-worker.mjs"
       sleep 0.25
     done
     ;;
@@ -106,6 +119,11 @@ case "$command" in
     else
       tmux capture-pane -pt "$(tmux_session drone-"$target")" -S -120
     fi
+    ;;
+  logfiles)
+    mkdir -p "$LOG_DIR"
+    echo "$LOG_DIR"
+    ls -la "$LOG_DIR"
     ;;
   *)
     usage
