@@ -18,9 +18,17 @@ server + how to set up a matching client.
 | Macaw's Doors | `mcw-doors-1.1.5-mc1.21.6fabric.jar` | `macaws-doors` |
 | Macaw's Fences & Walls | `mcw-mcwfences-1.2.1-mc1.21.6fabric.jar` | `macaws-fences-and-walls` |
 | Farmer's Delight | `FarmersDelight-1.21.8-3.3.3+refabricated.jar` | `farmers-delight-refabricated` |
+| Guns++ | `guns++-5.8.7.jar` | `guns++` |
 | **Tower Defense (ours)** | `towerdefense-1.0.0.jar` | build from `mods/towerdefense/` |
 
 (All are Fabric 1.21.6-compatible; the "1.21.8" builds declare `>=1.21.6`.)
+
+**Guns++** is a datapack-style gun mod bundled as a Fabric jar (namespace `thepa`): pistols,
+rifles, snipers, shotguns, grenades + tiered ammo (Bullets / Medium / Light / Heavy / .50 Cal).
+Guns render + fire only with this jar present **client-side** too — reload is **Shift + right-click**,
+recipes are in its in-game guide book. Tower Defense grants a Glock in the starter kit and drops
+guns/ammo as wave loot (see below); those items are Guns++ `carrot_on_a_stick`/`clock` stacks, so a
+client without this jar sees plain vanilla items instead of guns.
 
 ## Client setup (PrismLauncher — mirrors Andrew's)
 1. Create a **Fabric 1.21.6** instance named `bubble-sky-1.21.6` (Fabric Loader 0.19.3).
@@ -43,10 +51,13 @@ server + how to set up a matching client.
 
 ## What's in the world
 A **survival Tower-Defense + RPG**. You spawn in survival with a starter kit (TD bow, wooden
-sword, leather armor, **100 gold**). Place the **Idol** (`/td idol`) + enemy spawns (`/td spawn`),
-build a fort, buy towers (Arrow / Cannon / Frost / **Ball** wall-turret), hire soldiers, and
-survive endless waves — barbarians and **sappers** that break through walls, plus multi-Warlord
-boss waves. Earn **XP → levels → skill points** you spend in the **Character** screen.
+sword, chainmail armor, **100 gold**, a **Glock pistol + 64 bullets**, and building materials).
+Place the **Idol** (`/td idol`) + enemy spawns (`/td spawn`), build a fort, buy towers (Arrow /
+Cannon / Frost / **Ball** wall-turret), hire soldiers, and survive endless waves — barbarians and
+**sappers** that break through walls, plus multi-Warlord boss waves. Clearing a wave drops loot at
+the gate, now including **Guns++ guns + ammo that scale with the wave** (pistols early → rifles →
+snipers/Deagle late, with a guaranteed gun on boss waves). Earn **XP → levels → skill points** you
+spend in the **Character** screen.
 
 **Controls:** **J** menu · **H** hire · **I** inventory · **P** character · `/td` for everything.
 Also in the mod: the `acid` block and the **Layout Wand** (plant flags/regions Grok reads). Grok

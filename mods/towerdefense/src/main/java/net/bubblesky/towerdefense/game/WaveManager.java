@@ -81,6 +81,9 @@ public final class WaveManager {
 	private static final double BOSS_SCALE = 2.2;
 	/** Boss march speed factor (a touch slower than a same-wave heavy). */
 	private static final double BOSS_SPEED_FACTOR = 0.9;
+	/** Armor multiplier stacked on the boss's per-wave armor so a Warlord shrugs off far
+	 *  more chip damage than a same-wave heavy (see {@link #armorFor(int)}). */
+	private static final double BOSS_ARMOR_MULT = 1.5;
 
 	// ---- scaling / tuning --------------------------------------------------
 	/** Every enemy shuffles slowly like a zombie — a fixed march speed regardless of the
@@ -94,14 +97,28 @@ public final class WaveManager {
 	 *  a big follow range does NOT make them hunt — it only extends how far they can path
 	 *  (fixes enemies that couldn't reach the Idol from far and tunnelled toward it). */
 	private static final double PATHFIND_RANGE = 64.0;
-	/** Long-marathon hp/damage curve — LINEAR term (per wave beyond the first). */
-	private static final double MARATHON_LINEAR = 0.10;
-	/** Long-marathon hp/damage curve — mild-POWER term coefficient. */
-	private static final double MARATHON_POWER_COEF = 0.02;
+	/** Long-marathon hp/damage curve — LINEAR term (per wave beyond the first). Bumped a
+	 *  notch (was 0.10) so hp/damage climbs faster while staying sub-quadratic and killable. */
+	private static final double MARATHON_LINEAR = 0.14;
+	/** Long-marathon hp/damage curve — mild-POWER term coefficient. Bumped a notch (was
+	 *  0.02) for a steeper mid/late ramp, still nowhere near the old runaway geometric curve. */
+	private static final double MARATHON_POWER_COEF = 0.03;
 	/** Long-marathon hp/damage curve — mild-POWER term exponent (< quadratic). */
 	private static final double MARATHON_POWER_EXP = 1.5;
 	/** Per-wave geometric growth for speed (gentle; still bounded by {@link #SPEED_CAP}). */
 	private static final double SPEED_GROWTH = 1.05;
+
+	// ---- spread / armor / cadence scaling ----------------------------------
+	/** Hard cap on the horizontal spread radius (blocks) enemies emerge across around a
+	 *  spawn gate — see {@link #spreadRadius(int)}. Keeps the front wide but bounded well
+	 *  within the force-loaded gate chunks (their 3x3 neighbourhood is pinned each wave). */
+	private static final int SPREAD_CAP = 10;
+	/** Per-wave ARMOR granted to every spawned enemy — see {@link #armorFor(int)}. */
+	private static final double ARMOR_PER_WAVE = 0.6;
+	/** Hard cap on per-enemy ARMOR so late enemies are tanky but never damage-immune. */
+	private static final double ARMOR_CAP = 20.0;
+	/** Floor on the shrinking per-enemy spawn cadence — see {@link #spawnInterval(int)}. */
+	private static final int SPAWN_INTERVAL_MIN = 3;
 
 	// ---- wall-breaking -----------------------------------------------------
 	/** Shared units of dig-damage needed to shatter one wall block (many enemies
@@ -124,8 +141,9 @@ public final class WaveManager {
 	// ---- horde / drip-spawn ------------------------------------------------
 	/** Concurrent live-enemy cap: deep waves can queue 150+ enemies, so spawning pauses
 	 *  whenever this many wave enemies are already on the field, resuming as they die.
-	 *  Protects server TPS while still delivering the full horde over the wave. */
-	private static final int DRIP_CAP = 70;
+	 *  Protects server TPS while still delivering the full horde over the wave. Nudged up
+	 *  (was 70) to keep the now-larger late-wave hordes streaming in briskly. */
+	private static final int DRIP_CAP = 80;
 
 	/** Ticks between staggered enemy spawns within a wave. */
 	private static final int SPAWN_INTERVAL = 15;
@@ -241,11 +259,12 @@ public final class WaveManager {
 	}
 
 	// ---- scaling helpers ---------------------------------------------------
-	/** Enemy count for a given wave: {@code 9 + floor(wave * 1.5)} — wave 1 opens with a
-	 *  real skirmish of 10 and grows into big hordes. (The full long-marathon curve and
-	 *  concurrent-enemy drip cap are tuned separately.) */
+	/** Enemy count for a given wave: {@code 10 + round(wave * 2.5)} — wave 1 opens with a
+	 *  real skirmish of ~13 and ramps into big hordes far sooner than the old
+	 *  {@code 9 + floor(wave*1.5)} (wave 5 ≈ 23, wave 10 ≈ 35, wave 25 ≈ 73, wave 50 ≈ 135).
+	 *  (The full long-marathon curve and concurrent-enemy drip cap are tuned separately.) */
 	public static int enemyCount(int wave) {
-		return 9 + (int) Math.floor(wave * 1.5);
+		return 10 + (int) Math.round(wave * 2.5);
 	}
 
 	/**
@@ -254,12 +273,16 @@ public final class WaveManager {
 	 * ({@code 1 + 0.10*(w-1) + 0.02*(w-1)^1.5}) replaces the old geometric
 	 * {@code 1.15^(w-1)} (which exploded to ~10^6x and made enemies unkillable by ~wave
 	 * 30). Hordes still get huge, but individual enemies stay killable, so a skilled,
-	 * well-built defence can realistically push toward wave 100. Anchor values:
+	 * well-built defence can realistically push toward wave 100. The linear + power
+	 * coefficients were each bumped a notch ({@link #MARATHON_LINEAR} 0.10→0.14,
+	 * {@link #MARATHON_POWER_COEF} 0.02→0.03) for a steeper — but still sub-quadratic and
+	 * beatable — ramp. Anchor values:
 	 * <ul>
-	 *   <li>wave 10 ≈ 2.4x</li>
-	 *   <li>wave 20 ≈ 4.6x</li>
-	 *   <li>wave 50 ≈ 12.8x</li>
-	 *   <li>wave 100 ≈ 30.6x</li>
+	 *   <li>wave 5 ≈ 1.8x</li>
+	 *   <li>wave 10 ≈ 3.1x</li>
+	 *   <li>wave 25 ≈ 7.9x</li>
+	 *   <li>wave 50 ≈ 18.2x</li>
+	 *   <li>wave 100 ≈ 44.4x</li>
 	 * </ul>
 	 */
 	private static double waveScale(int wave) {
@@ -280,6 +303,38 @@ public final class WaveManager {
 	/** Per-wave multiplier applied to each enemy's own base movement speed. */
 	private static double speedScale(int wave) {
 		return Math.pow(SPEED_GROWTH, wave - 1);
+	}
+
+	/**
+	 * Horizontal spread radius (blocks) enemies emerge across around each spawn gate,
+	 * growing with the wave: {@code min(SPREAD_CAP, floor(wave/2))}. At wave 1 this is 0
+	 * (enemies emerge tight on the gate tile); by mid/late waves it widens so a horde
+	 * pours out across a broad front around the gate rather than stacking on one block.
+	 * Bounded by {@link #SPREAD_CAP} so the spread always stays within the gate's
+	 * force-loaded chunk neighbourhood. Anchors: wave 1 → 0, 5 → 2, 10 → 5, 25 → 10, 50 → 10.
+	 */
+	private static int spreadRadius(int wave) {
+		return Math.min(SPREAD_CAP, wave / 2);
+	}
+
+	/**
+	 * Per-enemy ARMOR granted on spawn, growing with the wave so late enemies are visibly
+	 * tankier: {@code min(ARMOR_CAP, wave * ARMOR_PER_WAVE)}. Capped at {@link #ARMOR_CAP}
+	 * so enemies stay killable (never damage-immune). Bosses stack {@link #BOSS_ARMOR_MULT}
+	 * on top of this. Anchors: wave 1 → 0.6, 5 → 3.0, 10 → 6.0, 25 → 15.0, 50 → 20.0 (capped).
+	 */
+	private static double armorFor(int wave) {
+		return Math.min(ARMOR_CAP, wave * ARMOR_PER_WAVE);
+	}
+
+	/**
+	 * Per-enemy spawn cadence (ticks between staggered spawns), shrinking with the wave so
+	 * hordes pour in quicker as the run deepens: {@code max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL
+	 * - floor(wave/2))}. Floored at {@link #SPAWN_INTERVAL_MIN} so even deep waves don't spawn
+	 * every tick. Anchors: wave 1 → 15, 5 → 13, 10 → 10, 25 → 3, 50 → 3.
+	 */
+	private static int spawnInterval(int wave) {
+		return Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL - wave / 2);
 	}
 
 	/** Coin bounty paid to each nearby player when a wave is cleared. */
@@ -396,7 +451,7 @@ public final class WaveManager {
 			if (spawned) {
 				st.enemiesRemaining--;
 				st.spawnFailures = 0;
-				st.spawnCooldown = SPAWN_INTERVAL;
+				st.spawnCooldown = spawnInterval(st.currentWave);
 			} else {
 				st.spawnFailures++;
 				if (st.spawnFailures >= MAX_SPAWN_FAILURES) {
@@ -405,7 +460,7 @@ public final class WaveManager {
 						st.currentWave, st.spawnFailures);
 					st.enemiesRemaining--;
 					st.spawnFailures = 0;
-					st.spawnCooldown = SPAWN_INTERVAL;
+					st.spawnCooldown = spawnInterval(st.currentWave);
 				} else {
 					st.spawnCooldown = SPAWN_RETRY_TICKS;
 				}
@@ -459,7 +514,7 @@ public final class WaveManager {
 			}
 			return ok;
 		}
-		BlockPos sp = surfaceSpawn(world, st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size())));
+		BlockPos sp = spreadSpawn(world, st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size())), st.currentWave);
 		List<EntityType<? extends TdEnemyEntity>> pool = rosterFor(st.currentWave);
 		EntityType<? extends TdEnemyEntity> type = pool.get(world.random.nextInt(pool.size()));
 		TdEnemyEntity mob = type.spawn(world, sp, SpawnReason.EVENT);
@@ -493,6 +548,9 @@ public final class WaveManager {
 		// Mostly knockback-resistant (0.5): arrow hits nudge them back a little (slowing
 		// their advance) without launching them off their march to the Idol.
 		setAttribute(mob, EntityAttributes.KNOCKBACK_RESISTANCE, 0.5);
+		// Per-wave ARMOR (capped): later enemies soak more chip damage, so towers must
+		// out-scale them rather than tickle a swelling horde to death.
+		setAttribute(mob, EntityAttributes.ARMOR, armorFor(wave));
 
 		// The archer still marches to base, but re-arm its ranged goal so it shoots
 		// players who wander into range (clearGoalsAndTasks stripped it above).
@@ -513,7 +571,7 @@ public final class WaveManager {
 	 * FIRST Warlord of the wave (so a large squad doesn't spam the title/roar).
 	 */
 	private static boolean spawnBoss(ServerWorld world, TdArenaState st) {
-		BlockPos sp = surfaceSpawn(world, st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size())));
+		BlockPos sp = spreadSpawn(world, st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size())), st.currentWave);
 		TdEnemyEntity boss = ModEntities.HEAVY_KNIGHT.spawn(world, sp, SpawnReason.EVENT);
 		if (boss == null) {
 			return false;
@@ -540,6 +598,9 @@ public final class WaveManager {
 			Math.min(SPEED_CAP, ZOMBIE_MARCH_SPEED * speedScale(wave) * BOSS_SPEED_FACTOR));
 		setAttribute(boss, EntityAttributes.FOLLOW_RANGE, PATHFIND_RANGE);
 		setAttribute(boss, EntityAttributes.KNOCKBACK_RESISTANCE, 0.5);
+		// The Warlord stacks BOSS_ARMOR_MULT on the per-wave armor, making it a true
+		// bullet-sponge that a well-upgraded battery must focus down.
+		setAttribute(boss, EntityAttributes.ARMOR, armorFor(wave) * BOSS_ARMOR_MULT);
 
 		markEnemyVisible(world, boss);
 		steerToBase(boss, st);
@@ -562,9 +623,34 @@ public final class WaveManager {
 	}
 
 	/**
+	 * Multi-point spread spawn: pick a random horizontal offset within
+	 * {@link #spreadRadius(int)} blocks of the given spawn gate (a square kernel of
+	 * {@code [-r, r]} on each axis), then surface-snap the OFFSET position via
+	 * {@link #surfaceSpawn} so it still lands on solid ground. The radius grows with the
+	 * wave, so wave 1 emerges tight on the gate tile while mid/late waves pour out across a
+	 * wide front around it. The offset is bounded by {@link #SPREAD_CAP} and the gate's
+	 * force-loaded 3x3 chunk neighbourhood (pinned in {@link #setArenaForced}) so the
+	 * snapped position always sits on loaded, valid terrain.
+	 */
+	private static BlockPos spreadSpawn(ServerWorld world, BlockPos sp, int wave) {
+		int radius = spreadRadius(wave);
+		if (radius <= 0) {
+			return surfaceSpawn(world, sp);
+		}
+		int dx = world.random.nextInt(radius * 2 + 1) - radius;
+		int dz = world.random.nextInt(radius * 2 + 1) - radius;
+		return surfaceSpawn(world, sp.add(dx, 0, dz));
+	}
+
+	/**
 	 * Force-load (or release) the chunks holding the base and every spawn gate, so a
 	 * running match keeps spawning + ticking enemies regardless of where players are.
 	 * Called with {@code true} when a wave begins and {@code false} on reset/loss.
+	 *
+	 * <p>Each spawn gate pins its full 3x3 chunk neighbourhood (not just its own chunk) so
+	 * that multi-point {@linkplain #spreadSpawn spread spawning} — which can offset up to
+	 * {@link #SPREAD_CAP} blocks off the gate, crossing at most one chunk boundary — always
+	 * lands on loaded terrain with a valid heightmap.
 	 */
 	private static void setArenaForced(ServerWorld world, TdArenaState st, boolean forced) {
 		if (st.base != null) {
@@ -573,7 +659,11 @@ public final class WaveManager {
 		}
 		for (BlockPos sp : st.spawnPoints) {
 			ChunkPos c = new ChunkPos(sp);
-			world.setChunkForced(c.x, c.z, forced);
+			for (int dx = -1; dx <= 1; dx++) {
+				for (int dz = -1; dz <= 1; dz++) {
+					world.setChunkForced(c.x + dx, c.z + dz, forced);
+				}
+			}
 		}
 	}
 

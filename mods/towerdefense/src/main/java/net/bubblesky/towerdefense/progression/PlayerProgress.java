@@ -50,11 +50,21 @@ public class PlayerProgress {
 	private int unspentPoints;
 	/** Points spent per stat. Missing stats read as 0 via {@link #points(Stat)}. */
 	private final EnumMap<Stat, Integer> allocations = new EnumMap<>(Stat.class);
+	/**
+	 * The player's GOLD BANK: a plain int balance that is the single source of truth for
+	 * how much gold this player has to spend. Gold is NO LONGER carried as {@code COIN}
+	 * items in the inventory — coins still drop in the world, but are vacuumed up and
+	 * credited here (see the auto-collect sweep in
+	 * {@link net.bubblesky.towerdefense.progression.ProgressEvents}). Persisted to NBT
+	 * and synced to the client HUD exactly like the rest of this record.
+	 */
+	private int gold;
 
 	public PlayerProgress() {
 		this.xp = 0;
 		this.level = 1;
 		this.unspentPoints = 0;
+		this.gold = 0;
 	}
 
 	// ---- curve -------------------------------------------------------------
@@ -104,6 +114,42 @@ public class PlayerProgress {
 		return true;
 	}
 
+	// ---- gold bank ---------------------------------------------------------
+	/** Current gold-bank balance (never negative). */
+	public int getGold() {
+		return gold;
+	}
+
+	/** Overwrite the gold balance outright (clamped at 0). Used to seed starter gold. */
+	public void setGold(int amount) {
+		gold = Math.max(0, amount);
+	}
+
+	/** Credit {@code amount} gold to the bank (non-positive amounts are ignored). */
+	public void addGold(int amount) {
+		if (amount > 0) {
+			gold += amount;
+		}
+	}
+
+	/**
+	 * Spend {@code amount} gold from the bank. Deducts only what is actually present
+	 * (never drives the balance below 0) and reports whether the full amount cleared.
+	 *
+	 * @return {@code true} if the whole {@code amount} was covered, {@code false} otherwise
+	 */
+	public boolean spendGold(int amount) {
+		if (amount <= 0) {
+			return true;
+		}
+		if (gold < amount) {
+			gold = 0;
+			return false;
+		}
+		gold -= amount;
+		return true;
+	}
+
 	// ---- accessors ---------------------------------------------------------
 	public int getXp() {
 		return xp;
@@ -129,6 +175,7 @@ public class PlayerProgress {
 		nbt.putInt("xp", xp);
 		nbt.putInt("level", level);
 		nbt.putInt("points", unspentPoints);
+		nbt.putInt("gold", gold);
 		NbtCompound alloc = new NbtCompound();
 		for (Stat stat : Stat.values()) {
 			alloc.putInt(stat.name(), points(stat));
@@ -143,6 +190,7 @@ public class PlayerProgress {
 		p.xp = Math.max(0, nbt.getInt("xp", 0));
 		p.level = Math.max(1, nbt.getInt("level", 1));
 		p.unspentPoints = Math.max(0, nbt.getInt("points", 0));
+		p.gold = Math.max(0, nbt.getInt("gold", 0));
 		NbtCompound alloc = nbt.getCompoundOrEmpty("alloc");
 		for (Stat stat : Stat.values()) {
 			int v = Math.max(0, alloc.getInt(stat.name(), 0));

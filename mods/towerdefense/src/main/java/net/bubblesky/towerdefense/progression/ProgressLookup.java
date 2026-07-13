@@ -35,6 +35,16 @@ public final class ProgressLookup {
 		return progress == null ? 1.0 : StatModifiers.xpMult(progress);
 	}
 
+	/**
+	 * Coin-vacuum collection radius (blocks) for a player, driven by Intelligence. Falls
+	 * back to the base radius for anything that isn't a resolved server player, so the
+	 * auto-collect sweep can call it unconditionally.
+	 */
+	public static double collectionRadius(PlayerEntity player) {
+		PlayerProgress progress = progressOf(player);
+		return progress == null ? StatModifiers.baseCollectionRadius() : StatModifiers.collectionRadius(progress);
+	}
+
 	private static PlayerProgress progressOf(PlayerEntity player) {
 		if (!(player instanceof ServerPlayerEntity serverPlayer)) {
 			return null;

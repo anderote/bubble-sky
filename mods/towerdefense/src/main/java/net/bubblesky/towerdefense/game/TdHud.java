@@ -1,14 +1,12 @@
 package net.bubblesky.towerdefense.game;
 
 import java.util.List;
-import net.bubblesky.towerdefense.registry.ModItems;
 import net.bubblesky.towerdefense.state.TdArenaState;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.boss.ServerBossBar;
-import net.minecraft.item.ItemStack;
 import net.minecraft.scoreboard.ScoreAccess;
 import net.minecraft.scoreboard.ScoreHolder;
 import net.minecraft.scoreboard.ScoreboardCriterion;
@@ -215,13 +213,8 @@ public final class TdHud {
 		}
 	}
 
+	/** The player's sidebar gold figure — now their BANK balance, not inventory coins. */
 	private static int countCoins(ServerPlayerEntity player) {
-		int total = 0;
-		for (ItemStack stack : player.getInventory().getMainStacks()) {
-			if (stack.isOf(ModItems.COIN)) {
-				total += stack.getCount();
-			}
-		}
-		return total;
+		return net.bubblesky.towerdefense.command.TdCommand.countCoinsPublic(player);
 	}
 }

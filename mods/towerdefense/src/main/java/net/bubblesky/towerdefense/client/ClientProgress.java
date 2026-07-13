@@ -18,6 +18,7 @@ public final class ClientProgress {
 	private static volatile int xp = 0;
 	private static volatile int level = 1;
 	private static volatile int unspentPoints = 0;
+	private static volatile int gold = 0;
 	private static volatile int[] allocations = new int[Stat.values().length];
 
 	/** Replace the cached snapshot from a freshly-received sync payload. */
@@ -25,6 +26,7 @@ public final class ClientProgress {
 		xp = payload.xp();
 		level = payload.level();
 		unspentPoints = payload.unspentPoints();
+		gold = payload.gold();
 		int[] incoming = payload.allocations();
 		int[] copy = new int[Stat.values().length];
 		System.arraycopy(incoming, 0, copy, 0, Math.min(incoming.length, copy.length));
@@ -33,6 +35,11 @@ public final class ClientProgress {
 
 	public static int xp() {
 		return xp;
+	}
+
+	/** The synced gold-bank balance shown on the HUD. */
+	public static int gold() {
+		return gold;
 	}
 
 	public static int level() {

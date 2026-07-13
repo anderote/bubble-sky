@@ -23,10 +23,12 @@ import net.minecraft.util.Identifier;
  * remove-then-add: re-applying on every join/respawn/allocate refreshes the modifier
  * in place instead of stacking a fresh copy each relog.
  *
- * <p>The remaining three stats are read at use-time as multipliers rather than baked
- * into attributes: {@link #bowMult} (+10% fired-arrow damage per {@link Stat#MARKSMANSHIP}
- * point), {@link #coinMult} (+12% coin payout per {@link Stat#FORTUNE} point), and
- * {@link #xpMult} (+8% XP gained per {@link Stat#INTELLIGENCE} point).
+ * <p>The remaining three stats are read at use-time rather than baked into attributes:
+ * {@link #bowMult} (+10% fired-arrow damage per {@link Stat#MARKSMANSHIP} point),
+ * {@link #coinMult} (+12% coin payout per {@link Stat#FORTUNE} point), and
+ * {@link Stat#INTELLIGENCE}, which now drives BOTH the coin-vacuum
+ * {@link #collectionRadius} (its primary effect) AND retains its {@link #xpMult}
+ * (+8% XP gained per point) so the older behavior never regresses.
  */
 public final class StatModifiers {
 
@@ -58,6 +60,10 @@ public final class StatModifiers {
 	private static final double COIN_PER_POINT = 0.12;
 	/** Intelligence: +8% XP gained per point. */
 	private static final double XP_PER_POINT = 0.08;
+	/** Base coin-vacuum collection radius (blocks) every player has at Intelligence 0. */
+	private static final double COLLECTION_BASE_RADIUS = 2.5;
+	/** Intelligence: +1.0 block of collection radius per point. */
+	private static final double COLLECTION_PER_POINT = 1.0;
 
 	// ---- flat base-character buffs (always on, independent of skill points) --
 	/** +20 max health for every player (20 -> 40 HP / 20 hearts). */
@@ -132,5 +138,21 @@ public final class StatModifiers {
 	/** XP-gain multiplier (1.0 at zero points; +8% per Intelligence point). */
 	public static double xpMult(PlayerProgress progress) {
 		return 1.0 + progress.points(Stat.INTELLIGENCE) * XP_PER_POINT;
+	}
+
+	/**
+	 * Coin-vacuum collection radius in blocks for a given record:
+	 * {@code BASE + Intelligence * PER_POINT} — {@value #COLLECTION_BASE_RADIUS} at 0
+	 * points, growing {@value #COLLECTION_PER_POINT} block per Intelligence point (so
+	 * 2.5 / 7.5 / 12.5 blocks at Intelligence 0 / 5 / 10). This is Intelligence's primary
+	 * effect: a smarter hero sweeps dropped coins into their bank from farther away.
+	 */
+	public static double collectionRadius(PlayerProgress progress) {
+		return COLLECTION_BASE_RADIUS + progress.points(Stat.INTELLIGENCE) * COLLECTION_PER_POINT;
+	}
+
+	/** The base collection radius (blocks) used when no progression record is available. */
+	public static double baseCollectionRadius() {
+		return COLLECTION_BASE_RADIUS;
 	}
 }

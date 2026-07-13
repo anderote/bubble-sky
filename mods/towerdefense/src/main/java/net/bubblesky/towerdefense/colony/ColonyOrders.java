@@ -5,9 +5,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import net.bubblesky.towerdefense.registry.ModEntities;
-import net.bubblesky.towerdefense.registry.ModItems;
 import net.minecraft.entity.SpawnReason;
-import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
@@ -256,15 +254,10 @@ public final class ColonyOrders {
 		return null;
 	}
 
-	// ---- coin economy (mirrors TdCommand) ----------------------------------
+	// ---- coin economy (routes through TdCommand's gold bank) ----------------
+	/** The recruiter's gold-bank balance, read through the shared {@link net.bubblesky.towerdefense.command.TdCommand} bank. */
 	private static int countCoins(ServerPlayerEntity player) {
-		int total = 0;
-		for (ItemStack stack : player.getInventory().getMainStacks()) {
-			if (stack.isOf(ModItems.COIN)) {
-				total += stack.getCount();
-			}
-		}
-		return total;
+		return net.bubblesky.towerdefense.command.TdCommand.countCoinsPublic(player);
 	}
 
 	/**

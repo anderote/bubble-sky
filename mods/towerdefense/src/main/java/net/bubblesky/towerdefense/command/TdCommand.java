@@ -13,9 +13,11 @@ import net.bubblesky.towerdefense.game.TdMarkers;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.item.TowerBlockItem;
 import net.bubblesky.towerdefense.layout.LayoutStore;
+import net.bubblesky.towerdefense.progression.PlayerProgress;
+import net.bubblesky.towerdefense.progression.ProgressEvents;
+import net.bubblesky.towerdefense.progression.ProgressState;
 import net.bubblesky.towerdefense.registry.ModBlocks;
 import net.bubblesky.towerdefense.registry.ModEntities;
-import net.bubblesky.towerdefense.registry.ModItems;
 import net.bubblesky.towerdefense.state.TdArenaState;
 import net.bubblesky.towerdefense.tower.TowerKind;
 import net.bubblesky.towerdefense.tower.TowerStructure;
@@ -606,15 +608,25 @@ public final class TdCommand {
 		return total;
 	}
 
-	// ---- coin helpers ------------------------------------------------------
-	private static int countCoins(ServerPlayerEntity player) {
-		int total = 0;
-		for (ItemStack stack : player.getInventory().getMainStacks()) {
-			if (stack.isOf(ModItems.COIN)) {
-				total += stack.getCount();
-			}
+	// ---- gold bank ---------------------------------------------------------
+	// Gold is a per-player BANK BALANCE on PlayerProgress, NOT COIN items in the inventory.
+	// Coins still drop in the world, but the auto-collect sweep (ProgressEvents) vacuums them
+	// up and credits the banks. These helpers are the single door onto that balance: reads,
+	// per-player spends, and grants, each resyncing the owner's HUD after a change.
+
+	/** Resolve a player's progression record (or null if the server isn't available). */
+	private static PlayerProgress progressOf(ServerPlayerEntity player) {
+		MinecraftServer server = player.getServer();
+		if (server == null) {
+			return null;
 		}
-		return total;
+		return ProgressState.get(server).forPlayer(player.getUuid());
+	}
+
+	/** A player's current bank balance (0 if unavailable). */
+	private static int countCoins(ServerPlayerEntity player) {
+		PlayerProgress progress = progressOf(player);
+		return progress == null ? 0 : progress.getGold();
 	}
 
 	public static int countCoinsPublic(ServerPlayerEntity player) {
@@ -622,41 +634,24 @@ public final class TdCommand {
 	}
 
 	/**
-	 * Deduct {@code amount} COIN from a <em>single</em> player's inventory. This is the
-	 * raw, per-player removal primitive; callers that want the shared-gold behavior should
-	 * use {@link #removeCoins} (which mirrors across everyone) rather than this directly.
-	 */
-	private static void removeCoinsFromOne(ServerPlayerEntity player, int amount) {
-		int remaining = amount;
-		var stacks = player.getInventory().getMainStacks();
-		for (int i = 0; i < stacks.size() && remaining > 0; i++) {
-			ItemStack stack = stacks.get(i);
-			if (stack.isOf(ModItems.COIN)) {
-				int take = Math.min(remaining, stack.getCount());
-				stack.decrement(take);
-				remaining -= take;
-			}
-		}
-	}
-
-	/**
-	 * Shared-gold spend: deduct {@code amount} COIN from <em>every</em> online player so
-	 * co-op teammates always hold the same balance. Because all spending routes through
-	 * here (buy tower, {@code /td upgrade}, {@code /td hire}, colony recruit, panel
-	 * upgrade/sell), a single deduction never lets one player's coin count drift from the
-	 * rest of the team. The per-player HUD, which reads the caller's own inventory, then
-	 * shows the same number for everyone.
-	 *
-	 * <p>Falls back to a single-player deduction if the server (and thus the player list)
-	 * is somehow unavailable — which should not happen for a real online player.
+	 * Independent spend: deduct {@code amount} gold from the buyer's OWN bank only (no
+	 * multiplayer mirroring — each player controls their own balance). Persists the change
+	 * and resyncs the owner's HUD. Used by buy tower / {@code /td upgrade} / {@code /td hire}
+	 * / colony recruit / panel upgrade.
 	 */
 	private static void removeCoins(ServerPlayerEntity player, int amount) {
-		// Independent spending: a purchase deducts from ONLY the buyer's own balance. Wave
-		// rewards + kill bounties are shared/equal (mirrored to all), but spending — and a
-		// tower's sell refund — is per-player: each controls their own gold.
-		if (amount > 0) {
-			removeCoinsFromOne(player, amount);
+		if (amount <= 0) {
+			return;
 		}
+		MinecraftServer server = player.getServer();
+		if (server == null) {
+			return;
+		}
+		ProgressState state = ProgressState.get(server);
+		PlayerProgress progress = state.forPlayer(player.getUuid());
+		progress.spendGold(amount);
+		state.markDirty();
+		ProgressEvents.sync(player, progress);
 	}
 
 	public static void removeCoinsPublic(ServerPlayerEntity player, int amount) {
@@ -664,37 +659,44 @@ public final class TdCommand {
 	}
 
 	/**
-	 * Grant {@code amount} COIN to a <em>single</em> player, inserting into their inventory
-	 * and dropping at their feet if it is full. Raw per-player primitive; income paths that
-	 * want shared gold should use {@link #grantCoinsToAll}.
+	 * Grant {@code amount} gold to a <em>single</em> player's bank (e.g. a tower-sell refund
+	 * goes to the seller only, since spending/refunds are per-player). Persists + resyncs.
 	 */
 	private static void grantCoinsToOne(ServerPlayerEntity player, int amount) {
 		if (amount <= 0) {
 			return;
 		}
-		ItemStack coins = new ItemStack(ModItems.COIN, amount);
-		if (!player.getInventory().insertStack(coins)) {
-			player.dropItem(coins, false);
+		MinecraftServer server = player.getServer();
+		if (server == null) {
+			return;
 		}
+		ProgressState state = ProgressState.get(server);
+		PlayerProgress progress = state.forPlayer(player.getUuid());
+		progress.addGold(amount);
+		state.markDirty();
+		ProgressEvents.sync(player, progress);
 	}
 
 	/**
-	 * Shared-gold grant: give {@code amount} COIN to <em>every</em> online player so a coin
-	 * grant to one teammate (e.g. a tower-sell refund) keeps the whole team in lockstep.
-	 * Income that is delivered as world drops (wave rewards, kill bounties) is mirrored at
-	 * the drop site instead; this helper covers direct inventory grants.
+	 * Shared income: credit {@code amount} gold to <em>every</em> online player's bank so a
+	 * grant fills every teammate's bank the same. This is the sink for the coin-vacuum
+	 * auto-collect (see {@link net.bubblesky.towerdefense.progression.ProgressEvents}) — each
+	 * collected coin credits everyone equally. Persists once and resyncs each affected HUD.
 	 */
 	public static void grantCoinsToAll(MinecraftServer server, int amount) {
 		if (server == null || amount <= 0) {
 			return;
 		}
+		ProgressState state = ProgressState.get(server);
 		for (ServerPlayerEntity online : server.getPlayerManager().getPlayerList()) {
-			grantCoinsToOne(online, amount);
+			PlayerProgress progress = state.forPlayer(online.getUuid());
+			progress.addGold(amount);
+			ProgressEvents.sync(online, progress);
 		}
+		state.markDirty();
 	}
 
-	/** Grant {@code amount} COIN to just this ONE player (e.g. a tower-sell refund goes to the
-	 *  seller only, since spending/refunds are per-player). */
+	/** Grant {@code amount} gold to just this ONE player's bank (e.g. a tower-sell refund). */
 	public static void grantCoinsPublic(ServerPlayerEntity player, int amount) {
 		grantCoinsToOne(player, amount);
 	}

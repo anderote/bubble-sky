@@ -7,8 +7,11 @@ import net.bubblesky.towerdefense.colony.ColonyRespawn;
 import net.bubblesky.towerdefense.command.TdCommand;
 import net.bubblesky.towerdefense.item.LayoutWandItem;
 import net.bubblesky.towerdefense.layout.LayoutStore;
+import net.bubblesky.towerdefense.progression.PlayerProgress;
 import net.bubblesky.towerdefense.progression.ProgressEvents;
+import net.bubblesky.towerdefense.progression.ProgressState;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.bubblesky.towerdefense.game.GunsPlusPlus;
 import net.bubblesky.towerdefense.game.TdHud;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.registry.ModBlockEntities;
@@ -26,6 +29,7 @@ import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
@@ -160,10 +164,30 @@ public class TowerDefenseMod implements ModInitializer {
 			giveOrDrop(player, new ItemStack(Items.WOODEN_SWORD));
 			giveOrDrop(player, new ItemStack(ModItems.TD_BOW));
 			giveOrDrop(player, new ItemStack(Items.ARROW, 64));
-			// Seed gold so a fresh player can afford their first towers straight away.
-			giveOrDrop(player, new ItemStack(ModItems.COIN, STARTER_GOLD));
-			player.sendMessage(Text.literal("Starter kit granted: TD bow + 64 arrows, wooden sword, chainmail armor, "
-				+ STARTER_GOLD + " gold. Sneak+fire to plant flags; buy a tower then place/fire it to build.")
+			// Guns++ starter sidearm: a Glock pistol plus a stack of pistol bullets.
+			giveOrDrop(player, GunsPlusPlus.glock());
+			giveOrDrop(player, GunsPlusPlus.bullets(64));
+			// Seed gold so a fresh player can afford their first towers straight away. Gold is a
+			// per-player BANK BALANCE (PlayerProgress), not COIN items — set the balance and
+			// resync the HUD rather than dropping coins into the inventory.
+			MinecraftServer server2 = player.getServer();
+			if (server2 != null) {
+				ProgressState state = ProgressState.get(server2);
+				PlayerProgress progress = state.forPlayer(player.getUuid());
+				progress.setGold(STARTER_GOLD);
+				state.markDirty();
+				ProgressEvents.sync(player, progress);
+			}
+			// Building materials for forts: a stack of each in dedicated top-row inventory slots.
+			player.getInventory().setStack(9, new ItemStack(Items.DIRT, 64));
+			player.getInventory().setStack(10, new ItemStack(Items.GRAVEL, 64));
+			player.getInventory().setStack(11, new ItemStack(Items.COBBLESTONE, 64));
+			player.getInventory().setStack(12, new ItemStack(Items.STONE_BRICKS, 64));
+			player.getInventory().setStack(13, new ItemStack(Items.OAK_PLANKS, 64));
+			player.sendMessage(Text.literal("Starter kit granted: TD bow + 64 arrows, a Glock pistol + 64 bullets, "
+				+ "wooden sword, chainmail armor, "
+				+ STARTER_GOLD + " gold, and a stack each of dirt / gravel / cobblestone / stone bricks / planks for "
+				+ "building. Sneak+fire to plant flags; buy a tower then place/fire it to build.")
 				.formatted(Formatting.GREEN), false);
 		});
 	}

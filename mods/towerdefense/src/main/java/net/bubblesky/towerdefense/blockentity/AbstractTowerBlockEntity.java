@@ -125,10 +125,12 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 	// ---- veterancy (kill-earned rank) --------------------------------------
 	/** Kills to earn one veterancy rank. */
 	private static final int KILLS_PER_RANK = 20;
-	/** Damage bonus per rank (+25%/rank). */
-	private static final double DAMAGE_PER_RANK = 0.25;
-	/** Rank cap: 6 ranks → +150% = 2.5x damage at {@code 6 * KILLS_PER_RANK} = 120 kills. */
-	public static final int MAX_VETERANCY = 6;
+	/** COMPOUNDING damage factor per rank (~3.5%/rank, applied geometrically) — a slow gain
+	 *  that keeps growing the longer a turret survives. */
+	private static final double VETERANCY_COMPOUND = 1.035;
+	/** Rank cap: 20 ranks — a long grind ({@code 20 * KILLS_PER_RANK} = 400 kills to max) that
+	 *  compounds to ~2x damage, +3 range and ~20% faster fire. */
+	public static final int MAX_VETERANCY = 20;
 
 	/** Current veterancy rank 0..MAX_VETERANCY: one rank per {@link #KILLS_PER_RANK} kills. */
 	public int getVeterancy() {
@@ -144,9 +146,10 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 		return getVeterancy() >= MAX_VETERANCY ? 0 : KILLS_PER_RANK - (veterancyKills % KILLS_PER_RANK);
 	}
 
-	/** Veterancy damage multiplier: 1.0 at rank 0 → 2.5 at rank 6 (+25%/rank, one rank per 20 kills). */
+	/** Veterancy damage multiplier: COMPOUNDING ~3.5% per rank (1.0 at rank 0 → ~2x at the
+	 *  20-rank cap) — a slow, long-term reward for a long-lived turret. */
 	private double veterancyMult() {
-		return 1.0 + DAMAGE_PER_RANK * getVeterancy();
+		return Math.pow(VETERANCY_COMPOUND, getVeterancy());
 	}
 
 	/**
@@ -190,24 +193,24 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 		}
 	}
 
-	/** +3 blocks of range per tier above 1, plus up to +2 blocks from veterancy. */
+	/** +3 blocks of range per tier above 1, plus +0.15 per veterancy rank (up to +3 at rank 20). */
 	protected double range() {
-		return baseRange() + (tier - 1) * 3.0 + 0.2 * getVeterancy();
+		return baseRange() + (tier - 1) * 3.0 + 0.15 * getVeterancy();
 	}
 
 	/** Cooldown shrinks ~15% per tier (multiplicative, so it never reaches zero): a
-	 *  tier-6 tower fires at ~44% of its base cadence. Veterancy shaves off up to another
-	 *  20% at rank 10. */
+	 *  tier-6 tower fires at ~44% of its base cadence. Veterancy shaves off ~1%/rank (up to
+	 *  ~20% at the 20-rank cap). */
 	protected int cooldownTicks() {
-		double vet = 1.0 - 0.02 * getVeterancy();
+		double vet = 1.0 - 0.01 * getVeterancy();
 		return Math.max(1, (int) Math.round(baseCooldown() * Math.pow(0.85, tier - 1) * vet));
 	}
 
-	/** Damage/effect multiplier: geometric x1.5 per tier — 1.0 / 1.5 / 2.25 / 3.38 / 5.06 /
-	 *  7.59 for tiers 1-6, so a fully upgraded tower is severely powerful. Veterancy adds a
-	 *  further up-to-2.5x on top (1.0 at rank 0 → 2.5 at rank 10). */
+	/** Damage/effect multiplier: LINEAR +0.4 per tier — 1.0 / 1.4 / 1.8 / 2.2 / 2.6 / 3.0 for
+	 *  tiers 1-6 (nerfed from the old x1.5 geometric so a maxed tower isn't overpowered).
+	 *  Veterancy stacks a further up-to-~2x on top (at the 400-kill rank cap). */
 	protected double damageMultiplier() {
-		return Math.pow(1.5, tier - 1) * veterancyMult();
+		return (1.0 + 0.4 * (tier - 1)) * veterancyMult();
 	}
 
 	/** Resolve the placer to an online player, or null (offline / unset). */

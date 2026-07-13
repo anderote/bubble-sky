@@ -1,15 +1,19 @@
 package net.bubblesky.towerdefense.progression;
 
+import net.bubblesky.towerdefense.command.TdCommand;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.progression.PlayerProgress.Stat;
 import net.bubblesky.towerdefense.progression.net.AllocatePointPayload;
 import net.bubblesky.towerdefense.progression.net.ProgressSyncPayload;
+import net.bubblesky.towerdefense.registry.ModItems;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.server.MinecraftServer;
@@ -71,6 +75,9 @@ public final class ProgressEvents {
 
 		// XP award on TD-enemy death (own listener, separate from WaveManager's boss bounty).
 		ServerLivingEntityEvents.AFTER_DEATH.register(ProgressEvents::onEntityDeath);
+
+		// Gold-coin auto-collect: every few ticks, vacuum nearby COIN drops into the banks.
+		ServerTickEvents.END_SERVER_TICK.register(ProgressEvents::onCollectTick);
 
 		// (Re)apply stats + push a fresh sync whenever the player (re)enters the world.
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> refresh(handler.player));
@@ -146,13 +153,61 @@ public final class ProgressEvents {
 		sync(player, progress);
 	}
 
-	/** Send the current progression snapshot to a player's client. */
+	/** Send the current progression snapshot (including the gold bank) to a player's client. */
 	public static void sync(ServerPlayerEntity player, PlayerProgress progress) {
 		int[] alloc = new int[Stat.values().length];
 		for (Stat stat : Stat.values()) {
 			alloc[stat.ordinal()] = progress.points(stat);
 		}
 		ServerPlayNetworking.send(player,
-			new ProgressSyncPayload(progress.getXp(), progress.getLevel(), progress.getUnspentPoints(), alloc));
+			new ProgressSyncPayload(progress.getXp(), progress.getLevel(), progress.getUnspentPoints(),
+				progress.getGold(), alloc));
+	}
+
+	// ---- gold-coin auto-collect (vacuum) -----------------------------------
+	/** How often (server ticks) the coin-vacuum sweep runs — every quarter-second. */
+	private static final int COLLECT_INTERVAL = 5;
+	/** Tick accumulator, so the sweep runs once per {@link #COLLECT_INTERVAL} ticks. */
+	private static int collectTicker = 0;
+
+	/**
+	 * The coin-vacuum sweep, run every {@link #COLLECT_INTERVAL} ticks. For each online
+	 * player it scans for dropped {@code COIN} {@link ItemEntity}s within that player's
+	 * Intelligence-driven {@link ProgressLookup#collectionRadius} and removes them from the
+	 * world, tallying the total coin count collected across everyone. That total is then
+	 * credited to EVERY online player's bank ({@link TdCommand#grantCoinsToAll}) — equal
+	 * shared income, so a single collected coin fills every teammate's bank the same. A
+	 * coin discarded by one player's sweep won't be re-counted by the next (the per-player
+	 * scan is re-issued after each removal, and dead entities drop out of the query).
+	 */
+	private static void onCollectTick(MinecraftServer server) {
+		if (++collectTicker < COLLECT_INTERVAL) {
+			return;
+		}
+		collectTicker = 0;
+
+		int collected = 0;
+		for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+			if (!(player.getWorld() instanceof ServerWorld world)) {
+				continue;
+			}
+			double radius = ProgressLookup.collectionRadius(player);
+			double radiusSq = radius * radius;
+			net.minecraft.util.math.Box box = player.getBoundingBox().expand(radius);
+			for (ItemEntity drop : world.getEntitiesByClass(ItemEntity.class, box,
+					e -> e.isAlive() && e.getStack().isOf(ModItems.COIN))) {
+				// Refine the cube query to a true sphere around the player.
+				if (player.squaredDistanceTo(drop) > radiusSq) {
+					continue;
+				}
+				collected += drop.getStack().getCount();
+				drop.discard();
+			}
+		}
+
+		if (collected > 0) {
+			// Equal shared income: each collected coin credits EVERY online player's bank.
+			TdCommand.grantCoinsToAll(server, collected);
+		}
 	}
 }

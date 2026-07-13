@@ -1,12 +1,9 @@
 package net.bubblesky.towerdefense.client;
 
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
-import net.bubblesky.towerdefense.registry.ModItems;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
-import net.minecraft.item.ItemStack;
 import net.minecraft.scoreboard.ReadableScoreboardScore;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreHolder;
@@ -39,19 +36,13 @@ public final class TdClientStatus {
 	/** Must match {@code TdHud.WAVE_ROW}. */
 	private static final String WAVE_ROW = "Wave";
 
-	/** The client player's coin balance (synced inventory), or 0. */
+	/**
+	 * The client player's gold-BANK balance, read from the synced {@link ClientProgress}
+	 * snapshot (the server pushes it on join/respawn and after every collect/spend). Gold is
+	 * no longer carried as inventory {@code COIN} items, so this reads the synced bank total.
+	 */
 	public static int coins() {
-		ClientPlayerEntity player = MinecraftClient.getInstance().player;
-		if (player == null) {
-			return 0;
-		}
-		int total = 0;
-		for (ItemStack stack : player.getInventory().getMainStacks()) {
-			if (stack.isOf(ModItems.COIN)) {
-				total += stack.getCount();
-			}
-		}
-		return total;
+		return ClientProgress.gold();
 	}
 
 	/** Current wave from the synced TD sidebar, or -1 when no match is running. */

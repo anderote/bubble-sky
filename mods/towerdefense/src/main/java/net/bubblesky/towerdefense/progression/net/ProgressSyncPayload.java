@@ -14,9 +14,10 @@ import net.minecraft.util.Identifier;
  *
  * <p>{@code xp} is progress within the CURRENT level; the client derives the level
  * threshold locally via {@code PlayerProgress.xpForLevel(level)} (a pure function), so
- * the wire stays compact.
+ * the wire stays compact. {@code gold} is the player's gold-bank balance, mirrored to
+ * the client so the always-on HUD shows the synced bank total.
  */
-public record ProgressSyncPayload(int xp, int level, int unspentPoints, int[] allocations) implements CustomPayload {
+public record ProgressSyncPayload(int xp, int level, int unspentPoints, int gold, int[] allocations) implements CustomPayload {
 
 	public static final CustomPayload.Id<ProgressSyncPayload> ID =
 		new CustomPayload.Id<>(Identifier.of(TowerDefenseMod.MOD_ID, "progress_sync"));
@@ -29,6 +30,7 @@ public record ProgressSyncPayload(int xp, int level, int unspentPoints, int[] al
 		buf.writeVarInt(xp);
 		buf.writeVarInt(level);
 		buf.writeVarInt(unspentPoints);
+		buf.writeVarInt(gold);
 		buf.writeVarInt(allocations.length);
 		for (int a : allocations) {
 			buf.writeVarInt(a);
@@ -39,12 +41,13 @@ public record ProgressSyncPayload(int xp, int level, int unspentPoints, int[] al
 		int xp = buf.readVarInt();
 		int level = buf.readVarInt();
 		int points = buf.readVarInt();
+		int gold = buf.readVarInt();
 		int n = buf.readVarInt();
 		int[] alloc = new int[n];
 		for (int i = 0; i < n; i++) {
 			alloc[i] = buf.readVarInt();
 		}
-		return new ProgressSyncPayload(xp, level, points, alloc);
+		return new ProgressSyncPayload(xp, level, points, gold, alloc);
 	}
 
 	@Override
