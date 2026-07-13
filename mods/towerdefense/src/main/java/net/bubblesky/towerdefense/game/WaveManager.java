@@ -22,10 +22,14 @@ import net.minecraft.entity.ai.pathing.EntityNavigation;
 import net.minecraft.entity.ai.pathing.Path;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.particle.BlockStateParticleEffect;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.scoreboard.Scoreboard;
+import net.minecraft.scoreboard.Team;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -60,6 +64,9 @@ import net.minecraft.world.Heightmap;
 public final class WaveManager {
 	/** Scoreboard/command tag marking an entity as a TD wave enemy. */
 	public static final String ENEMY_TAG = "td_enemy";
+	/** Scoreboard team the wave enemies join so their Glowing outline (and Xaero's minimap
+	 *  radar) reads bright RED — making the bad guys clearly visible on-screen and on the map. */
+	private static final String ENEMY_TEAM = "td_enemies";
 	/** Additional tag on the single boss spawned every {@link #BOSS_WAVE_INTERVAL}th wave. */
 	public static final String BOSS_TAG = "td_boss";
 
@@ -495,6 +502,7 @@ public final class WaveManager {
 			archer.addWaveCombatGoals();
 		}
 
+		markEnemyVisible(world, mob);
 		steerToBase(mob, st);
 		return true;
 	}
@@ -535,6 +543,7 @@ public final class WaveManager {
 		setAttribute(boss, EntityAttributes.FOLLOW_RANGE, PATHFIND_RANGE);
 		setAttribute(boss, EntityAttributes.KNOCKBACK_RESISTANCE, 0.5);
 
+		markEnemyVisible(world, boss);
 		steerToBase(boss, st);
 		// Only the first Warlord of the squad triggers the roar + title fanfare.
 		if (st.bossesRemaining == bossCount(wave)) {
@@ -707,6 +716,20 @@ public final class WaveManager {
 	/** Walk straight at the Idol via the move control (no pathfinding). The fallback that
 	 *  lets an enemy seek the Idol from beyond pathfinding range or across open ground until
 	 *  it gets close enough for {@link EntityNavigation} to path the rest of the way. */
+	/** Make an enemy clearly visible: a permanent Glowing outline (seen through walls and on
+	 *  Xaero's minimap radar) + membership in a RED scoreboard team so that glow/marker reads
+	 *  as "the enemy". Called once on spawn. */
+	private static void markEnemyVisible(ServerWorld world, MobEntity mob) {
+		mob.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, Integer.MAX_VALUE, 0, false, false, false));
+		Scoreboard sb = world.getScoreboard();
+		Team team = sb.getTeam(ENEMY_TEAM);
+		if (team == null) {
+			team = sb.addTeam(ENEMY_TEAM);
+			team.setColor(Formatting.RED);
+		}
+		sb.addScoreHolderToTeam(mob.getUuidAsString(), team);
+	}
+
 	private static void beelineToBase(MobEntity mob, TdArenaState st) {
 		if (st.base == null) {
 			return;
