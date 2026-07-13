@@ -92,7 +92,7 @@ public final class AgentBridge {
 	}
 
 	private void startHttp() throws IOException {
-		httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", config.port), 0);
+		httpServer = HttpServer.create(new InetSocketAddress(config.bindHost, config.port), 0);
 		// Small pool of DAEMON threads: work is quick and mostly blocks on the
 		// server-thread hop. Daemon + explicit shutdown so the pool never keeps
 		// the Minecraft JVM alive after SERVER_STOPPING.
@@ -106,7 +106,8 @@ public final class AgentBridge {
 		BridgeHandlers handlers = new BridgeHandlers(this);
 		handlers.register(httpServer);
 		httpServer.start();
-		TowerDefenseMod.LOGGER.info("[bridge] listening on http://127.0.0.1:{} (token required in X-Bridge-Token)", config.port);
+		TowerDefenseMod.LOGGER.info("[bridge] listening on http://{}:{} (token required in X-Bridge-Token)",
+			config.bindHost, config.port);
 	}
 
 	private void stopHttp() {

@@ -26,15 +26,18 @@ import net.bubblesky.towerdefense.TowerDefenseMod;
  */
 public final class BridgeConfig {
 	private static final int DEFAULT_PORT = 25580;
+	private static final String DEFAULT_BIND_HOST = "127.0.0.1";
 
 	public final boolean enabled;
 	public final int port;
 	public final String token;
+	public final String bindHost;
 
-	private BridgeConfig(boolean enabled, int port, String token) {
+	private BridgeConfig(boolean enabled, int port, String token, String bindHost) {
 		this.enabled = enabled;
 		this.port = port;
 		this.token = token;
+		this.bindHost = bindHost;
 	}
 
 	/** Loads config from {@code <runDir>/config/bubblesky-bridge.json} + env, persisting a generated token. */
@@ -42,6 +45,7 @@ public final class BridgeConfig {
 		boolean enabled = true;
 		int port = DEFAULT_PORT;
 		String token = "";
+		String bindHost = DEFAULT_BIND_HOST;
 
 		Path configPath = runDir.resolve("config").resolve("bubblesky-bridge.json");
 		try {
@@ -55,6 +59,9 @@ public final class BridgeConfig {
 				}
 				if (json.has("token")) {
 					token = json.get("token").getAsString();
+				}
+				if (json.has("bindHost")) {
+					bindHost = json.get("bindHost").getAsString().trim();
 				}
 			}
 		} catch (Exception e) {
@@ -77,6 +84,13 @@ public final class BridgeConfig {
 		if (envToken != null && !envToken.isBlank()) {
 			token = envToken.trim();
 		}
+		String envBindHost = System.getenv("BUBBLESKY_BRIDGE_BIND_HOST");
+		if (envBindHost != null && !envBindHost.isBlank()) {
+			bindHost = envBindHost.trim();
+		}
+		if (bindHost.isBlank()) {
+			bindHost = DEFAULT_BIND_HOST;
+		}
 
 		boolean generated = false;
 		if (token == null || token.isBlank()) {
@@ -84,7 +98,7 @@ public final class BridgeConfig {
 			generated = true;
 		}
 
-		BridgeConfig config = new BridgeConfig(enabled, port, token);
+		BridgeConfig config = new BridgeConfig(enabled, port, token, bindHost);
 
 		if (generated) {
 			try {
@@ -94,6 +108,7 @@ public final class BridgeConfig {
 				out.addProperty("enabled", enabled);
 				out.addProperty("port", port);
 				out.addProperty("token", token);
+				out.addProperty("bindHost", bindHost);
 				Files.writeString(configPath, gson.toJson(out));
 				TowerDefenseMod.LOGGER.info("[bridge] generated token written to {} (X-Bridge-Token: {})",
 					configPath, token);
