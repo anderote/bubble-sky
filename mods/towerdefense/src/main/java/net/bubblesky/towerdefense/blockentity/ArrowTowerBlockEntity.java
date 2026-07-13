@@ -40,7 +40,9 @@ public class ArrowTowerBlockEntity extends AbstractTowerBlockEntity {
 
 	@Override
 	protected void fire(ServerWorld world, double cx, double cy, double cz, HostileEntity target) {
-		ArrowEntity arrow = new ArrowEntity(world, cx, cy, cz, new ItemStack(Items.ARROW), ItemStack.EMPTY);
+		// Final arg is the WEAPON stack; a non-null EMPTY weapon throws "Invalid weapon
+		// firing an arrow" and crashes the server on 1.21.6, so pass a valid bow.
+		ArrowEntity arrow = new ArrowEntity(world, cx, cy, cz, new ItemStack(Items.ARROW), new ItemStack(Items.BOW));
 
 		double dx = target.getX() - cx;
 		double dy = target.getBodyY(0.5) - cy;

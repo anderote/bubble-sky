@@ -2,8 +2,10 @@ package net.bubblesky.towerdefense.client;
 
 import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.client.render.FlagArrowEntityRenderer;
+import net.bubblesky.towerdefense.client.render.TdAllyBipedRenderer;
 import net.bubblesky.towerdefense.client.render.TdBipedEntityRenderer;
 import net.bubblesky.towerdefense.client.screen.TowerDefenseScreen;
+import net.bubblesky.towerdefense.entity.TdAllyEntity;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
 import net.bubblesky.towerdefense.registry.ModBlocks;
 import net.bubblesky.towerdefense.registry.ModEntities;
@@ -48,6 +50,11 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		bind(ModEntities.UNDEAD_SOLDIER, "undead_soldier");
 		bind(ModEntities.HEAVY_KNIGHT, "heavy_knight");
 
+		// Friendly ally roster (blue-tinted biped skins).
+		bindAlly(ModEntities.ALLY_FOOTMAN, "ally_footman");
+		bindAlly(ModEntities.ALLY_ARCHER, "ally_archer");
+		bindAlly(ModEntities.ALLY_KNIGHT, "ally_knight");
+
 		// Flag Bow's arrow: rendered as a vanilla-looking arrow in flight.
 		EntityRendererRegistry.register(ModEntities.FLAG_ARROW, FlagArrowEntityRenderer::new);
 
@@ -78,5 +85,10 @@ public class TowerDefenseModClient implements ClientModInitializer {
 	private static void bind(EntityType<? extends TdEnemyEntity> type, String skin) {
 		Identifier texture = Identifier.of(TowerDefenseMod.MOD_ID, "textures/entity/" + skin + ".png");
 		EntityRendererRegistry.register(type, ctx -> new TdBipedEntityRenderer(ctx, texture));
+	}
+
+	private static void bindAlly(EntityType<? extends TdAllyEntity> type, String skin) {
+		Identifier texture = Identifier.of(TowerDefenseMod.MOD_ID, "textures/entity/" + skin + ".png");
+		EntityRendererRegistry.register(type, ctx -> new TdAllyBipedRenderer(ctx, texture));
 	}
 }
