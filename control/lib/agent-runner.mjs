@@ -149,7 +149,8 @@ export class AgentRunner {
   async invokeTemplate(job, cwd, sessionId, provider) {
     if (!provider.command) throw new Error(`${provider.name} needs a command in station.json`);
     const replacements = { "{prompt}": job.prompt, "{cwd}": cwd, "{sessionId}": sessionId || "" };
-    const args = (provider.args || ["-p", "{prompt}"]).map((arg) => replacements[arg] ?? arg);
+    const template = job.kind === "dev" ? (provider.devArgs || provider.args) : (provider.chatArgs || provider.args);
+    const args = (template || ["-p", "{prompt}"]).map((arg) => replacements[arg] ?? arg);
     const result = await run(provider.command, args, { cwd, timeoutMs: provider.timeoutMs || 1_800_000 });
     return { message: clip(result.stdout || result.stderr, 4000), sessionId };
   }

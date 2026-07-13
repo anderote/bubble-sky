@@ -14,6 +14,8 @@ peer over HTTP, reports progress into Minecraft, and stages checksum-locked play
 3. Set each peer URL to a `.local` LAN address or a stable Tailscale address. Port `25880`
    must only be reachable over the trusted LAN/Tailscale network.
 4. Verify the configured provider command manually (`codex --version` or `claude --version`).
+   Prefer absolute provider paths. Template providers may define separate `chatArgs` and
+   `devArgs`; the Andrew example enables Claude's edit permission only for isolated dev jobs.
 5. Run `scripts/install-station.sh` on each Mac.
 6. A repository admin runs `scripts/configure-github-protection.sh` once. This enables
    auto-merge and requires the control-plane check, both mod builds, one fresh partner approval,
