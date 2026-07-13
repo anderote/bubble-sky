@@ -12,8 +12,8 @@ jobs:
   control-plane:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - run: node --test control/test/*.test.mjs
@@ -25,11 +25,11 @@ jobs:
       matrix:
         mod: [bubble-sky-mod, towerdefense]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - working-directory: mods/${{ matrix.mod }}
         run: ./gradlew build --console=plain
