@@ -45,9 +45,10 @@ public final class ModItems {
 	public static final Item WAR_HAMMER = register("war_hammer",
 		Item::new, new Item.Settings().sword(ToolMaterial.IRON, 6.0f, -3.4f));
 
-	// Currency dropped by hostile mobs; spent at the (future) shop.
+	// Currency dropped by hostile mobs; spent at the (future) shop. Stacks to 99 (the
+	// engine max) so coins don't clog the inventory during long runs.
 	public static final Item COIN = register("coin",
-		Item::new, new Item.Settings());
+		Item::new, new Item.Settings().maxCount(99));
 
 	// Places a full-charge acid source on use, then empties to a bucket.
 	public static final Item ACID_BUCKET = register("acid_bucket",

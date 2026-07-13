@@ -34,6 +34,11 @@ public abstract class TdEnemyEntity extends HostileEntity {
 	/** True while this enemy has NO path to the Idol and is smashing through a wall. */
 	public boolean blockedFromBase = false;
 
+	/** Squared distance (blocks^2) within which an enemy engages an ally/player that gets
+	 *  "in the way". Kept short even though FOLLOW_RANGE is set large (so the enemy can
+	 *  PATHFIND to the Idol from far) — the two must be decoupled or enemies would hunt. */
+	private static final double ENGAGE_SQ = 8.0 * 8.0;
+
 	protected TdEnemyEntity(EntityType<? extends TdEnemyEntity> type, World world) {
 		super(type, world);
 	}
@@ -72,10 +77,14 @@ public abstract class TdEnemyEntity extends HostileEntity {
 	 */
 	public void addAllyCombatGoals() {
 		this.goalSelector.add(3, new MeleeAttackGoal(this, 1.2, false));
-		// Prefer hired soldiers, but also cut down a PLAYER who gets in the way. Both are
-		// short-range only (the wave manager lowers each enemy's FOLLOW_RANGE on spawn), so
-		// the Idol stays the primary objective and enemies never hunt players across the map.
-		this.targetSelector.add(2, new ActiveTargetGoal<>(this, TdAllyEntity.class, true));
-		this.targetSelector.add(3, new ActiveTargetGoal<>(this, PlayerEntity.class, true));
+		// Prefer hired soldiers, but also cut down a PLAYER who gets in the way. A short
+		// distance predicate (ENGAGE_SQ) caps engagement to ~8 blocks even though
+		// FOLLOW_RANGE is large — the big follow range is what lets the enemy PATHFIND to
+		// the Idol from far away (fixing the "can't path / tunnels toward the Idol" bug),
+		// so the two are decoupled here to keep the Idol the primary objective.
+		this.targetSelector.add(2, new ActiveTargetGoal<>(this, TdAllyEntity.class, 10, true, false,
+			(entity, world) -> entity.squaredDistanceTo(this) <= ENGAGE_SQ));
+		this.targetSelector.add(3, new ActiveTargetGoal<>(this, PlayerEntity.class, 10, true, false,
+			(entity, world) -> entity.squaredDistanceTo(this) <= ENGAGE_SQ));
 	}
 }

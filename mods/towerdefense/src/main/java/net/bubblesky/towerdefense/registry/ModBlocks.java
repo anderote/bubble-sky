@@ -129,7 +129,7 @@ public final class ModBlocks {
 		RegistryKey<Item> itemKey = RegistryKey.of(RegistryKeys.ITEM,
 			Identifier.of(TowerDefenseMod.MOD_ID, name));
 		TowerBlockItem blockItem = new TowerBlockItem(block,
-			new Item.Settings().registryKey(itemKey).useBlockPrefixedTranslationKey(), kind);
+			new Item.Settings().registryKey(itemKey).useBlockPrefixedTranslationKey().maxCount(99), kind);
 		Registry.register(Registries.ITEM, itemKey, blockItem);
 		return Registry.register(Registries.BLOCK, blockKey, block);
 	}

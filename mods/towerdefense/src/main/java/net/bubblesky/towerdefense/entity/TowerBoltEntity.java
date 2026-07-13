@@ -58,6 +58,15 @@ public class TowerBoltEntity extends PersistentProjectileEntity {
 	/** Ticks this bolt has been alive; drives the {@link #MAX_LIFE} self-destruct. */
 	private int lifeTicks;
 
+	/** Position of the tower that fired this bolt, so a kill credits that tower's veterancy. */
+	@org.jetbrains.annotations.Nullable
+	private net.minecraft.util.math.BlockPos towerPos;
+
+	/** Record which tower fired this bolt (for veterancy kill credit). */
+	public void setTowerPos(net.minecraft.util.math.BlockPos pos) {
+		this.towerPos = pos;
+	}
+
 	/** Registry-factory constructor (used by {@code EntityType} + client spawns). */
 	public TowerBoltEntity(EntityType<? extends TowerBoltEntity> type, World world) {
 		super(type, world);
@@ -90,7 +99,16 @@ public class TowerBoltEntity extends PersistentProjectileEntity {
 	protected void onEntityHit(EntityHitResult entityHitResult) {
 		// Let the vanilla arrow logic apply the owner-credited damage (arrow damage
 		// source with our owner as attacker), so a tower kill still credits coins.
+		boolean wasAlive = entityHitResult.getEntity() instanceof LivingEntity le && le.isAlive();
 		super.onEntityHit(entityHitResult);
+		// If our bolt just killed the target, credit the firing tower's veterancy.
+		if (wasAlive && towerPos != null
+				&& entityHitResult.getEntity() instanceof LivingEntity killed && !killed.isAlive()
+				&& this.getWorld() instanceof net.minecraft.server.world.ServerWorld serverWorld
+				&& serverWorld.getBlockEntity(towerPos)
+					instanceof net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity tower) {
+			tower.creditKill(serverWorld);
+		}
 		// Punch-style shove: push the struck living entity along the flight direction.
 		if (entityHitResult.getEntity() instanceof LivingEntity living) {
 			Vec3d flat = this.getVelocity().multiply(1.0, 0.0, 1.0);

@@ -52,6 +52,7 @@ public class ArrowTowerBlockEntity extends AbstractTowerBlockEntity {
 		// A real arrow (TowerBoltEntity): it deals owner-credited damage + knockback on
 		// hit (so kills pay coins) and then vanishes right away — no clutter on the ground.
 		TowerBoltEntity bolt = new TowerBoltEntity(ModEntities.TOWER_BOLT, world, cx, cy, cz);
+		bolt.setTowerPos(getPos());
 		if (owner != null) {
 			bolt.setOwner(owner);
 		}

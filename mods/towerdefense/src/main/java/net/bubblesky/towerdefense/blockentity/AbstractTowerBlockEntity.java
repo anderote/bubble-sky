@@ -166,14 +166,20 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 		boolean wasAlive = mob.isAlive();
 		boolean applied = mob.damage(world, source, amount);
 		if (wasAlive && !mob.isAlive()) {
-			int before = getVeterancy();
-			veterancyKills++;
-			markDirty();
-			if (getVeterancy() > before) {
-				onVeterancyRankUp(world);
-			}
+			creditKill(world);
 		}
 		return applied;
+	}
+
+	/** Credit one veterancy kill to this tower (rank-up feedback fires if it advances a rank).
+	 *  Used both by {@link #damageAndCredit} and by projectile towers whose bolt lands the kill. */
+	public void creditKill(ServerWorld world) {
+		int before = getVeterancy();
+		veterancyKills++;
+		markDirty();
+		if (getVeterancy() > before) {
+			onVeterancyRankUp(world);
+		}
 	}
 
 	private void onVeterancyRankUp(ServerWorld world) {

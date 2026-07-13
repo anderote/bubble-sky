@@ -81,9 +81,12 @@ public final class WaveManager {
 	private static final double ZOMBIE_MARCH_SPEED = 0.20;
 	/** Hard cap on the (zombie-slow) march speed so even deep waves never sprint. */
 	private static final double SPEED_CAP = 0.26;
-	/** Short target-acquisition range: enemies only fight an ally/player that gets within
-	 *  this range ("in the way"). The Idol (manager-steered) is always the primary target. */
-	private static final double IN_THE_WAY_RANGE = 8.0;
+	/** Large FOLLOW_RANGE so an enemy can PATHFIND to the Idol from far across the map
+	 *  (the pathfinder's search radius is ≈ this + 8). Targeting is capped separately to
+	 *  ~8 blocks by a distance predicate in {@link TdEnemyEntity#addAllyCombatGoals()}, so
+	 *  a big follow range does NOT make them hunt — it only extends how far they can path
+	 *  (fixes enemies that couldn't reach the Idol from far and tunnelled toward it). */
+	private static final double PATHFIND_RANGE = 64.0;
 	/** Long-marathon hp/damage curve — LINEAR term (per wave beyond the first). */
 	private static final double MARATHON_LINEAR = 0.10;
 	/** Long-marathon hp/damage curve — mild-POWER term coefficient. */
@@ -468,7 +471,7 @@ public final class WaveManager {
 		setAttribute(mob, EntityAttributes.MOVEMENT_SPEED,
 			Math.min(SPEED_CAP, ZOMBIE_MARCH_SPEED * speedScale(wave)));
 		// Only engage an ally/player that comes within range — no long-range hunting.
-		setAttribute(mob, EntityAttributes.FOLLOW_RANGE, IN_THE_WAY_RANGE);
+		setAttribute(mob, EntityAttributes.FOLLOW_RANGE, PATHFIND_RANGE);
 		// Mostly knockback-resistant (0.5): arrow hits nudge them back a little (slowing
 		// their advance) without launching them off their march to the Idol.
 		setAttribute(mob, EntityAttributes.KNOCKBACK_RESISTANCE, 0.5);
@@ -516,7 +519,7 @@ public final class WaveManager {
 		setAttribute(boss, EntityAttributes.SCALE, BOSS_SCALE);
 		setAttribute(boss, EntityAttributes.MOVEMENT_SPEED,
 			Math.min(SPEED_CAP, ZOMBIE_MARCH_SPEED * speedScale(wave) * BOSS_SPEED_FACTOR));
-		setAttribute(boss, EntityAttributes.FOLLOW_RANGE, IN_THE_WAY_RANGE);
+		setAttribute(boss, EntityAttributes.FOLLOW_RANGE, PATHFIND_RANGE);
 		setAttribute(boss, EntityAttributes.KNOCKBACK_RESISTANCE, 0.5);
 
 		steerToBase(boss, st);

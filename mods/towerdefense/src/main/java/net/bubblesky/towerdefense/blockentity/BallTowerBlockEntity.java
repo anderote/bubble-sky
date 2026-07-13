@@ -53,6 +53,7 @@ public class BallTowerBlockEntity extends AbstractTowerBlockEntity {
 		// A real arrow (TowerBoltEntity): owner-credited damage + knockback on hit, then
 		// it vanishes right away — no projectiles ever accumulate on the ground.
 		TowerBoltEntity bolt = new TowerBoltEntity(ModEntities.TOWER_BOLT, world, cx, cy, cz);
+		bolt.setTowerPos(getPos());
 		if (owner != null) {
 			bolt.setOwner(owner);
 		}
