@@ -1,0 +1,5 @@
+{
+	"variants": {
+		"": { "model": "towerdefense:block/beacon_tower" }
+	}
+}

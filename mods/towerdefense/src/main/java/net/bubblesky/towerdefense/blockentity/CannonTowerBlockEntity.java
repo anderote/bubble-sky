@@ -81,12 +81,12 @@ public class CannonTowerBlockEntity extends AbstractTowerBlockEntity {
 		DamageSource source = owner != null
 			? world.getDamageSources().playerAttack(owner)
 			: world.getDamageSources().magic();
-		float damage = (float) (CANNON_DAMAGE * damageMultiplier());
 		Box blast = new Box(target.getBlockPos()).expand(SPLASH_RADIUS);
 		List<HostileEntity> hit = world.getNonSpectatingEntities(HostileEntity.class, blast);
 		for (HostileEntity mob : hit) {
 			if (mob.isAlive() && mob.squaredDistanceTo(target) <= SPLASH_RADIUS * SPLASH_RADIUS) {
-				damageAndCredit(world, mob, source, damage);
+				damageAndCredit(world, mob, source,
+					(float) (CANNON_DAMAGE * damageMultiplier(mob)));
 			}
 		}
 	}

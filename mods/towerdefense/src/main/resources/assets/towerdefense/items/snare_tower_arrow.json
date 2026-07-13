@@ -1,0 +1,6 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "towerdefense:item/snare_tower_arrow"
+	}
+}

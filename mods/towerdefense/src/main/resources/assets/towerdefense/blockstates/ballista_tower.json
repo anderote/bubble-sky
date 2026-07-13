@@ -1,0 +1,5 @@
+{
+	"variants": {
+		"": { "model": "towerdefense:block/ballista_tower" }
+	}
+}

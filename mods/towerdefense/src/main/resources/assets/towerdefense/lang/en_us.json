@@ -16,6 +16,11 @@
 	"item.towerdefense.flame_tower_arrow": "Flamethrower Tower Arrow",
 	"item.towerdefense.ball_tower_arrow": "Tower Ball Arrow",
 	"item.towerdefense.sharpshooter_tower_arrow": "Sharpshooter Tower Arrow",
+	"item.towerdefense.snare_tower_arrow": "Snare Tower Arrow",
+	"item.towerdefense.poison_tower_arrow": "Poison Tower Arrow",
+	"item.towerdefense.mason_tower_arrow": "Mason Tower Arrow",
+	"item.towerdefense.ballista_tower_arrow": "Ballista Tower Arrow",
+	"item.towerdefense.beacon_tower_arrow": "Beacon Tower Arrow",
 
 	"item.towerdefense.spell_fireball": "Fireball",
 	"item.towerdefense.spell_frost_nova": "Frost Nova",
@@ -43,6 +48,11 @@
 	"block.towerdefense.flame_tower": "Flamethrower",
 	"block.towerdefense.ball_tower": "Tower Ball",
 	"block.towerdefense.sharpshooter_tower": "Sharpshooter Tower",
+	"block.towerdefense.snare_tower": "Snare Tower",
+	"block.towerdefense.poison_tower": "Poison Tower",
+	"block.towerdefense.mason_tower": "Mason Tower",
+	"block.towerdefense.ballista_tower": "Ballista Tower",
+	"block.towerdefense.beacon_tower": "Beacon Tower",
 
 	"entity.towerdefense.goblin_skirmisher": "Goblin Skirmisher",
 	"entity.towerdefense.footman": "Footman",

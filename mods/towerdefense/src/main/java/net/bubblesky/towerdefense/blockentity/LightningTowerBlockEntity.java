@@ -79,22 +79,21 @@ public class LightningTowerBlockEntity extends AbstractTowerBlockEntity {
 		DamageSource source = owner != null
 			? world.getDamageSources().playerAttack(owner)
 			: world.getDamageSources().lightningBolt();
-		float primaryDamage = (float) (LIGHTNING_DAMAGE * damageMultiplier());
-
 		// Smite + damage the primary target.
 		strike(world, owner, target.getX(), target.getBodyY(0.0), target.getZ());
 		if (target.isAlive()) {
-			damageAndCredit(world, target, source, primaryDamage);
+			damageAndCredit(world, target, source,
+				(float) (LIGHTNING_DAMAGE * damageMultiplier(target)));
 		}
 
 		// Chain: jump to the nearest hostiles within CHAIN_RANGE of the primary (not the
 		// primary itself), closest first, up to CHAIN_TARGETS. Each takes reduced damage
 		// and gets its own small cosmetic bolt so the arc reads visually.
-		float chainDamage = (float) (primaryDamage * CHAIN_DAMAGE_FACTOR);
 		for (HostileEntity mob : nearbyChainTargets(world, target)) {
 			strike(world, owner, mob.getX(), mob.getBodyY(0.0), mob.getZ());
 			if (mob.isAlive()) {
-				damageAndCredit(world, mob, source, chainDamage);
+				damageAndCredit(world, mob, source,
+					(float) (LIGHTNING_DAMAGE * CHAIN_DAMAGE_FACTOR * damageMultiplier(mob)));
 			}
 		}
 

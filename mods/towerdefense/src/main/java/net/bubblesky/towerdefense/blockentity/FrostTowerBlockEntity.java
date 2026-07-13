@@ -72,15 +72,14 @@ public class FrostTowerBlockEntity extends AbstractTowerBlockEntity {
 		DamageSource source = owner != null
 			? world.getDamageSources().playerAttack(owner)
 			: world.getDamageSources().magic();
-		float damage = (float) (FROST_DAMAGE * damageMultiplier());
-
 		Box chill = new Box(target.getBlockPos()).expand(CHILL_RADIUS);
 		List<HostileEntity> hit = world.getNonSpectatingEntities(HostileEntity.class, chill);
 		for (HostileEntity mob : hit) {
 			if (mob.isAlive() && mob.squaredDistanceTo(target) <= CHILL_RADIUS * CHILL_RADIUS) {
 				mob.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, amplifier));
-				if (damage > 0.0f) {
-					damageAndCredit(world, mob, source, damage);
+				if (FROST_DAMAGE > 0.0f) {
+					damageAndCredit(world, mob, source,
+						(float) (FROST_DAMAGE * damageMultiplier(mob)));
 				}
 			}
 		}

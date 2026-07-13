@@ -1,0 +1,6 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "towerdefense:block/poison_tower"
+	}
+}

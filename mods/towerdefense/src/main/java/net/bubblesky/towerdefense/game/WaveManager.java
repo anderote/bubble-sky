@@ -168,6 +168,34 @@ public final class WaveManager {
 	 *  wave ends / the game is lost / the arena is released so it can't grow unbounded. */
 	private static final Map<Long, Integer> WALL_DAMAGE = new HashMap<>();
 
+	/** Let mason towers bleed down accumulated wall-break pressure near a point. */
+	public static int reinforceWallsNear(BlockPos center, double radius, int amount) {
+		if (amount <= 0 || WALL_DAMAGE.isEmpty()) {
+			return 0;
+		}
+		double radiusSq = radius * radius;
+		int repaired = 0;
+		for (Long key : List.copyOf(WALL_DAMAGE.keySet())) {
+			BlockPos pos = BlockPos.fromLong(key);
+			double dx = pos.getX() - center.getX();
+			double dy = pos.getY() - center.getY();
+			double dz = pos.getZ() - center.getZ();
+			if (dx * dx + dy * dy + dz * dz > radiusSq) {
+				continue;
+			}
+			int current = WALL_DAMAGE.getOrDefault(key, 0);
+			int next = current - amount;
+			if (next <= 0) {
+				WALL_DAMAGE.remove(key);
+				repaired += current;
+			} else {
+				WALL_DAMAGE.put(key, next);
+				repaired += amount;
+			}
+		}
+		return repaired;
+	}
+
 	// ---- Warlord director (#17a) -------------------------------------------
 	/** The non-boss spawn supply for the CURRENT wave when an Enemy AI Warlord plan is
 	 *  active: a pre-expanded, shuffled queue of enemy types drawn from the plan's

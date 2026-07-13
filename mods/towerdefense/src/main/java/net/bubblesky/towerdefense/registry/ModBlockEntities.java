@@ -3,11 +3,16 @@ package net.bubblesky.towerdefense.registry;
 import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.blockentity.ArrowTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.BallTowerBlockEntity;
+import net.bubblesky.towerdefense.blockentity.BallistaTowerBlockEntity;
+import net.bubblesky.towerdefense.blockentity.BeaconTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.CannonTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.FlameTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.FrostTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.LightningTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.SharpshooterTowerBlockEntity;
+import net.bubblesky.towerdefense.blockentity.MasonTowerBlockEntity;
+import net.bubblesky.towerdefense.blockentity.PoisonTowerBlockEntity;
+import net.bubblesky.towerdefense.blockentity.SnareTowerBlockEntity;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
 import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.registry.Registries;
@@ -56,6 +61,31 @@ public final class ModBlockEntities {
 		Registry.register(Registries.BLOCK_ENTITY_TYPE,
 			Identifier.of(TowerDefenseMod.MOD_ID, "sharpshooter_tower"),
 			FabricBlockEntityTypeBuilder.create(SharpshooterTowerBlockEntity::new, ModBlocks.SHARPSHOOTER_TOWER).build());
+
+	public static final BlockEntityType<SnareTowerBlockEntity> SNARE_TOWER =
+		Registry.register(Registries.BLOCK_ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, "snare_tower"),
+			FabricBlockEntityTypeBuilder.create(SnareTowerBlockEntity::new, ModBlocks.SNARE_TOWER).build());
+
+	public static final BlockEntityType<BallistaTowerBlockEntity> BALLISTA_TOWER =
+		Registry.register(Registries.BLOCK_ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, "ballista_tower"),
+			FabricBlockEntityTypeBuilder.create(BallistaTowerBlockEntity::new, ModBlocks.BALLISTA_TOWER).build());
+
+	public static final BlockEntityType<MasonTowerBlockEntity> MASON_TOWER =
+		Registry.register(Registries.BLOCK_ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, "mason_tower"),
+			FabricBlockEntityTypeBuilder.create(MasonTowerBlockEntity::new, ModBlocks.MASON_TOWER).build());
+
+	public static final BlockEntityType<BeaconTowerBlockEntity> BEACON_TOWER =
+		Registry.register(Registries.BLOCK_ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, "beacon_tower"),
+			FabricBlockEntityTypeBuilder.create(BeaconTowerBlockEntity::new, ModBlocks.BEACON_TOWER).build());
+
+	public static final BlockEntityType<PoisonTowerBlockEntity> POISON_TOWER =
+		Registry.register(Registries.BLOCK_ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, "poison_tower"),
+			FabricBlockEntityTypeBuilder.create(PoisonTowerBlockEntity::new, ModBlocks.POISON_TOWER).build());
 
 	/** Forces class load so the static registration above runs. */
 	public static void initialize() {
