@@ -27,7 +27,7 @@ import net.minecraft.server.MinecraftServer;
  * bots the moment the mod adds custom blocks/entities), agents talk plain HTTP
  * to this bridge. The bridge is:
  * <ul>
- *   <li>bound to {@code 127.0.0.1} (localhost only),</li>
+ *   <li>bound to the configured host ({@code 127.0.0.1} by default),</li>
  *   <li>token-gated via the {@code X-Bridge-Token} header,</li>
  *   <li>thread-safe — every world read/mutation is marshalled onto the server
  *       thread via {@link #runOnServer(Supplier)} ({@code server.submit(...)}).</li>
@@ -80,7 +80,7 @@ public final class AgentBridge {
 			bridge.startHttp();
 			instance = bridge;
 		} catch (IOException e) {
-			TowerDefenseMod.LOGGER.error("[bridge] failed to start on 127.0.0.1:{}: {}", config.port, e.toString());
+			TowerDefenseMod.LOGGER.error("[bridge] failed to start on {}:{}: {}", config.bindHost, config.port, e.toString());
 		}
 	}
 
@@ -92,7 +92,7 @@ public final class AgentBridge {
 	}
 
 	private void startHttp() throws IOException {
-		httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", config.port), 0);
+		httpServer = HttpServer.create(new InetSocketAddress(config.bindHost, config.port), 0);
 		// Small pool of DAEMON threads: work is quick and mostly blocks on the
 		// server-thread hop. Daemon + explicit shutdown so the pool never keeps
 		// the Minecraft JVM alive after SERVER_STOPPING.
@@ -106,7 +106,7 @@ public final class AgentBridge {
 		BridgeHandlers handlers = new BridgeHandlers(this);
 		handlers.register(httpServer);
 		httpServer.start();
-		TowerDefenseMod.LOGGER.info("[bridge] listening on http://127.0.0.1:{} (token required in X-Bridge-Token)", config.port);
+		TowerDefenseMod.LOGGER.info("[bridge] listening on http://{}:{} (token required in X-Bridge-Token)", config.bindHost, config.port);
 	}
 
 	private void stopHttp() {

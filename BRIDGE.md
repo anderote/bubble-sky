@@ -14,7 +14,9 @@ fragile vanilla parser is never in the loop.
 
 ## Design
 
-- `com.sun.net.httpserver.HttpServer` **bound to `127.0.0.1`** (localhost only).
+- `com.sun.net.httpserver.HttpServer` bound to `127.0.0.1` by default. Set
+  `bindHost` or `BUBBLESKY_BRIDGE_HOST` only when you intentionally want LAN
+  access.
 - Started on `ServerLifecycleEvents.SERVER_STARTED`, stopped on `SERVER_STOPPING`.
 - **Every** world read/mutation is marshalled onto the server thread via
   `server.submit(...)` and joined with a bounded (5s) timeout. The world is never
@@ -25,11 +27,13 @@ fragile vanilla parser is never in the loop.
 ## Auth
 
 Every request must carry the shared token in the **`X-Bridge-Token`** header, or
-it gets `401`. The token + port + enabled flag are resolved from (later wins):
+it gets `401`. The token + host + port + enabled flag are resolved from (later
+wins):
 
-1. defaults (`enabled=true`, `port=25580`)
+1. defaults (`enabled=true`, `bindHost=127.0.0.1`, `port=25580`)
 2. `config/bubblesky-bridge.json` in the server run dir
-3. env: `BUBBLESKY_BRIDGE_ENABLED`, `BUBBLESKY_BRIDGE_PORT`, `BUBBLESKY_BRIDGE_TOKEN`
+3. env: `BUBBLESKY_BRIDGE_ENABLED`, `BUBBLESKY_BRIDGE_HOST`,
+   `BUBBLESKY_BRIDGE_PORT`, `BUBBLESKY_BRIDGE_TOKEN`
 
 If no token is supplied, one is generated and written to
 `config/bubblesky-bridge.json` (and logged). If `enabled=false`, no socket opens.
@@ -150,6 +154,31 @@ cd grok && GROK_TRANSPORT=bridge \
 Follow / pathfinding are unavailable over the bridge (Grok has no walking body);
 godmode/architect building, flags, saved builds, edits, and clarifying questions
 all work (they only need hands + look + chat).
+
+### Run Codex ENTIRELY over the bridge (no Mineflayer)
+
+`mcp/codex-bridge-godmode.mjs` is the Codex equivalent of the disembodied Grok
+path: it polls bridge chat, responds to `@codex`, and translates natural
+language requests into bounded level-4 operator commands over `POST /command`.
+It handles flexible godmode asks such as gear, healing, effects, teleporting,
+time/weather, spawning, and small world edits, while refusing server admin
+commands such as `op`, `ban`, `kick`, `stop`, `reload`, and whitelist changes.
+
+Run it on the Minecraft server host when the bridge stays localhost-only:
+
+```bash
+scripts/run-codex-bridge.sh
+```
+
+Or, if you intentionally expose the bridge on the LAN by setting
+`"bindHost": "0.0.0.0"` in `config/bubblesky-bridge.json` or exporting
+`BUBBLESKY_BRIDGE_HOST=0.0.0.0` before server start, run it remotely with:
+
+```bash
+BUBBLESKY_BRIDGE_URL=http://<server-ip>:25580 \
+BUBBLESKY_BRIDGE_TOKEN=<server/config token> \
+  scripts/run-codex-bridge.sh
+```
 
 The modded server (`server-modded/`, `:25566`) has its own mods/world/config but
 symlinks the heavy read-only launch infra from `server/`. The vanilla server
