@@ -1,0 +1,7 @@
+{
+  "server": "restart",
+  "clients": "restart",
+  "agents": "restart",
+  "worldMigration": "none",
+  "deploy": "next-session"
+}

@@ -1,0 +1,27 @@
+{
+  "nodeId": "andrew-mac",
+  "displayName": "Andrew's Mac",
+  "repoRoot": "~/Documents/bubble-sky",
+  "runtimeDir": "~/.local/share/bubble-sky",
+  "sharedToken": "SAME_TOKEN_ON_BOTH_LAPTOPS",
+  "listen": { "host": "0.0.0.0", "port": 25880 },
+  "publicUrl": "http://andrew-mac.local:25880",
+  "roles": ["server", "client", "claude-agent", "grok"],
+  "providers": [
+    { "name": "claude", "adapter": "template", "command": "claude", "args": ["-p", "{prompt}"], "timeoutMs": 1800000 }
+  ],
+  "peers": [
+    { "nodeId": "alli-mac", "url": "http://alli-mac.local:25880" }
+  ],
+  "minecraft": {
+    "host": "127.0.0.1",
+    "port": 25565,
+    "username": "DevStation",
+    "allowedPlayers": ["allibell", "claudebert"]
+  },
+  "deployment": {
+    "releaseChannel": "play",
+    "prismInstance": "bubble-sky-1.21.6",
+    "serverAddress": "127.0.0.1:25565"
+  }
+}

@@ -36,6 +36,8 @@ node_modules/
 
 # Local bot/runtime state
 .codex-runtime/
+dist/
+.bubble-sky/
 
 # Secrets
 keys.json
