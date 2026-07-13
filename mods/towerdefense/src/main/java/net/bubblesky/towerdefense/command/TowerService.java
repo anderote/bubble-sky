@@ -62,9 +62,9 @@ public final class TowerService {
 		TowerStructure.clear(world, pos);
 		TdArenaState.get(world.getServer()).removeTower(pos);
 		if (refund > 0) {
-			// Shared gold: the sell refund is granted to EVERY online player, not just the
-			// seller, so co-op teammates keep identical balances after a sale.
-			TdCommand.grantCoinsToAll(world.getServer(), refund);
+			// Independent spending: the refund goes to the SELLER only (wave/kill income is
+			// shared/equal, but each player controls their own balance).
+			TdCommand.grantCoinsPublic(player, refund);
 		}
 		return new Result(true, "Sold tower for " + refund + " coins.");
 	}

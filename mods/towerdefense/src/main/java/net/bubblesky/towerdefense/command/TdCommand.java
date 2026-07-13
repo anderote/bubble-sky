@@ -651,16 +651,11 @@ public final class TdCommand {
 	 * is somehow unavailable — which should not happen for a real online player.
 	 */
 	private static void removeCoins(ServerPlayerEntity player, int amount) {
-		if (amount <= 0) {
-			return;
-		}
-		MinecraftServer server = player.getServer();
-		if (server == null) {
+		// Independent spending: a purchase deducts from ONLY the buyer's own balance. Wave
+		// rewards + kill bounties are shared/equal (mirrored to all), but spending — and a
+		// tower's sell refund — is per-player: each controls their own gold.
+		if (amount > 0) {
 			removeCoinsFromOne(player, amount);
-			return;
-		}
-		for (ServerPlayerEntity online : server.getPlayerManager().getPlayerList()) {
-			removeCoinsFromOne(online, amount);
 		}
 	}
 
@@ -696,6 +691,12 @@ public final class TdCommand {
 		for (ServerPlayerEntity online : server.getPlayerManager().getPlayerList()) {
 			grantCoinsToOne(online, amount);
 		}
+	}
+
+	/** Grant {@code amount} COIN to just this ONE player (e.g. a tower-sell refund goes to the
+	 *  seller only, since spending/refunds are per-player). */
+	public static void grantCoinsPublic(ServerPlayerEntity player, int amount) {
+		grantCoinsToOne(player, amount);
 	}
 
 	// ---- arena setup / status ----------------------------------------------
