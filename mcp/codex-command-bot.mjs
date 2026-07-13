@@ -508,6 +508,10 @@ function runCommandRoutingSelfTest() {
         parseBlueprintRequest("build blueprint twistedStaircase1 here")?.action === "build" &&
         parseBlueprintRequest("make a workable twisted staircase here") === null,
     },
+    {
+      name: "contextual wall repair route",
+      pass: isContextEditCommand("fill these wall holes") && isContextRepairCommand("fill these wall holes"),
+    },
   ];
 
   const failed = cases.filter((testCase) => !testCase.pass);
@@ -1245,8 +1249,13 @@ function isContextExtendCommand(lower) {
 }
 
 function isContextEditCommand(lower) {
-  return /\b(?:add|attach|append|improve|upgrade|enhance|detail|decorate|expand|modify|change|make)\b/.test(lower) &&
-    /\b(?:this|that|it|thing|build|building|wall|tower|castle|structure|red|blue|green|yellow|white|black|purple|orange|pink|gray|grey|cyan|lime)\b/.test(lower);
+  return /\b(?:add|attach|append|improve|upgrade|enhance|detail|decorate|expand|modify|change|make|repair|fix|patch|fill|close|seal)\b/.test(lower) &&
+	/\b(?:this|these|those|that|it|thing|build|building|wall|walls|hole|holes|gap|gaps|tower|castle|structure|red|blue|green|yellow|white|black|purple|orange|pink|gray|grey|cyan|lime)\b/.test(lower);
+}
+
+function isContextRepairCommand(lower) {
+  return /\b(?:repair|fix|patch|fill|close|seal)\b/.test(lower) &&
+	/\b(?:hole|holes|gap|gaps|wall|walls|damage|opening|openings|this|these|those)\b/.test(lower);
 }
 
 async function inspectPhysicalContext(speaker, command) {
@@ -1292,6 +1301,13 @@ async function runContextEditCommand(speaker, command) {
   if (!selected) {
     say(`I can see the structure, but I need a clearer edit target.`, { to: speaker });
     return;
+  }
+
+  if (isContextRepairCommand(command.toLowerCase())) {
+	const handled = await runContextFreeformContinuation(speaker, command, context, selected);
+	if (handled) return;
+	say(`I can see the damaged area, but the repair planner did not produce a safe patch.`, { to: speaker });
+	return;
   }
 
   const extension = contextExtensionCommands(context, selected);
@@ -1417,6 +1433,7 @@ function contextFreeformPrompt(speaker, command, context, selected) {
     "Commands must be absolute Minecraft commands using only /fill or /setblock.",
     "Use at most 45 commands. Use only vanilla block ids or block states with no spaces.",
     "Preserve the existing visible build; add adjacent detail instead of rebuilding or clearing the whole thing.",
+    "For repair requests, patch only visible holes/gaps using the surrounding wall palette and thickness; do not extend, redesign, or replace intact sections.",
     "Small air fills are okay only for openings/interiors. Water is allowed only when the request asks for water.",
     "Do not use lava, fire, TNT, entities, particles, execute, summon, command blocks, redstone clocks, structure blocks, or jigsaw blocks.",
     "Stay inside this box:",
