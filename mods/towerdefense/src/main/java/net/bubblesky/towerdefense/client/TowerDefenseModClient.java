@@ -49,6 +49,7 @@ public class TowerDefenseModClient implements ClientModInitializer {
 	private static KeyBinding hireKey;
 	private static KeyBinding characterKey;
 	private static KeyBinding inventoryKey;
+	private static KeyBinding towersKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -100,10 +101,19 @@ public class TowerDefenseModClient implements ClientModInitializer {
 			InputUtil.Type.KEYSYM,
 			GLFW.GLFW_KEY_I,
 			KEY_CATEGORY));
+		towersKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+			"key.towerdefense.open_towers",
+			InputUtil.Type.KEYSYM,
+			GLFW.GLFW_KEY_K,
+			KEY_CATEGORY));
 
 		// Cache each progression snapshot the server pushes (drives the HUD + Character screen).
 		ClientPlayNetworking.registerGlobalReceiver(ProgressSyncPayload.ID,
 			(payload, context) -> ClientProgress.update(payload));
+		// Cache each tower-roster snapshot the server pushes (drives the My Towers screen).
+		ClientPlayNetworking.registerGlobalReceiver(
+			net.bubblesky.towerdefense.towerui.net.TowerRosterPayload.ID,
+			(payload, context) -> net.bubblesky.towerdefense.client.ClientTowers.update(payload));
 
 		// Open the right screen from a keybind. Always drain the press queues; open only
 		// when in-world with no other screen up. J = full menu, H = hire, P = character,
@@ -116,6 +126,8 @@ public class TowerDefenseModClient implements ClientModInitializer {
 			while (characterKey.wasPressed()) openCharacter = true;
 			boolean openInventory = false;
 			while (inventoryKey.wasPressed()) openInventory = true;
+			boolean openTowers = false;
+			while (towersKey.wasPressed()) openTowers = true;
 			if (client.currentScreen != null || client.player == null) {
 				return;
 			}
@@ -125,6 +137,10 @@ public class TowerDefenseModClient implements ClientModInitializer {
 				client.setScreen(new CharacterScreen());
 			} else if (openInventory) {
 				client.setScreen(new InventoryScreen(client.player));
+			} else if (openTowers) {
+				ClientPlayNetworking.send(new net.bubblesky.towerdefense.towerui.net.TowerActionPayload(
+					0L, net.bubblesky.towerdefense.towerui.net.TowerActionPayload.ACTION_REFRESH));
+				client.setScreen(new net.bubblesky.towerdefense.client.screen.MyTowersScreen());
 			}
 		});
 

@@ -33,7 +33,10 @@ public enum TowerKind {
 		Blocks.OAK_LOG, Blocks.STONE, 0),
 	/** Lightning tower: slow, powerful, chains lightning bolts between enemies. */
 	LIGHTNING("lightning_tower", () -> ModBlocks.LIGHTNING_TOWER, () -> ModItems.LIGHTNING_TOWER_ARROW,
-		Blocks.LIGHTNING_ROD, Blocks.LIGHT_BLUE_CONCRETE, 0);
+		Blocks.LIGHTNING_ROD, Blocks.LIGHT_BLUE_CONCRETE, 0),
+	/** Flamethrower tower: fast, close-range; sprays fire and leaves burning ground. */
+	FLAME("flame_tower", () -> ModBlocks.FLAME_TOWER, () -> ModItems.FLAME_TOWER_ARROW,
+		Blocks.MAGMA_BLOCK, Blocks.BLAST_FURNACE, 0);
 
 	private final String id;
 	private final Supplier<Block> core;

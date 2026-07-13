@@ -1,0 +1,7 @@
+{
+	"parent": "minecraft:block/cube_column",
+	"textures": {
+		"end": "minecraft:block/magma",
+		"side": "minecraft:block/blast_furnace_front_on"
+	}
+}

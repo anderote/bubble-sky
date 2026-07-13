@@ -468,6 +468,9 @@ public final class WaveManager {
 			Math.min(SPEED_CAP, ZOMBIE_MARCH_SPEED * speedScale(wave)));
 		// Only engage an ally/player that comes within range — no long-range hunting.
 		setAttribute(mob, EntityAttributes.FOLLOW_RANGE, IN_THE_WAY_RANGE);
+		// Immune to knockback so tower hits deal damage without shoving them off their
+		// steady march to the Idol.
+		setAttribute(mob, EntityAttributes.KNOCKBACK_RESISTANCE, 1.0);
 
 		// The archer still marches to base, but re-arm its ranged goal so it shoots
 		// players who wander into range (clearGoalsAndTasks stripped it above).
@@ -513,6 +516,7 @@ public final class WaveManager {
 		setAttribute(boss, EntityAttributes.MOVEMENT_SPEED,
 			Math.min(SPEED_CAP, ZOMBIE_MARCH_SPEED * speedScale(wave) * BOSS_SPEED_FACTOR));
 		setAttribute(boss, EntityAttributes.FOLLOW_RANGE, IN_THE_WAY_RANGE);
+		setAttribute(boss, EntityAttributes.KNOCKBACK_RESISTANCE, 1.0);
 
 		steerToBase(boss, st);
 		// Only the first Warlord of the squad triggers the roar + title fanfare.

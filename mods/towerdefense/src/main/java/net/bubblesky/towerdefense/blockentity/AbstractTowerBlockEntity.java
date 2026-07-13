@@ -42,6 +42,8 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 	protected UUID placer = null;
 	/** Ticks until this tower may fire again. */
 	protected int cooldown = 0;
+	/** Total coins invested in this tower (buy price + upgrades); drives the sell refund. */
+	protected int invested = 0;
 
 	protected AbstractTowerBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
 		super(type, pos, state);
@@ -78,6 +80,38 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 	public void setPlacer(UUID id) {
 		this.placer = id;
 		markDirty();
+	}
+
+	/** The UUID of the player who placed/last-upgraded this tower, or null. */
+	@Nullable
+	public UUID getPlacerUuid() {
+		return placer;
+	}
+
+	public int getInvested() {
+		return invested;
+	}
+
+	public void addInvested(int coins) {
+		invested += coins;
+		markDirty();
+	}
+
+	public void setInvested(int coins) {
+		invested = coins;
+		markDirty();
+	}
+
+	public double displayRange() {
+		return range();
+	}
+
+	public int displayCooldownTicks() {
+		return cooldownTicks();
+	}
+
+	public double displayDamageMultiplier() {
+		return damageMultiplier();
 	}
 
 	/** +3 blocks of range per tier above 1. */
@@ -176,6 +210,7 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 				this.placer = null;
 			}
 		}
+		this.invested = Math.max(0, view.getInt("invested", 0));
 	}
 
 	@Override
@@ -185,5 +220,6 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 		if (placer != null) {
 			view.putString("placer", placer.toString());
 		}
+		view.putInt("invested", invested);
 	}
 }

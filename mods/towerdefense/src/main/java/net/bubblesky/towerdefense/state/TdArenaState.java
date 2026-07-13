@@ -109,6 +109,13 @@ public class TdArenaState extends PersistentState {
 		}
 	}
 
+	/** Remove a tower core from tracking (called when a tower is sold). */
+	public void removeTower(BlockPos core) {
+		if (towers.remove(core)) {
+			markDirty();
+		}
+	}
+
 	/** Wipe everything back to a blank arena. */
 	public void clear() {
 		spawnPoints.clear();

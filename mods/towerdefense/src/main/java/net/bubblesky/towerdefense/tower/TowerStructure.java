@@ -32,6 +32,9 @@ public final class TowerStructure {
 			tower.setPlacer(placer);
 		}
 		TdArenaState.get(world.getServer()).addTower(pos);
+		if (world.getBlockEntity(pos) instanceof AbstractTowerBlockEntity t) {
+			t.setInvested(net.bubblesky.towerdefense.command.TdCommand.priceOfPublic(world, pos));
+		}
 		return pos;
 	}
 

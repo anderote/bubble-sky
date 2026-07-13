@@ -57,11 +57,13 @@ public final class TdCommand {
 	private static final Map<String, TowerDef> TOWERS = new LinkedHashMap<>();
 
 	static {
-		TOWERS.put("arrow_tower", new TowerDef(ModBlocks.ARROW_TOWER, 10));
-		TOWERS.put("cannon_tower", new TowerDef(ModBlocks.CANNON_TOWER, 25));
-		TOWERS.put("frost_tower", new TowerDef(ModBlocks.FROST_TOWER, 20));
-		TOWERS.put("lightning_tower", new TowerDef(ModBlocks.LIGHTNING_TOWER, 40));
-		TOWERS.put("ball_tower", new TowerDef(ModBlocks.BALL_TOWER, 8));
+		// Prices are 5x the original values. The ball tower is intentionally OMITTED from
+		// the shop (its block/entity stay registered but dormant — no longer purchasable).
+		TOWERS.put("arrow_tower", new TowerDef(ModBlocks.ARROW_TOWER, 50));
+		TOWERS.put("cannon_tower", new TowerDef(ModBlocks.CANNON_TOWER, 125));
+		TOWERS.put("frost_tower", new TowerDef(ModBlocks.FROST_TOWER, 100));
+		TOWERS.put("lightning_tower", new TowerDef(ModBlocks.LIGHTNING_TOWER, 200));
+		TOWERS.put("flame_tower", new TowerDef(ModBlocks.FLAME_TOWER, 150));
 	}
 
 	/** Public, immutable view of a buyable tower (id + coin price) for client UIs. */
@@ -216,14 +218,14 @@ public final class TdCommand {
 		int cannon = TOWERS.get("cannon_tower").price();
 		int frost = TOWERS.get("frost_tower").price();
 		int lightning = TOWERS.get("lightning_tower").price();
-		int ball = TOWERS.get("ball_tower").price();
+		int flame = TOWERS.get("flame_tower").price();
 		line(src, "arrow_tower", arrow + " coins — fast, single-target, cheap");
 		line(src, "cannon_tower", cannon + " coins — slow, splash/AoE damage");
 		line(src, "frost_tower", frost + " coins — slows enemies down");
 		line(src, "lightning_tower", lightning + " coins — powerful bolt that chains between enemies");
-		line(src, "ball_tower", ball + " coins — sticky 1-block mini turret (mounts on walls)");
+		line(src, "flame_tower", flame + " coins — fast flamethrower; torches crowds + burning ground");
 		body(src, "Buy → get a placeable tower block → place it to raise the tower.");
-		body(src, "The ball tower sticks to any face; the others rise from the ground.");
+		body(src, "The flame tower is a short-range incinerator; the others reach further out.");
 		body(src, "Prefer shooting? A bought tower arrow fired from your bow still builds too.");
 		body(src, "Aim at a built tower and /td upgrade to raise its tier for coins.");
 
@@ -577,6 +579,11 @@ public final class TdCommand {
 		return 10;
 	}
 
+	/** Public catalogue price of the tower block at a position (default 10). */
+	public static int priceOfPublic(ServerWorld world, BlockPos pos) {
+		return priceOf(world, pos);
+	}
+
 	// ---- coin helpers ------------------------------------------------------
 	private static int countCoins(ServerPlayerEntity player) {
 		int total = 0;
@@ -586,6 +593,10 @@ public final class TdCommand {
 			}
 		}
 		return total;
+	}
+
+	public static int countCoinsPublic(ServerPlayerEntity player) {
+		return countCoins(player);
 	}
 
 	private static void removeCoins(ServerPlayerEntity player, int amount) {
@@ -599,6 +610,10 @@ public final class TdCommand {
 				remaining -= take;
 			}
 		}
+	}
+
+	public static void removeCoinsPublic(ServerPlayerEntity player, int amount) {
+		removeCoins(player, amount);
 	}
 
 	// ---- arena setup / status ----------------------------------------------

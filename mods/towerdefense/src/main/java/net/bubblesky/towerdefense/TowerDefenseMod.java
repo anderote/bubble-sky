@@ -92,6 +92,9 @@ public class TowerDefenseMod implements ModInitializer {
 		// payloads, and the join/respawn/world-change stat (re)application. See progression/.
 		ProgressEvents.register();
 
+		// My Towers panel: per-player roster + upgrade/sell networking (key K).
+		net.bubblesky.towerdefense.towerui.TowerUiEvents.register();
+
 		// Modded agent bridge: in-JVM HTTP API so AI agents can observe/act on the
 		// modded world without the vanilla protocol. Localhost-bound + token-gated;
 		// starts on SERVER_STARTED if enabled in config. See net.bubblesky.towerdefense.bridge.

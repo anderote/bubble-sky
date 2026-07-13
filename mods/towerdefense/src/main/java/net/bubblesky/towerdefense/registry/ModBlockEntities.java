@@ -4,6 +4,7 @@ import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.blockentity.ArrowTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.BallTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.CannonTowerBlockEntity;
+import net.bubblesky.towerdefense.blockentity.FlameTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.FrostTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.LightningTowerBlockEntity;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
@@ -39,6 +40,11 @@ public final class ModBlockEntities {
 		Registry.register(Registries.BLOCK_ENTITY_TYPE,
 			Identifier.of(TowerDefenseMod.MOD_ID, "lightning_tower"),
 			FabricBlockEntityTypeBuilder.create(LightningTowerBlockEntity::new, ModBlocks.LIGHTNING_TOWER).build());
+
+	public static final BlockEntityType<FlameTowerBlockEntity> FLAME_TOWER =
+		Registry.register(Registries.BLOCK_ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, "flame_tower"),
+			FabricBlockEntityTypeBuilder.create(FlameTowerBlockEntity::new, ModBlocks.FLAME_TOWER).build());
 
 	public static final BlockEntityType<BallTowerBlockEntity> BALL_TOWER =
 		Registry.register(Registries.BLOCK_ENTITY_TYPE,

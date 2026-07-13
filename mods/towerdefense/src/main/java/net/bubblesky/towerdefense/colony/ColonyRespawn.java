@@ -1,5 +1,6 @@
 package net.bubblesky.towerdefense.colony;
 
+import net.bubblesky.towerdefense.state.TdArenaState;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
@@ -28,6 +29,16 @@ public final class ColonyRespawn {
 			if (!(newPlayer.getWorld() instanceof ServerWorld world)) {
 				return;
 			}
+			// First choice: the Idol, if one has been placed in this dimension.
+			TdArenaState arena = TdArenaState.get(world.getServer());
+			if (arena.base != null && arena.getArenaWorld(world.getServer()) == world) {
+				BlockPos b = arena.base;
+				newPlayer.requestTeleport(b.getX() + 0.5, b.getY() + 1.0, b.getZ() + 0.5);
+				newPlayer.sendMessage(Text.literal("Respawned at the Idol.")
+					.formatted(Formatting.GREEN), false);
+				return;
+			}
+			// Otherwise, fall back to the nearest colony home flag.
 			ColonyState state = ColonyState.get(world.getServer());
 			String dim = world.getRegistryKey().getValue().toString();
 			ColonyState.Flag flag = state.nearestFlag(oldPlayer.getBlockPos(), dim);

@@ -6,6 +6,7 @@ import net.bubblesky.towerdefense.block.AcidBlock;
 import net.bubblesky.towerdefense.block.ArrowTowerBlock;
 import net.bubblesky.towerdefense.block.BallTowerBlock;
 import net.bubblesky.towerdefense.block.CannonTowerBlock;
+import net.bubblesky.towerdefense.block.FlameTowerBlock;
 import net.bubblesky.towerdefense.block.FrostTowerBlock;
 import net.bubblesky.towerdefense.block.LightningTowerBlock;
 import net.bubblesky.towerdefense.item.TowerBlockItem;
@@ -68,6 +69,17 @@ public final class ModBlocks {
 			.nonOpaque()
 			.sounds(BlockSoundGroup.METAL),
 		TowerKind.LIGHTNING);
+
+	// Fast, close-range incinerator: sprays a cone of flame, torches bunched enemies and
+	// leaves a lingering (particle-only, block-free) burning-ground patch under the target.
+	public static final Block FLAME_TOWER = registerTower("flame_tower",
+		FlameTowerBlock::new,
+		AbstractBlock.Settings.create()
+			.strength(3.0f, 6.0f)
+			.requiresTool()
+			.nonOpaque()
+			.sounds(BlockSoundGroup.STONE),
+		TowerKind.FLAME);
 
 	// The single-block sticky mini turret (no pole/orb). Placeable on any face.
 	public static final Block BALL_TOWER = registerTower("ball_tower",

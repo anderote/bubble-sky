@@ -13,6 +13,7 @@
 	"item.towerdefense.cannon_tower_arrow": "Cannon Tower Arrow",
 	"item.towerdefense.frost_tower_arrow": "Frost Tower Arrow",
 	"item.towerdefense.lightning_tower_arrow": "Lightning Tower Arrow",
+	"item.towerdefense.flame_tower_arrow": "Flamethrower Tower Arrow",
 	"item.towerdefense.ball_tower_arrow": "Tower Ball Arrow",
 
 	"entity.towerdefense.flag_arrow": "Flag Arrow",
@@ -23,6 +24,7 @@
 	"block.towerdefense.cannon_tower": "Cannon Tower",
 	"block.towerdefense.frost_tower": "Frost Tower",
 	"block.towerdefense.lightning_tower": "Lightning Tower",
+	"block.towerdefense.flame_tower": "Flamethrower",
 	"block.towerdefense.ball_tower": "Tower Ball",
 
 	"entity.towerdefense.goblin_skirmisher": "Goblin Skirmisher",
@@ -45,6 +47,7 @@
 	"key.towerdefense.open_hire": "Open Hire Menu (H)",
 	"key.towerdefense.open_character": "Open Character Screen (P)",
 	"key.towerdefense.open_inventory": "Open Inventory (I)",
+	"key.towerdefense.open_towers": "Open My Towers (K)",
 
 	"screen.towerdefense.character.title": "Character",
 	"screen.towerdefense.character.level": "Level",
