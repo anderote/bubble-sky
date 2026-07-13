@@ -79,8 +79,8 @@ public class TowerDefenseScreen extends Screen {
 		ry += BUTTON_H + GAP;
 		for (TdCommand.ShopEntry entry : TdCommand.catalogue()) {
 			String label = "Buy " + prettify(entry.id()) + " (" + entry.price() + ")";
-			// Buying places at the crosshair, so close the menu first to let the
-			// player aim; the /td buy command then targets the block they face.
+			// Buying hands over a placeable tower block — the player places it to raise
+			// the tower. Close the menu so they can place it right away.
 			addButton(rightX, ry, colW, Text.literal(label),
 				b -> run("td buy " + entry.id(), true));
 			ry += BUTTON_H + GAP;

@@ -24,7 +24,7 @@ under [`docs/superpowers/`](docs/superpowers/).
 - **Grok** — a natural-language AI *builder* you talk to in chat.
 - **Agent bridge** — an in-JVM HTTP API so agents can act on a *modded* server (custom blocks) without the vanilla protocol. See [`BRIDGE.md`](BRIDGE.md).
 - **Builder crew** — LLM-brained, non-godmode player-bots that each reason and build by hand.
-- **Tower Defense** — a full in-game game mod (`mods/towerdefense/`): waves, towers, coins, boss waves, a `J` menu.
+- **Tower Defense** — a full in-game **survival TD + RPG** mod (`mods/towerdefense/`): the Idol, waves, towers, hireable soldiers, wall-breaking enemies, XP/skill progression, a `J` menu.
 - **Codex swarm** — Codex's multi-agent build swarm (`mcp/`).
 - **Asset mods** — Macaw's + Blockus + Farmer's Delight for richer building material.
 
@@ -115,19 +115,38 @@ fake-players is a planned follow-up.
 
 ## Tower Defense game (`mods/towerdefense/`)
 
-A human-facing custom-content Fabric mod — the game that lives in the world.
+A human-facing custom-content Fabric mod — a **survival TD + RPG** that lives in the world.
 
-- **Gameplay:** set an arena/base (`/td arena`), start **waves** (`/td wave`), defend the base.
-- **Towers:** buildable **Arrow / Cannon / Frost** towers that auto-target enemies; buy /
-  upgrade from a **shop** priced in **coins** (dropped on kill). Hire **ally** units (footman /
-  archer) too.
-- **Enemies:** a roster of marching foes (footmen, melee, archers) with a **boss** every 5th wave.
-- **UI:** an in-game **HUD** (coins / wave / enemies) and a menu bound to **`J`**; also driven by
-  `/td` (`arena`, `wave`, `buy`, `upgrade`, `hire`, `shop`, `status`, `restart`, …).
-- **Extras shipped in the same mod:** the **acid** block + acid bucket, the **Layout Wand** and
-  **Flag Bow** (plant flags/regions that Grok reads), and the **agent bridge** (above).
+- **A real survival game:** players spawn in **survival** (no creative/godmode — only Grok keeps
+  godmode) with a **starter kit** (TD bow + 64 arrows, wooden sword, leather armor, **100 gold**).
+- **Set up a run:** place the **Idol** (`/td idol`) — a gold shrine + beacon the enemies attack —
+  and pick one or more **enemy spawn** gates (`/td spawn`). Build a fort with a kill-lane, then
+  `/td wave`. Endless. Every `/td` subcommand is open to all players (survival-friendly).
+- **Towers (bought with gold):** **Arrow / Cannon / Frost** stick-towers **and** the new
+  **Ball** turret — a 1-block mini-turret you stick to a **wall**. Buy from the **J** shop → get a
+  **placeable tower block** (or shoot a *tower arrow* from the TD bow to deploy where it lands).
+  Cannon/Frost now throw visible **impact particles**. Coins drop on kill; an always-on **Gold**
+  counter sits on the HUD.
+- **Enemies:** goblins, footmen, archers, men-at-arms, undead, heavy knights, **barbarians**, and
+  **barbarian sappers**. They march on the Idol, **fight your hired soldiers** on the way, and
+  **break through walls** — normal foes smash out only when boxed in, sappers **bore straight
+  through**. HP follows a **long-marathon curve** (killable toward wave 100, not an exponential
+  wall), with **epic multi-Warlord** milestone waves (25→3, 50→6, 100→12 bosses + a horde) under a
+  concurrent-enemy **drip cap**.
+- **Allied soldiers (hire with `H`):** **footman / archer / knight**, each in armor + a house
+  uniform (blue leather / green ranger / diamond plate). Give them hold / attack / follow orders.
+- **RPG progression:** permanent **XP → levels → skill points** (persist across sessions & deaths).
+  Open the **Character** screen with **`P`** and pour points into **Vitality** (HP), **Strength**
+  (melee), **Agility** (speed), **Marksmanship** (bow), **Fortune** (gold). **`I`** opens inventory.
+- **Controls:** **`J`** menu · **`H`** hire · **`I`** inventory · **`P`** character · `/td` for
+  everything (`idol`, `spawn`, `wave`, `buy`, `upgrade`, `hire`, `command`, `shop`, `status`, `reset`).
+- **Extras in the same mod:** the **acid** block + bucket, the unified **TD bow** (fire = arrow,
+  sneak-fire = plant a flag, tower-arrow = deploy a tower), the **Layout Wand** (flags/regions Grok
+  reads), and the **agent bridge** (above).
 
-Build the jar: `cd mods/towerdefense && JAVA_HOME=<jdk21> ./gradlew build`.
+Build the jar: `cd mods/towerdefense && JAVA_HOME=<jdk21> ./gradlew build`. Deploy to the play
+server on a fresh map with `FRESH_MAP=1 scripts/deploy-play.sh` (rebuilds, swaps the jar, restarts
+:25565). **Client + server must run the same jar** — after deploying, refresh the client copy too.
 
 ---
 
@@ -161,9 +180,16 @@ Java (Temurin) **21** · Node **22**. Don't bump 1.21.6 without re-checking ever
   join with plain offline usernames). Rebuild-from-clone steps: [`server/README.md`](server/README.md).
 - **Console:** commands can be piped in via the FIFO `server/console.in`
   (e.g. `echo "op Grok" > server/console.in`).
-- **Modded dev server:** `scripts/deploy-modded.sh` stands up a modded instance
-  (`server-modded/`) with the bridge, used to prove Grok/agents-on-mods without touching the
-  main server. See [`BRIDGE.md`](BRIDGE.md).
+- **Play server (the one people join):** `server/` on **:25565** with the agent bridge on
+  **:25580**. Redeploy the mod + restart with `scripts/deploy-play.sh` (add `FRESH_MAP=1` for a
+  brand-new world); it rebuilds the jar, swaps it in, and relaunches. After deploying, copy the
+  same jar into your **client** mods folder (Prism instance) so client + server match.
+- **Modded dev server:** `scripts/deploy-modded.sh` stands up a *separate* modded instance
+  (`server-modded/` :25566) with the bridge, used to prove Grok/agents-on-mods without touching the
+  play server. See [`BRIDGE.md`](BRIDGE.md).
+- **Grok on the play server:** run it in **bridge** mode so the modded custom entities don't break
+  the vanilla protocol: `cd grok && GROK_TRANSPORT=bridge BUBBLESKY_BRIDGE_URL=http://127.0.0.1:25580
+  BUBBLESKY_BRIDGE_TOKEN=<server/config token> node assistant.js`.
 - **Joining as a human:** your client must run the **same mod set** — full client setup and the
   join target are in [`MODS.md`](MODS.md).
 

@@ -11,13 +11,15 @@ import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
 import net.bubblesky.towerdefense.entity.TdAllyEntity;
 import net.bubblesky.towerdefense.game.TdMarkers;
 import net.bubblesky.towerdefense.game.WaveManager;
+import net.bubblesky.towerdefense.item.TowerBlockItem;
 import net.bubblesky.towerdefense.layout.LayoutStore;
 import net.bubblesky.towerdefense.registry.ModBlocks;
 import net.bubblesky.towerdefense.registry.ModEntities;
 import net.bubblesky.towerdefense.registry.ModItems;
 import net.bubblesky.towerdefense.state.TdArenaState;
+import net.bubblesky.towerdefense.tower.TowerKind;
+import net.bubblesky.towerdefense.tower.TowerStructure;
 import net.minecraft.block.Block;
-import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnReason;
 import net.minecraft.item.ItemStack;
@@ -58,6 +60,7 @@ public final class TdCommand {
 		TOWERS.put("arrow_tower", new TowerDef(ModBlocks.ARROW_TOWER, 10));
 		TOWERS.put("cannon_tower", new TowerDef(ModBlocks.CANNON_TOWER, 25));
 		TOWERS.put("frost_tower", new TowerDef(ModBlocks.FROST_TOWER, 20));
+		TOWERS.put("ball_tower", new TowerDef(ModBlocks.BALL_TOWER, 8));
 	}
 
 	/** Public, immutable view of a buyable tower (id + coin price) for client UIs. */
@@ -193,10 +196,10 @@ public final class TdCommand {
 		line(src, "/td spawn", "add an enemy spawn point at your position (repeatable)");
 		line(src, "/td arena [dist]", "quick-setup: Idol here + 2 spawn gates (N/E) at dist blocks");
 		line(src, "/td wave", "start the next wave (alias: /td start)");
-		line(src, "/td tower [type]", "place a tower where you're looking (free/op; default arrow_tower)");
+		line(src, "/td tower [type]", "instantly build a tower where you're looking (free/op)");
 		line(src, "/td shop", "list buyable towers and their coin prices");
-		line(src, "/td buy <type>", "spend coins to build a tower where you're looking");
-		line(src, "/td upgrade", "spend coins to raise the tier of the tower you're looking at");
+		line(src, "/td buy <type>", "spend coins for a placeable tower block — place it to raise the tower");
+		line(src, "/td upgrade", "spend coins to raise the tier of the tower you're aiming at");
 		line(src, "/td hire <type>", "spend coins to summon an allied soldier (footman/archer/knight)");
 		line(src, "/td command <order> [flag]", "order your allies: hold/attack/follow/move (flag = anchor)");
 		line(src, "/td status", "show wave/Idol info (and the tower you're looking at)");
@@ -208,10 +211,19 @@ public final class TdCommand {
 		int arrow = TOWERS.get("arrow_tower").price();
 		int cannon = TOWERS.get("cannon_tower").price();
 		int frost = TOWERS.get("frost_tower").price();
+		int ball = TOWERS.get("ball_tower").price();
 		line(src, "arrow_tower", arrow + " coins — fast, single-target, cheap");
 		line(src, "cannon_tower", cannon + " coins — slow, splash/AoE damage");
 		line(src, "frost_tower", frost + " coins — slows enemies down");
-		body(src, "Aim at a tower and /td upgrade to raise its tier for coins.");
+		line(src, "ball_tower", ball + " coins — sticky 1-block mini turret (mounts on walls)");
+		body(src, "Buy → get a placeable tower block → place it to raise the tower.");
+		body(src, "The ball tower sticks to any face; the others rise from the ground.");
+		body(src, "Prefer shooting? A bought tower arrow fired from your bow still builds too.");
+		body(src, "Aim at a built tower and /td upgrade to raise its tier for coins.");
+
+		header(src, "Your bow");
+		body(src, "Normal fire = combat arrow.  Fire with a tower arrow loaded = build a tower.");
+		body(src, "SNEAK + fire = plant a Layout flag where the arrow lands (for ally orders).");
 
 		header(src, "Allied soldiers");
 		int aFoot = ALLIES.get("footman").price();
@@ -267,18 +279,27 @@ public final class TdCommand {
 			line(src, e.getKey(), price + " coins  (/td buy " + e.getKey() + ")");
 		}
 		src.sendFeedback(() -> Text.literal("  Your coins: " + coins).formatted(Formatting.AQUA), false);
+		src.sendFeedback(() -> Text.literal("  Buy gives a placeable tower block — place it to raise the tower.")
+			.formatted(Formatting.GRAY), false);
 		src.sendFeedback(() -> Text.literal("  Upgrades cost (tower price x current tier); use /td upgrade.")
 			.formatted(Formatting.GRAY), false);
 		return 1;
 	}
 
+	/**
+	 * Buy a tower: charge coins and hand the player ONE placeable tower BLOCK of that
+	 * type. Placing the block raises the whole tower — the tall stick-structure for
+	 * ARROW/CANNON/FROST, or the single sticky turret for BALL (see {@link TowerBlockItem}).
+	 * The shoot-to-place tower arrows still exist for players who prefer them, but the
+	 * shop now sells the simpler place-a-block path.
+	 */
 	private static int buy(CommandContext<ServerCommandSource> ctx, String type) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity player = src.getPlayerOrThrow();
-		ServerWorld world = src.getWorld();
 
 		TowerDef def = TOWERS.get(type);
-		if (def == null) {
+		TowerKind kind = TowerKind.fromId(type);
+		if (def == null || kind == null) {
 			src.sendError(Text.literal("Unknown tower '" + type + "'. Try /td shop."));
 			return 0;
 		}
@@ -287,15 +308,19 @@ public final class TdCommand {
 			src.sendError(Text.literal("Not enough coins: need " + def.price() + ", have " + coins + "."));
 			return 0;
 		}
-		BlockPos placePos = placementTarget(src, player, world);
-		if (placePos == null) {
-			return 0;
+		// Hand out the placeable tower block (drops at feet if the pack is full).
+		ItemStack block = new ItemStack(def.block());
+		if (!player.getInventory().insertStack(block)) {
+			player.dropItem(block, false);
 		}
-		placeTower(world, placePos, def.block(), player);
 		removeCoins(player, def.price());
 		int remaining = coins - def.price();
+		String howTo = kind == TowerKind.BALL
+			? " Place it on any block face (walls too) to mount the turret."
+			: " Place it on the ground to raise the tower.";
 		src.sendFeedback(() -> Text.literal("Bought " + type + " for " + def.price()
-			+ " coins (" + remaining + " left).").formatted(Formatting.GREEN), false);
+			+ " coins (" + remaining + " left)." + howTo)
+			.formatted(Formatting.GREEN), false);
 		return 1;
 	}
 
@@ -406,7 +431,7 @@ public final class TdCommand {
 			if (flagName != null) {
 				LayoutStore.Flag flag = LayoutStore.getFlag(flagName);
 				if (flag == null) {
-					src.sendError(Text.literal("No flag named '" + flagName + "'. Plant one with the Flag Bow / wand."));
+					src.sendError(Text.literal("No flag named '" + flagName + "'. Plant one by sneak-firing your bow (or the wand)."));
 					return 0;
 				}
 				anchor = new Vec3d(flag.x() + 0.5, flag.y(), flag.z() + 0.5);
@@ -468,17 +493,18 @@ public final class TdCommand {
 		ServerPlayerEntity player = src.getPlayerOrThrow();
 		ServerWorld world = src.getWorld();
 
-		TowerDef def = TOWERS.get(type);
-		if (def == null) {
+		TowerKind kind = TowerKind.fromId(type);
+		if (kind == null) {
 			src.sendError(Text.literal("Unknown tower type '" + type + "'. Placing arrow_tower."));
-			def = TOWERS.get("arrow_tower");
+			kind = TowerKind.ARROW;
 			type = "arrow_tower";
 		}
 		BlockPos placePos = placementTarget(src, player, world);
 		if (placePos == null) {
 			return 0;
 		}
-		placeTower(world, placePos, def.block(), player);
+		// Free-build the full stick-tower structure (op cheat, no coins).
+		TowerStructure.build(world, placePos, kind, player.getUuid());
 		final String placed = type;
 		src.sendFeedback(() -> Text.literal("Placed " + placed + " at " + placePos.toShortString())
 			.formatted(Formatting.GREEN), false);
@@ -501,23 +527,35 @@ public final class TdCommand {
 		return placePos;
 	}
 
-	/** Place the tower and stamp the placer UUID so its kills credit that player. */
-	private static void placeTower(ServerWorld world, BlockPos pos, Block block, ServerPlayerEntity placer) {
-		world.setBlockState(pos, block.getDefaultState());
-		if (world.getBlockEntity(pos) instanceof AbstractTowerBlockEntity tower) {
-			tower.setPlacer(placer.getUuid());
-		}
-	}
-
-	/** The tower the player is aiming at (within 30 blocks), or null. */
+	/**
+	 * The tower the player is aiming at (within 30 blocks), or null. Because a tower's
+	 * working core sits INSIDE its decorative ball, the raycast usually lands on a shell
+	 * block, so we scan a small radius around the hit for the nearest tower core.
+	 */
 	private static AbstractTowerBlockEntity lookedAtTower(ServerPlayerEntity player, ServerWorld world) {
 		HitResult hit = player.raycast(30.0, 1.0f, false);
 		if (hit.getType() != HitResult.Type.BLOCK) {
 			return null;
 		}
-		BlockPos pos = ((BlockHitResult) hit).getBlockPos();
-		BlockEntity be = world.getBlockEntity(pos);
-		return be instanceof AbstractTowerBlockEntity tower ? tower : null;
+		BlockPos hitPos = ((BlockHitResult) hit).getBlockPos();
+		AbstractTowerBlockEntity best = null;
+		int bestSq = Integer.MAX_VALUE;
+		int r = 2; // ball radius (2) covers reaching the core from any shell face
+		for (int dx = -r; dx <= r; dx++) {
+			for (int dy = -r; dy <= r; dy++) {
+				for (int dz = -r; dz <= r; dz++) {
+					BlockPos p = hitPos.add(dx, dy, dz);
+					if (world.getBlockEntity(p) instanceof AbstractTowerBlockEntity tower) {
+						int sq = dx * dx + dy * dy + dz * dz;
+						if (sq < bestSq) {
+							bestSq = sq;
+							best = tower;
+						}
+					}
+				}
+			}
+		}
+		return best;
 	}
 
 	/** Look up the catalogue price of the tower block at a position (default 10). */
@@ -717,6 +755,12 @@ public final class TdCommand {
 				e -> e.getCommandTags().contains(WaveManager.ENEMY_TAG)
 					|| e.getCommandTags().contains(TdAllyEntity.ALLY_TAG))
 				.forEach(net.minecraft.entity.Entity::discard);
+		}
+		// Tear down every built tower's stick-structure (best-effort, only our blocks).
+		if (arena != null) {
+			for (BlockPos core : new java.util.ArrayList<>(st.towers)) {
+				TowerStructure.clear(arena, core);
+			}
 		}
 		// Remove the Idol + spawn markers (blocks + labels) before wiping their positions.
 		TdMarkers.clearAll(arena, st);

@@ -8,13 +8,20 @@
 	"item.towerdefense.acid_bucket": "Acid Bucket",
 	"item.towerdefense.layout_wand": "Layout Wand",
 	"item.towerdefense.flag_bow": "Flag Bow",
+	"item.towerdefense.td_bow": "Tower Defense Bow",
+	"item.towerdefense.arrow_tower_arrow": "Arrow Tower Arrow",
+	"item.towerdefense.cannon_tower_arrow": "Cannon Tower Arrow",
+	"item.towerdefense.frost_tower_arrow": "Frost Tower Arrow",
+	"item.towerdefense.ball_tower_arrow": "Tower Ball Arrow",
 
 	"entity.towerdefense.flag_arrow": "Flag Arrow",
+	"entity.towerdefense.tower_arrow": "Tower Arrow",
 
 	"block.towerdefense.acid": "Acid",
 	"block.towerdefense.arrow_tower": "Arrow Tower",
 	"block.towerdefense.cannon_tower": "Cannon Tower",
 	"block.towerdefense.frost_tower": "Frost Tower",
+	"block.towerdefense.ball_tower": "Tower Ball",
 
 	"entity.towerdefense.goblin_skirmisher": "Goblin Skirmisher",
 	"entity.towerdefense.footman": "Footman",
@@ -22,6 +29,8 @@
 	"entity.towerdefense.man_at_arms": "Man-at-Arms",
 	"entity.towerdefense.undead_soldier": "Undead Soldier",
 	"entity.towerdefense.heavy_knight": "Heavy Knight",
+	"entity.towerdefense.barbarian": "Barbarian",
+	"entity.towerdefense.barbarian_sapper": "Barbarian Sapper",
 
 	"entity.towerdefense.ally_footman": "Allied Footman",
 	"entity.towerdefense.ally_archer": "Allied Archer",
@@ -29,5 +38,18 @@
 
 	"key.categories.towerdefense": "Tower Defense",
 	"key.towerdefense.open_menu": "Open Tower Defense Menu",
-	"key.towerdefense.open_hire": "Open Hire Menu (H)"
+	"key.towerdefense.open_hire": "Open Hire Menu (H)",
+	"key.towerdefense.open_character": "Open Character Screen (P)",
+	"key.towerdefense.open_inventory": "Open Inventory (I)",
+
+	"screen.towerdefense.character.title": "Character",
+	"screen.towerdefense.character.level": "Level",
+	"screen.towerdefense.character.xp": "XP",
+	"screen.towerdefense.character.points": "Skill points",
+	"screen.towerdefense.character.close": "Close",
+	"screen.towerdefense.stat.vitality": "Vitality",
+	"screen.towerdefense.stat.strength": "Strength",
+	"screen.towerdefense.stat.agility": "Agility",
+	"screen.towerdefense.stat.marksmanship": "Marksmanship",
+	"screen.towerdefense.stat.fortune": "Fortune"
 }

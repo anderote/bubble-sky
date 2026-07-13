@@ -1,6 +1,7 @@
 package net.bubblesky.towerdefense.entity;
 
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.ai.RangedAttackMob;
 import net.minecraft.entity.ai.goal.ProjectileAttackGoal;
@@ -25,6 +26,9 @@ public class TdAllyArcher extends TdAllyEntity implements RangedAttackMob {
 	private static final int SHOOT_INTERVAL = 25;
 	private static final float SHOOT_RANGE = 14.0f;
 
+	/** Ranger green for the archer's dyed-leather kit. */
+	private static final int RANGER_GREEN = 0x3A5F2A;
+
 	public TdAllyArcher(EntityType<? extends TdAllyArcher> type, World world) {
 		super(type, world);
 	}
@@ -33,6 +37,16 @@ public class TdAllyArcher extends TdAllyEntity implements RangedAttackMob {
 	protected void initGoals() {
 		super.initGoals();
 		this.goalSelector.add(2, new ProjectileAttackGoal(this, 1.0, SHOOT_INTERVAL, SHOOT_RANGE));
+	}
+
+	@Override
+	protected void equipLoadout() {
+		// Ranger — a light green leather kit (cap + tunic + trousers) and a bow in hand.
+		this.equipStack(EquipmentSlot.HEAD, dyed(Items.LEATHER_HELMET, RANGER_GREEN));
+		this.equipStack(EquipmentSlot.CHEST, dyed(Items.LEATHER_CHESTPLATE, RANGER_GREEN));
+		this.equipStack(EquipmentSlot.LEGS, dyed(Items.LEATHER_LEGGINGS, RANGER_GREEN));
+		this.equipStack(EquipmentSlot.FEET, dyed(Items.LEATHER_BOOTS, RANGER_GREEN));
+		this.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
 	}
 
 	@Override

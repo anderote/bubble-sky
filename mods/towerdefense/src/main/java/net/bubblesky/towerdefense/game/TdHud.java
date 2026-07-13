@@ -117,40 +117,58 @@ public final class TdHud {
 	}
 
 	// ---- boss bossbar ------------------------------------------------------
+	/**
+	 * A boss wave now fields a whole SQUAD of Warlords, so the single purple bar shows
+	 * an AGGREGATE: its fill is the squad's total remaining health over total max
+	 * health, and its label names the squad (with a live count). This tolerates any
+	 * number of live bosses — one, a dozen, or none — without crashing.
+	 */
 	private static void updateBossBar(ServerWorld world, TdArenaState st) {
-		LivingEntity boss = findBoss(world, st);
-		if (boss == null) {
+		List<LivingEntity> bosses = findBosses(world, st);
+		if (bosses.isEmpty()) {
 			if (bossBar.isVisible()) {
 				bossBar.setVisible(false);
 				bossBar.clearPlayers();
 			}
 			return;
 		}
-		float pct = boss.getMaxHealth() <= 0 ? 0f
-			: Math.max(0f, Math.min(1f, boss.getHealth() / boss.getMaxHealth()));
+		float totalMax = 0f;
+		float totalCur = 0f;
+		for (LivingEntity boss : bosses) {
+			totalMax += boss.getMaxHealth();
+			totalCur += boss.getHealth();
+		}
+		float pct = totalMax <= 0f ? 0f : Math.max(0f, Math.min(1f, totalCur / totalMax));
 		bossBar.setPercent(pct);
-		Text name = boss.getCustomName();
-		bossBar.setName(name != null ? name
-			: Text.literal("Warlord — Wave " + st.currentWave).formatted(Formatting.DARK_PURPLE));
+		if (bosses.size() == 1) {
+			Text name = bosses.get(0).getCustomName();
+			bossBar.setName(name != null ? name
+				: Text.literal("Warlord — Wave " + st.currentWave).formatted(Formatting.DARK_PURPLE));
+		} else {
+			bossBar.setName(Text.literal("Warlords (" + bosses.size() + ") — Wave " + st.currentWave)
+				.formatted(Formatting.DARK_PURPLE));
+		}
 		if (!bossBar.isVisible()) {
 			bossBar.setVisible(true);
 		}
 		reconcileViewers(world, bossBar);
 	}
 
-	private static LivingEntity findBoss(ServerWorld world, TdArenaState st) {
+	/** Every live tagged boss near the base (empty if none). */
+	private static List<LivingEntity> findBosses(ServerWorld world, TdArenaState st) {
 		if (st.base == null) {
-			return null;
+			return List.of();
 		}
 		List<Entity> found = world.getOtherEntities(null,
 			new net.minecraft.util.math.Box(st.base).expand(128.0),
 			e -> e.isAlive() && e.getCommandTags().contains(WaveManager.BOSS_TAG));
+		List<LivingEntity> bosses = new java.util.ArrayList<>();
 		for (Entity e : found) {
 			if (e instanceof LivingEntity le) {
-				return le;
+				bosses.add(le);
 			}
 		}
-		return null;
+		return bosses;
 	}
 
 	// ---- viewer reconciliation --------------------------------------------

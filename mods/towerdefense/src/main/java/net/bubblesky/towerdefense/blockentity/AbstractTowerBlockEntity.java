@@ -48,6 +48,9 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 	}
 
 	// ---- per-type tuning (subclass supplies base values) -------------------
+	/** Which tower kind this is — drives the stick-structure palette on teardown. */
+	public abstract net.bubblesky.towerdefense.tower.TowerKind kind();
+
 	/** Base search/fire radius (blocks) at tier 1. */
 	protected abstract double baseRange();
 
@@ -115,11 +118,24 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 			return;
 		}
 		double cx = pos.getX() + 0.5;
-		double cy = pos.getY() + 1.0;
+		double cy = pos.getY() + 0.5;
 		double cz = pos.getZ() + 0.5;
 		HostileEntity target = be.findNearestHostile(serverWorld, pos, cx, cy, cz);
 		if (target == null) {
 			return;
+		}
+		// Muzzle offset: spawn the projectile just OUTSIDE the tower's orb on the side
+		// facing the target, so steep/downward shots clear the tower's own blocks (the
+		// pole + ball) instead of colliding with them and getting stuck.
+		double dx = target.getX() - cx;
+		double dy = target.getBodyY(0.5) - cy;
+		double dz = target.getZ() - cz;
+		double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+		if (dist > 1.0e-3) {
+			double muzzle = be.kind().ballRadius() + 0.9;
+			cx += dx / dist * muzzle;
+			cy += dy / dist * muzzle;
+			cz += dz / dist * muzzle;
 		}
 		be.fire(serverWorld, cx, cy, cz, target);
 		be.cooldown = be.cooldownTicks();

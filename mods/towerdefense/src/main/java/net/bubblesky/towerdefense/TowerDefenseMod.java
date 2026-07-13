@@ -4,6 +4,7 @@ import net.bubblesky.towerdefense.bridge.AgentBridge;
 import net.bubblesky.towerdefense.command.TdCommand;
 import net.bubblesky.towerdefense.item.LayoutWandItem;
 import net.bubblesky.towerdefense.layout.LayoutStore;
+import net.bubblesky.towerdefense.progression.ProgressEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.bubblesky.towerdefense.game.TdHud;
 import net.bubblesky.towerdefense.game.WaveManager;
@@ -74,6 +75,11 @@ public class TowerDefenseMod implements ModInitializer {
 		WaveManager.register();
 		TdHud.register();
 
+		// RPG progression: permanent XP/levels/skill points. Registers its own XP-on-kill
+		// AFTER_DEATH listener (separate from WaveManager's boss bounty), the allocate/sync
+		// payloads, and the join/respawn/world-change stat (re)application. See progression/.
+		ProgressEvents.register();
+
 		// Modded agent bridge: in-JVM HTTP API so AI agents can observe/act on the
 		// modded world without the vanilla protocol. Localhost-bound + token-gated;
 		// starts on SERVER_STARTED if enabled in config. See net.bubblesky.towerdefense.bridge.
@@ -108,6 +114,8 @@ public class TowerDefenseMod implements ModInitializer {
 
 	/** Persistent player tag marking that the starting kit has already been granted. */
 	private static final String KIT_TAG = "td_starter_kit";
+	/** Gold (coins) granted once with the survival starter kit. */
+	private static final int STARTER_GOLD = 100;
 
 	/**
 	 * Starting gear: the first time a player joins with the mod installed, grant a
@@ -131,11 +139,16 @@ public class TowerDefenseMod implements ModInitializer {
 			player.equipStack(EquipmentSlot.CHEST, new ItemStack(Items.LEATHER_CHESTPLATE));
 			player.equipStack(EquipmentSlot.LEGS, new ItemStack(Items.LEATHER_LEGGINGS));
 			player.equipStack(EquipmentSlot.FEET, new ItemStack(Items.LEATHER_BOOTS));
-			// Weapons + ammo into the inventory (drops nearby if somehow full).
+			// Weapons + ammo into the inventory (drops nearby if somehow full). The bow
+			// is the unified TD bow: fire = combat arrow, sneak-fire = plant a flag, and
+			// a bought tower arrow fired from it shoot-to-places that tower.
 			giveOrDrop(player, new ItemStack(Items.WOODEN_SWORD));
-			giveOrDrop(player, new ItemStack(Items.BOW));
+			giveOrDrop(player, new ItemStack(ModItems.TD_BOW));
 			giveOrDrop(player, new ItemStack(Items.ARROW, 64));
-			player.sendMessage(Text.literal("Starter kit granted: bow + 64 arrows, wooden sword, leather armor.")
+			// Seed gold so a fresh player can afford their first towers straight away.
+			giveOrDrop(player, new ItemStack(ModItems.COIN, STARTER_GOLD));
+			player.sendMessage(Text.literal("Starter kit granted: TD bow + 64 arrows, wooden sword, leather armor, "
+				+ STARTER_GOLD + " gold. Sneak+fire to plant flags; buy a tower then place/fire it to build.")
 				.formatted(Formatting.GREEN), false);
 		});
 	}

@@ -29,6 +29,11 @@ public class ArrowTowerBlockEntity extends AbstractTowerBlockEntity {
 	}
 
 	@Override
+	public net.bubblesky.towerdefense.tower.TowerKind kind() {
+		return net.bubblesky.towerdefense.tower.TowerKind.ARROW;
+	}
+
+	@Override
 	protected double baseRange() {
 		return BASE_RANGE;
 	}

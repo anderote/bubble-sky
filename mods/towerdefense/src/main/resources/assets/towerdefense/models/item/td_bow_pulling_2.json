@@ -1,0 +1,6 @@
+{
+    "parent": "towerdefense:item/td_bow",
+    "textures": {
+        "layer0": "minecraft:item/bow_pulling_2"
+    }
+}

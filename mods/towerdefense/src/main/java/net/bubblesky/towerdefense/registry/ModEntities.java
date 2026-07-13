@@ -2,9 +2,12 @@ package net.bubblesky.towerdefense.registry;
 
 import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.entity.FlagArrowEntity;
+import net.bubblesky.towerdefense.entity.TowerArrowEntity;
 import net.bubblesky.towerdefense.entity.TdAllyArcher;
 import net.bubblesky.towerdefense.entity.TdAllyEntity;
 import net.bubblesky.towerdefense.entity.TdArcherEnemy;
+import net.bubblesky.towerdefense.entity.TdBarbarian;
+import net.bubblesky.towerdefense.entity.TdBarbarianSapper;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
 import net.bubblesky.towerdefense.entity.TdFootman;
 import net.bubblesky.towerdefense.entity.TdMeleeEnemy;
@@ -57,6 +60,12 @@ public final class ModEntities {
 		registerMelee("undead_soldier", 0.6f, 1.95f);
 	public static final EntityType<TdMeleeEnemy> HEAVY_KNIGHT =
 		registerMelee("heavy_knight", 0.7f, 2.0f);
+	/** Rugged heavy-melee brute (mid-game). Beefier than a footman; paths around walls. */
+	public static final EntityType<TdBarbarian> BARBARIAN =
+		registerEnemy("barbarian", TdBarbarian::new, 0.65f, 2.0f);
+	/** The siege breaker (deep-game). Bores a straight tunnel to the Idol. */
+	public static final EntityType<TdBarbarianSapper> BARBARIAN_SAPPER =
+		registerEnemy("barbarian_sapper", TdBarbarianSapper::new, 0.7f, 2.1f);
 
 	// ---- hireable ALLY roster ---------------------------------------------
 	/** Friendly biped mobs the player buys with coins to fight the waves. */
@@ -71,6 +80,9 @@ public final class ModEntities {
 	/** The Flag Bow's arrow: plants a Layout flag wherever it lands. */
 	public static final EntityType<FlagArrowEntity> FLAG_ARROW = registerFlagArrow("flag_arrow");
 
+	/** The shoot-to-place tower arrow: builds a tower structure wherever it lands. */
+	public static final EntityType<TowerArrowEntity> TOWER_ARROW = registerTowerArrow("tower_arrow");
+
 	private static EntityType<FlagArrowEntity> registerFlagArrow(String name) {
 		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
 			Identifier.of(TowerDefenseMod.MOD_ID, name));
@@ -79,6 +91,36 @@ public final class ModEntities {
 			.dimensions(0.5f, 0.5f)
 			.maxTrackingRange(4)
 			.trackingTickInterval(20)
+			.build(key);
+		return Registry.register(Registries.ENTITY_TYPE, key, type);
+	}
+
+	private static EntityType<TowerArrowEntity> registerTowerArrow(String name) {
+		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, name));
+		EntityType<TowerArrowEntity> type = EntityType.Builder
+			.<TowerArrowEntity>create(TowerArrowEntity::new, SpawnGroup.MISC)
+			.dimensions(0.5f, 0.5f)
+			.maxTrackingRange(4)
+			.trackingTickInterval(20)
+			.build(key);
+		return Registry.register(Registries.ENTITY_TYPE, key, type);
+	}
+
+	/**
+	 * Generic enemy registrar for concrete {@link TdEnemyEntity} subclasses (e.g. the
+	 * barbarians) that need their own class rather than the shared {@link TdMeleeEnemy}.
+	 * Same wiring as {@link #registerMelee} — a MONSTER spawn group with a 48-block
+	 * tracking range — but parameterised over the entity factory / type.
+	 */
+	private static <T extends TdEnemyEntity> EntityType<T> registerEnemy(
+			String name, EntityType.EntityFactory<T> factory, float width, float height) {
+		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, name));
+		EntityType<T> type = EntityType.Builder
+			.create(factory, SpawnGroup.MONSTER)
+			.dimensions(width, height)
+			.maxTrackingRange(48)
 			.build(key);
 		return Registry.register(Registries.ENTITY_TYPE, key, type);
 	}
@@ -153,6 +195,9 @@ public final class ModEntities {
 		FabricDefaultAttributeRegistry.register(MAN_AT_ARMS, attrs(30.0, 5.0, 0.24));
 		FabricDefaultAttributeRegistry.register(UNDEAD_SOLDIER, attrs(25.0, 5.0, 0.22));
 		FabricDefaultAttributeRegistry.register(HEAVY_KNIGHT, attrs(60.0, 8.0, 0.20));
+		// Barbarians: a rugged bruiser and the tanky straight-line siege sapper.
+		FabricDefaultAttributeRegistry.register(BARBARIAN, attrs(45.0, 7.0, 0.26));
+		FabricDefaultAttributeRegistry.register(BARBARIAN_SAPPER, attrs(70.0, 6.0, 0.18));
 
 		// Allies are tuned a notch above their same-name enemy so a few can hold a line.
 		FabricDefaultAttributeRegistry.register(ALLY_FOOTMAN, allyAttrs(28.0, 5.0, 0.28));
@@ -165,6 +210,7 @@ public final class ModEntities {
 	public static EntityType<? extends TdEnemyEntity>[] roster() {
 		return (EntityType<? extends TdEnemyEntity>[]) new EntityType<?>[] {
 			GOBLIN_SKIRMISHER, FOOTMAN, ARCHER, MAN_AT_ARMS, UNDEAD_SOLDIER, HEAVY_KNIGHT,
+			BARBARIAN, BARBARIAN_SAPPER,
 		};
 	}
 

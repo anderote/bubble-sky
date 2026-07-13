@@ -10,6 +10,7 @@ import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.projectile.thrown.SnowballEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
@@ -34,6 +35,11 @@ public class FrostTowerBlockEntity extends AbstractTowerBlockEntity {
 
 	public FrostTowerBlockEntity(BlockPos pos, BlockState state) {
 		super(ModBlockEntities.FROST_TOWER, pos, state);
+	}
+
+	@Override
+	public net.bubblesky.towerdefense.tower.TowerKind kind() {
+		return net.bubblesky.towerdefense.tower.TowerKind.FROST;
 	}
 
 	@Override
@@ -79,6 +85,23 @@ public class FrostTowerBlockEntity extends AbstractTowerBlockEntity {
 			}
 		}
 
+		// Visible AoE: a cold chill-cloud filling the slow radius so the crowd-control
+		// zone is obvious at a glance. Denser on higher tiers (which also chill harder).
+		spawnChillCloud(world, target.getX(), target.getBodyY(0.5), target.getZ());
+
 		world.playSound(null, cx, cy, cz, SoundEvents.BLOCK_GLASS_BREAK, SoundCategory.BLOCKS, 0.5f, 1.6f);
+	}
+
+	/**
+	 * A cold burst centred on the impact point, sized to the chill radius: drifting
+	 * snowflakes fill the zone, shattered snowball crumbs mark the hit, and a few soft
+	 * clouds give it a frosty haze. Counts grow with tier so a stronger slow reads bigger.
+	 */
+	private void spawnChillCloud(ServerWorld world, double x, double y, double z) {
+		int t = getTier();
+		double r = CHILL_RADIUS;
+		world.spawnParticles(ParticleTypes.SNOWFLAKE, x, y, z, 30 + 12 * t, r * 0.6, r * 0.4, r * 0.6, 0.02);
+		world.spawnParticles(ParticleTypes.ITEM_SNOWBALL, x, y, z, 12 + 5 * t, r * 0.4, r * 0.3, r * 0.4, 0.05);
+		world.spawnParticles(ParticleTypes.CLOUD, x, y + 0.1, z, 8 + 3 * t, r * 0.5, r * 0.2, r * 0.5, 0.0);
 	}
 }

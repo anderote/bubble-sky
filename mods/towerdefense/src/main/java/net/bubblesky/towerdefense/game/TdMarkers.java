@@ -29,15 +29,24 @@ public final class TdMarkers {
 	/** Entity tag on every floating spawn-gate label so they can be killed on reset. */
 	private static final String SPAWN_TAG = "td_spawn_label";
 
-	/** Raise the Idol: a two-block gold pillar topped by a glowing beacon + label. */
+	/** Raise the Idol as a small SHRINE the enemies attack: a 3x3 gold plinth (also a
+	 *  valid beacon base, so the beam projects) with a beacon beam at its centre and a
+	 *  glowing sea-lantern at each corner, topped by a floating "The Idol" label. */
 	public static void placeIdol(ServerWorld world, BlockPos pos) {
 		if (world == null || pos == null) {
 			return;
 		}
 		clearIdol(world, pos);
-		world.setBlockState(pos, Blocks.GOLD_BLOCK.getDefaultState());
-		world.setBlockState(pos.up(), Blocks.GOLD_BLOCK.getDefaultState());
-		world.setBlockState(pos.up(2), Blocks.BEACON.getDefaultState());
+		for (int dx = -1; dx <= 1; dx++) {
+			for (int dz = -1; dz <= 1; dz++) {
+				world.setBlockState(pos.add(dx, 0, dz), Blocks.GOLD_BLOCK.getDefaultState());
+			}
+		}
+		world.setBlockState(pos.up(), Blocks.BEACON.getDefaultState());
+		world.setBlockState(pos.add(1, 1, 1), Blocks.SEA_LANTERN.getDefaultState());
+		world.setBlockState(pos.add(-1, 1, 1), Blocks.SEA_LANTERN.getDefaultState());
+		world.setBlockState(pos.add(1, 1, -1), Blocks.SEA_LANTERN.getDefaultState());
+		world.setBlockState(pos.add(-1, 1, -1), Blocks.SEA_LANTERN.getDefaultState());
 		label(world, pos.up(3), "The Idol", IDOL_TAG);
 	}
 

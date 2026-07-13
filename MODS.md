@@ -42,5 +42,16 @@ server + how to set up a matching client.
   via `mcp/bridge-drone.mjs` (see `BRIDGE.md`).
 
 ## What's in the world
-Tower-defense game (`/td`, or press **J** for the menu), the `acid` block, the **Layout
-Wand** + **Flag Bow** (plant flags/regions), and Grok the AI builder (talks to `claudebert`).
+A **survival Tower-Defense + RPG**. You spawn in survival with a starter kit (TD bow, wooden
+sword, leather armor, **100 gold**). Place the **Idol** (`/td idol`) + enemy spawns (`/td spawn`),
+build a fort, buy towers (Arrow / Cannon / Frost / **Ball** wall-turret), hire soldiers, and
+survive endless waves — barbarians and **sappers** that break through walls, plus multi-Warlord
+boss waves. Earn **XP → levels → skill points** you spend in the **Character** screen.
+
+**Controls:** **J** menu · **H** hire · **I** inventory · **P** character · `/td` for everything.
+Also in the mod: the `acid` block and the **Layout Wand** (plant flags/regions Grok reads). Grok
+the AI builder listens to `claudebert`.
+
+> **After each server redeploy, refresh your client jar too:** replace
+> `towerdefense-1.0.0.jar` in your instance's `.minecraft/mods/` with the freshly built one and
+> **restart Minecraft** — a stale client jar will mismatch the server (missing entities → errors).
