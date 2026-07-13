@@ -53,6 +53,9 @@ public class TdArenaState extends PersistentState {
 	public int enemiesRemaining = 0;
 	/** Ticks until the next staggered spawn. */
 	public int spawnCooldown = 0;
+	/** Consecutive failed spawn attempts for the current enemy (transient, not saved).
+	 *  Used to retry a failed spawn instead of draining the wave, with a safety cap. */
+	public int spawnFailures = 0;
 	/** Ticks left in the between-waves intermission. */
 	public int intermissionCooldown = 0;
 	/** Highest wave fully cleared / reached (for the game-over report). */
@@ -104,6 +107,7 @@ public class TdArenaState extends PersistentState {
 		phase = Phase.IDLE;
 		enemiesRemaining = 0;
 		spawnCooldown = 0;
+		spawnFailures = 0;
 		intermissionCooldown = 0;
 		wavesSurvived = 0;
 		gameOver = false;

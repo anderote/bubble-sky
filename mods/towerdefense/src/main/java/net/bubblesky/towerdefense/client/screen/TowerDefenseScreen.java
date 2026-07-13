@@ -60,6 +60,17 @@ public class TowerDefenseScreen extends Screen {
 		ly += BUTTON_H + GAP;
 		addButton(leftX, ly, colW, Text.literal("Help"),
 			b -> run("td help", false));
+		ly += BUTTON_H + GAP + 6;
+
+		// ---- left column: ally orders -------------------------------------
+		addButton(leftX, ly, colW, Text.literal("Order: Hold (defend)"),
+			b -> run("td command hold", false));
+		ly += BUTTON_H + GAP;
+		addButton(leftX, ly, colW, Text.literal("Order: Attack (advance)"),
+			b -> run("td command attack", false));
+		ly += BUTTON_H + GAP;
+		addButton(leftX, ly, colW, Text.literal("Order: Follow me"),
+			b -> run("td command follow", false));
 
 		// ---- right column: shop (real catalogue) + placement --------------
 		int ry = y;
@@ -76,6 +87,15 @@ public class TowerDefenseScreen extends Screen {
 		}
 		addButton(rightX, ry, colW, Text.literal("Upgrade (aim at tower)"),
 			b -> run("td upgrade", true));
+		ry += BUTTON_H + GAP + 6;
+
+		// ---- right column: hire allies (real catalogue) -------------------
+		for (TdCommand.HireEntry entry : TdCommand.hireCatalogue()) {
+			String label = "Hire " + prettify(entry.id()) + " (" + entry.price() + ")";
+			addButton(rightX, ry, colW, Text.literal(label),
+				b -> run("td hire " + entry.id(), false));
+			ry += BUTTON_H + GAP;
+		}
 
 		// ---- close --------------------------------------------------------
 		int bottom = Math.max(ly, ry) + BUTTON_H + GAP + 6;

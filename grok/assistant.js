@@ -125,10 +125,12 @@ const TOOLS = [
     parameters: { type: 'object', properties: { mode: { type: 'string', enum: ['come', 'follow', 'stop', 'goto', 'explore', 'tp', 'bring'] }, player: { type: 'string' }, x: { type: 'integer' }, y: { type: 'integer' }, z: { type: 'integer' }, reply: { type: 'string' } }, required: ['mode'] } } },
   { type: 'function', function: { name: 'world_cmd', description: 'World control. cmd: time (value day|night|noon|midnight), weather (value clear|rain|thunder), give (item + count to the speaker/player).',
     parameters: { type: 'object', properties: { cmd: { type: 'string', enum: ['time', 'weather', 'give'] }, value: { type: 'string' }, item: { type: 'string' }, count: { type: 'integer' }, player: { type: 'string' }, reply: { type: 'string' } }, required: ['cmd'] } } },
-  { type: 'function', function: { name: 'flag', description: 'Named spatial markers ("flags") the user plants and later references in builds. op: set (plant a flag named `name` at the origin — "flag A2 here" / "plant a flag called home"; origin "look" for "here"), list (say every flag + coords), remove (delete flag `name` + its marker), goto (teleport to flag `name`).',
-    parameters: { type: 'object', properties: { op: { type: 'string', enum: ['set', 'list', 'remove', 'goto'] }, name: { type: 'string', description: 'flag name (e.g. "A2")' }, ...originProps, reply: { type: 'string' } }, required: ['op'] } } },
-  { type: 'function', function: { name: 'build_between', description: 'Build a WALL spanning two named flags ("build a wall between A2 and B1"). flagA/flagB are flag names; optional block/material, height, thickness.',
+  { type: 'function', function: { name: 'flag', description: 'Named spatial markers ("flags"). op: set (plant a NEW flag named `name` at the origin — ONLY for explicit "flag A2 here" / "plant a flag" / "mark this spot"), move (RELOCATE an existing flag to the origin — only for explicit "move flag A2 here"), list, remove (delete flag + marker), goto (teleport to flag). NEVER use set/move merely because the user names a flag to build at — that relocates it.',
+    parameters: { type: 'object', properties: { op: { type: 'string', enum: ['set', 'move', 'list', 'remove', 'goto'] }, name: { type: 'string', description: 'flag name (e.g. "A2")' }, ...originProps, reply: { type: 'string' } }, required: ['op'] } } },
+  { type: 'function', function: { name: 'build_between', description: 'Build a WALL spanning two EXISTING named flags ("build a wall between A2 and B1"). flagA/flagB are flag names; optional block/material, height, thickness. Does NOT move the flags.',
     parameters: { type: 'object', properties: { flagA: { type: 'string' }, flagB: { type: 'string' }, kindOrBlock: { type: 'string' }, block: { type: 'string' }, material: { type: 'string' }, height: { type: 'integer' }, thickness: { type: 'integer' }, reply: { type: 'string' } }, required: ['flagA', 'flagB'] } } },
+  { type: 'function', function: { name: 'connect_flags', description: 'Build WALLS connecting a SEQUENCE of EXISTING flags in order ("connect A B C with a wall", "connect C13-16 with roman walls", "wall around A1 A2 A3 A4"). Walls span each consecutive pair; does NOT move the flags. Expand ranges like "c13-16" to ["C13","C14","C15","C16"]. loop=true also closes the last flag back to the first (enclose/wall around).',
+    parameters: { type: 'object', properties: { flags: { type: 'array', items: { type: 'string' }, description: 'ordered EXISTING flag names, e.g. ["C13","C14","C15","C16"]' }, kindOrBlock: { type: 'string' }, block: { type: 'string' }, material: { type: 'string' }, height: { type: 'integer' }, thickness: { type: 'integer' }, loop: { type: 'boolean' }, reply: { type: 'string' } }, required: ['flags'] } } },
   { type: 'function', function: { name: 'build_in_region', description: 'Build INSIDE a named REGION defined with the Layout Wand ("build a castle in region 1", "put a keep in Region 2"). Resolves the region rectangle from the shared store, anchors the build to its corner, and sizes the footprint to the region. Routes through the Architect (furnished, detailed).',
     parameters: { type: 'object', properties: { region: { type: 'string', description: 'region name (e.g. "region 1" or "Region 2")' }, goal: { type: 'string', description: 'what to build, in the user\'s words' }, reply: { type: 'string' } }, required: ['region', 'goal'] } } },
   { type: 'function', function: { name: 'save_build', description: 'Save the ACTIVE/last build to the schematic library for reuse ("save this as cozy_cottage").',
@@ -153,8 +155,11 @@ Guidance:
 - A follow-up that MODIFIES the build you just made ("make it taller", "raise the roof", "add a west tower", "remove the tower") → edit_build (non-destructive; only the changed part is touched).
 - Quick edits → fill_box / set_block / dig / clear_area / flatten.
 - WORLD-SHAPING / EARTHWORKS (carve or move terrain, NOT a built object → NEVER build_structure/plan_build): "tunnel / bore / dig into / dig through" (e.g. "tunnel into this mountain, 30 long, 5 diameter") → tunnel (it bores the way the speaker LOOKS; width=diameter, shape "round" unless they say square). "trench / ditch / cut / channel / slot" → trench. "hole / pit / excavate / dig down" → pit. "hollow out / gut / empty the inside" → hollow. "moat / dig a moat" → moat. Put length/width/height/depth from the request into the tool args; default origin "look" for "here"/"this".
-- FLAGS (named spatial markers): "flag A2 here" / "plant a flag called home" / "mark this as A2" → flag op:set (origin "look" for "here"). "list/show flags" → flag op:list. "remove/delete flag A2" → flag op:remove. "go to / teleport to flag A2" → flag op:goto.
-- "build a wall between A2 and B1" (two flag NAMES) → build_between (flagA=A2, flagB=B1). To build something AT a flag, use a normal build tool with origin:"flag" + flag:"A2".
+- FLAGS (named markers): flag op:set ONLY when the user explicitly PLANTS a NEW flag here ("flag A2 here" / "plant a flag called home" / "mark this spot as A2"). "move flag A2 here" → flag op:move. "list/show flags" → flag op:list. "remove/delete flag A2" → flag op:remove. "go to flag A2" → flag op:goto.
+  CRITICAL: flag set/move MOVES a flag to where the speaker looks. NEVER use flag set/move just because the user NAMES an existing flag — that relocates their flag. When the user references EXISTING flags to BUILD, use their locations, do NOT re-plant:
+    - "put/build a <thing> AT flag A2" (or "at C11 and C12") → a build tool (build_structure/plan_build) with origin:"flag" + flag:"A2"; make ONE call PER flag. NEVER flag set.
+    - "build a wall between A2 and B1" → build_between (flagA=A2, flagB=B1).
+    - "connect A2 B1 C3 with a wall" / "connect C13-16 with roman walls" / "wall around A1 A2 A3 A4" → connect_flags with the ORDERED flag list (expand ranges like "c13-16" -> ["C13","C14","C15","C16"]; loop=true for "wall around/enclose").
 - REGIONS (rectangles defined with the Layout Wand): "build a castle in region 1" / "put a keep in Region 2" → build_in_region (region="region 1", goal=the build request). The build is anchored to the region and sized to fit it.
 - SAVED BUILDS (schematic library): "save this as <name>" / "save this build" → save_build. "list builds" / "what have I saved" → list_builds. "build <saved name> here" / "place my <name> here" → build_saved (origin "look" for "here"). "delete build <name>" → delete_build. After build_saved, "make it taller / add a tower" → edit_build as usual.
 - Movement/teleport → move. Time/weather/give → world_cmd.
@@ -345,6 +350,7 @@ async function dispatch(tool, args, speaker, message) {
     case 'edit_build': await runEdit(args, speaker); break
     case 'flag': await runFlag(args, speaker); break
     case 'build_between': await runBuildBetween(args, speaker); break
+    case 'connect_flags': await runConnectFlags(args, speaker); break
     case 'build_in_region': await runBuildInRegion(args, speaker); break
     case 'save_build': await runSaveBuild(args); break
     case 'list_builds': runListBuilds(); break
@@ -355,7 +361,7 @@ async function dispatch(tool, args, speaker, message) {
 }
 
 // Tools that speak their OWN reply line(s) below (so dispatch doesn't double-say).
-const SELF_REPLY = new Set(['answer', 'ask', 'plan_build', 'edit_build', 'flag', 'build_between', 'build_in_region', 'save_build', 'list_builds', 'build_saved', 'delete_build'])
+const SELF_REPLY = new Set(['answer', 'ask', 'plan_build', 'edit_build', 'flag', 'build_between', 'connect_flags', 'build_in_region', 'save_build', 'list_builds', 'build_saved', 'delete_build'])
 
 // ---- FLAGS: set / list / remove / goto ----
 async function runFlag(args, speaker) {
@@ -379,12 +385,49 @@ async function runFlag(args, speaker) {
     say(args.reply || `Heading to flag ${f.name}.`)
     return
   }
-  // set (default)
+  // set / move. NEVER silently RELOCATE an existing flag (the "put a tower at C11"
+  // → re-plants C11 on the player bug); only op:'move' may relocate an existing one.
   const name = args.name || args.flag || 'flag'
+  const existing = flags.get(name)
+  if (existing && op !== 'move') {
+    say(`Flag ${existing.name} is already at (${existing.x},${existing.y},${existing.z}) — using it. Say "move flag ${existing.name} here" to relocate it.`)
+    return
+  }
   const o = resolveOrigin(args.origin === 'flag' ? { origin: 'look' } : args, speaker)
   const rec = flags.set(name, { x: o.x, y: o.y, z: o.z, dim })
   await queueIdle()
-  say(args.reply || `Planted flag ${rec.name} at (${rec.x},${rec.y},${rec.z}).`)
+  say(args.reply || `${existing ? 'Moved' : 'Planted'} flag ${rec.name} to (${rec.x},${rec.y},${rec.z}).`)
+}
+
+// ---- connect a SEQUENCE of existing flags with walls (chain / loop) ----
+function expandRange(s) {
+  const m = String(s).trim().match(/^([a-zA-Z]*)(\d+)\s*-\s*([a-zA-Z]*)?(\d+)$/)  // "C13-16" / "C13-C16"
+  if (!m) return [String(s).trim()]
+  const pre = (m[1] || m[3] || '').toUpperCase(); const a = +m[2], b = +m[4]
+  if (isNaN(a) || isNaN(b) || Math.abs(b - a) > 64) return [String(s).trim()]
+  const out = []; const step = b >= a ? 1 : -1
+  for (let i = a; step > 0 ? i <= b : i >= b; i += step) out.push(pre + i)
+  return out
+}
+async function runConnectFlags(args, speaker) {
+  let names = (Array.isArray(args.flags) ? args.flags : String(args.flags || '').split(/[\s,]+/)).flatMap(expandRange).filter(Boolean)
+  if (names.length < 2) { say('Which flags should I connect? Give me two or more (e.g. "connect A1 A2 A3").'); return }
+  if (args.loop && names.length > 2) names.push(names[0])
+  let block = B(args.block || args.material, '')
+  if (!block) { const k = B(args.kindOrBlock, ''); const kindMap = { wall: 'stone_bricks', rampart: 'stone_bricks', barrier: 'stone_bricks', fence: 'oak_fence', hedge: 'oak_leaves' }; block = kindMap[k] || k || 'stone_bricks' }
+  const h = clamp(args.height, 1, 24, 5), th = clamp(args.thickness, 1, 6, 1)
+  let total = 0; const missing = []
+  for (let i = 0; i < names.length - 1; i++) {
+    const A = flags.get(names[i]), Bf = flags.get(names[i + 1])
+    if (!A) { if (!missing.includes(names[i])) missing.push(names[i]); continue }
+    if (!Bf) { if (!missing.includes(names[i + 1])) missing.push(names[i + 1]); continue }
+    total += wallBetween({ x: A.x, y: A.y, z: A.z }, { x: Bf.x, y: Bf.y, z: Bf.z }, { block, height: h, thickness: th }, hands) || 0
+  }
+  await queueIdle()
+  log(`connect_flags ${names.join('->')} block=${block} ~${total} blocks${missing.length ? ' missing=' + missing.join(',') : ''}`)
+  if (missing.length && !total) say(`No walls built — I don't have flags: ${missing.join(', ')}.`)
+  else if (missing.length) say(`Walls up (couldn't find: ${missing.join(', ')}).`)
+  else say(args.reply || `Walls connecting ${names.join(' → ')} are up.`)
 }
 
 // ---- build a wall spanning two flags ----
