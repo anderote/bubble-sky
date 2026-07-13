@@ -1,7 +1,7 @@
 package net.bubblesky.towerdefense.item;
 
-import net.bubblesky.towerdefense.block.AcidBlock;
 import net.bubblesky.towerdefense.registry.ModBlocks;
+import net.bubblesky.towerdefense.registry.ModFluids;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
@@ -13,9 +13,13 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 /**
- * A bucket that places a full-charge {@code towerdefense:acid} source where the
- * player clicks, then empties to a plain bucket (in survival). Mirrors vanilla
- * bucket-emptying flavor without wiring up a full fluid.
+ * A bucket that places a full {@code towerdefense:acid} <em>fluid source</em> where the
+ * player clicks (like a water bucket), then empties to a plain bucket (in survival).
+ *
+ * <p>Now that acid is a real vanilla-engine fluid, placing it just sets the acid block's
+ * default (still/source, level 8) state and schedules a fluid tick so the engine begins
+ * spreading it downhill/outward exactly like water. Empties to {@link Items#BUCKET} and
+ * stays {@code maxCount 1}.
  */
 public class AcidBucketItem extends Item {
 	public AcidBucketItem(Settings settings) {
@@ -36,9 +40,9 @@ public class AcidBucketItem extends Item {
 		}
 
 		if (!world.isClient) {
-			world.setBlockState(placePos, ModBlocks.ACID.getDefaultState()
-				.with(AcidBlock.CHARGE, AcidBlock.START_CHARGE));
-			world.scheduleBlockTick(placePos, ModBlocks.ACID, AcidBlock.TICK_DELAY);
+			// Place the still source, then kick off a fluid tick so it starts flowing.
+			world.setBlockState(placePos, ModBlocks.ACID.getDefaultState());
+			world.scheduleFluidTick(placePos, ModFluids.STILL_ACID, ModFluids.STILL_ACID.getTickRate(world));
 
 			PlayerEntity player = context.getPlayer();
 			if (player != null && !player.getAbilities().creativeMode) {

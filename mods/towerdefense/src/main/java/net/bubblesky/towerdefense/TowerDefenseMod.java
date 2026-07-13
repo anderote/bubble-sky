@@ -16,6 +16,7 @@ import net.bubblesky.towerdefense.game.TdHud;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.registry.ModBlockEntities;
 import net.bubblesky.towerdefense.registry.ModBlocks;
+import net.bubblesky.towerdefense.registry.ModFluids;
 import net.bubblesky.towerdefense.registry.ModEntities;
 import net.bubblesky.towerdefense.registry.ModItemGroups;
 import net.bubblesky.towerdefense.registry.ModItems;
@@ -66,6 +67,9 @@ public class TowerDefenseMod implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		ModItems.initialize();
+		// Fluids MUST init before blocks: AcidFluidBlock binds to ModFluids.STILL_ACID in
+		// its constructor, so the fluids have to exist before ModBlocks.ACID is created.
+		ModFluids.initialize();
 		ModBlocks.initialize();
 		ModBlockEntities.initialize();
 		ModEntities.initialize();

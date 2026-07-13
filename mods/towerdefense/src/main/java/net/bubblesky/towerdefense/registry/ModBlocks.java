@@ -2,7 +2,7 @@ package net.bubblesky.towerdefense.registry;
 
 import java.util.function.Function;
 import net.bubblesky.towerdefense.TowerDefenseMod;
-import net.bubblesky.towerdefense.block.AcidBlock;
+import net.bubblesky.towerdefense.block.AcidFluidBlock;
 import net.bubblesky.towerdefense.block.ArrowTowerBlock;
 import net.bubblesky.towerdefense.block.BallTowerBlock;
 import net.bubblesky.towerdefense.block.CannonTowerBlock;
@@ -15,6 +15,7 @@ import net.bubblesky.towerdefense.tower.TowerKind;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.Block;
 import net.minecraft.item.BlockItem;
+import net.minecraft.block.piston.PistonBehavior;
 import net.minecraft.item.Item;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
@@ -103,17 +104,22 @@ public final class ModBlocks {
 			.sounds(BlockSoundGroup.STONE),
 		TowerKind.BALL);
 
-	// The corrosive acid pseudo-liquid. No block item (obtained via acid_bucket,
-	// like vanilla fluids); still /setblock-able. No collision so you sink through
-	// it, translucent + non-opaque so you can see through the green.
+	// The corrosive acid FLUID's block form. Now a real vanilla-engine fluid (see
+	// ModFluids / AcidFluid): it spreads, pools and flows downhill exactly like water.
+	// No block item (obtained via acid_bucket, like vanilla fluids); still /setblock-able.
+	// Liquid + replaceable + no collision so you sink through it and it flows like water;
+	// non-opaque + translucent (client) so you can see through the green; drops nothing.
 	public static final Block ACID = register("acid",
-		AcidBlock::new,
+		AcidFluidBlock::new,
 		AbstractBlock.Settings.create()
+			.replaceable()
 			.noCollision()
+			.liquid()
 			.nonOpaque()
 			.strength(100.0f)
 			.dropsNothing()
 			.luminance(s -> 4)
+			.pistonBehavior(PistonBehavior.DESTROY)
 			.sounds(BlockSoundGroup.HONEY),
 		false);
 

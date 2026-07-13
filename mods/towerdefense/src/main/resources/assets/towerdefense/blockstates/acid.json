@@ -1,7 +1,5 @@
 {
-	"multipart": [
-		{
-			"apply": { "model": "towerdefense:block/acid" }
-		}
-	]
+	"variants": {
+		"": { "model": "towerdefense:block/acid" }
+	}
 }

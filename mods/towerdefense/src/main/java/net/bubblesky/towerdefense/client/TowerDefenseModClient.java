@@ -14,10 +14,13 @@ import net.bubblesky.towerdefense.entity.TdEnemyEntity;
 import net.bubblesky.towerdefense.progression.net.ProgressSyncPayload;
 import net.bubblesky.towerdefense.registry.ModBlocks;
 import net.bubblesky.towerdefense.registry.ModEntities;
+import net.bubblesky.towerdefense.registry.ModFluids;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandlerRegistry;
+import net.fabricmc.fabric.api.client.render.fluid.v1.SimpleFluidRenderHandler;
 import net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
@@ -78,8 +81,15 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		// The arrow/ball towers' combat bolt: also drawn as a vanilla arrow (it just vanishes on hit).
 		EntityRendererRegistry.register(ModEntities.TOWER_BOLT, TowerBoltEntityRenderer::new);
 
-		// Acid renders as a translucent green liquid.
+		// Acid renders as a translucent green liquid. It's now a real fluid, so we (a) mark
+		// its block translucent and (b) register a FluidRenderHandler for both the still and
+		// flowing acid fluids. Simplest approach: reuse the vanilla water still/flow sprites
+		// with a green tint (SimpleFluidRenderHandler.coloredWater). This registration is
+		// client-only (lives in the client entrypoint) so the dedicated server never touches it.
 		BlockRenderLayerMap.putBlock(ModBlocks.ACID, BlockRenderLayer.TRANSLUCENT);
+		SimpleFluidRenderHandler acidRenderHandler = SimpleFluidRenderHandler.coloredWater(0x4CC94C);
+		FluidRenderHandlerRegistry.INSTANCE.register(ModFluids.STILL_ACID, ModFluids.FLOWING_ACID, acidRenderHandler);
+		FluidRenderHandlerRegistry.INSTANCE.setBlockTransparency(ModBlocks.ACID, true);
 
 		// ---- Tower Defense control menu -----------------------------------
 		openMenuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
