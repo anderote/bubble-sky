@@ -17,9 +17,9 @@ fi
 write_plist() {
   local label="$1" program="$2" output="$3"
   local plist="$LAUNCH_AGENTS/$label.plist"
-  /usr/bin/python3 - "$plist" "$label" "$NODE" "$program" "$CONFIG" "$output" <<'PY'
+  /usr/bin/python3 - "$plist" "$label" "$NODE" "$program" "$CONFIG" "$output" "$PATH" <<'PY'
 import plistlib, sys
-file, label, node, program, config, output = sys.argv[1:]
+file, label, node, program, config, output, shell_path = sys.argv[1:]
 value = {
   "Label": label,
   "ProgramArguments": [node, program, config],
@@ -29,6 +29,7 @@ value = {
   "StandardOutPath": output,
   "StandardErrorPath": output,
   "ThrottleInterval": 10,
+  "EnvironmentVariables": {"PATH": shell_path},
 }
 with open(file, "wb") as handle: plistlib.dump(value, handle)
 PY

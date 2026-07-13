@@ -8,7 +8,7 @@
   "publicUrl": "http://andrew-mac.local:25880",
   "roles": ["server", "client", "claude-agent", "grok"],
   "providers": [
-    { "name": "claude", "adapter": "template", "command": "claude", "args": ["-p", "{prompt}"], "timeoutMs": 1800000 }
+    { "name": "claude", "adapter": "template", "command": "/absolute/path/to/claude", "chatArgs": ["-p", "{prompt}"], "devArgs": ["-p", "--permission-mode", "acceptEdits", "{prompt}"], "timeoutMs": 1800000 }
   ],
   "peers": [
     { "nodeId": "alli-mac", "url": "http://alli-mac.local:25880" }
