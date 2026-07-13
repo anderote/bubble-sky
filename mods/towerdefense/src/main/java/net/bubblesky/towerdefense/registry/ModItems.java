@@ -5,6 +5,9 @@ import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.item.AcidBucketItem;
 import net.bubblesky.towerdefense.item.FlagBowItem;
 import net.bubblesky.towerdefense.item.LayoutWandItem;
+import net.bubblesky.towerdefense.item.TdBowItem;
+import net.bubblesky.towerdefense.item.TowerArrowItem;
+import net.bubblesky.towerdefense.tower.TowerKind;
 import net.minecraft.item.Item;
 import net.minecraft.item.ToolMaterial;
 import net.minecraft.registry.Registries;
@@ -54,9 +57,30 @@ public final class ModItems {
 	public static final Item LAYOUT_WAND = register("layout_wand",
 		LayoutWandItem::new, new Item.Settings().maxCount(1));
 
-	// Flag Bow: shoots ammo-less flag arrows; each landed arrow plants a flag.
+	// DEPRECATED / retired: the separate Flag Bow. Flag-planting is now folded into
+	// the unified TD_BOW (sneak + release). Kept registered so existing inventories /
+	// world data referencing it don't break, but no longer granted or shown in the tab.
+	@Deprecated
 	public static final Item FLAG_BOW = register("flag_bow",
 		FlagBowItem::new, new Item.Settings().maxCount(1));
+
+	// The unified TD bow the join kit grants: normal fire = combat arrow, a loaded
+	// tower arrow = shoot-to-place a tower, sneak + fire = plant a Layout flag.
+	public static final Item TD_BOW = register("td_bow",
+		TdBowItem::new, new Item.Settings().maxCount(1));
+
+	// One-shot "tower arrows" the shop hands out; fired from TD_BOW to build a tower
+	// where they land. One item per tower kind (carries the kind directly).
+	public static final Item ARROW_TOWER_ARROW = register("arrow_tower_arrow",
+		s -> new TowerArrowItem(s, TowerKind.ARROW), new Item.Settings());
+	public static final Item CANNON_TOWER_ARROW = register("cannon_tower_arrow",
+		s -> new TowerArrowItem(s, TowerKind.CANNON), new Item.Settings());
+	public static final Item FROST_TOWER_ARROW = register("frost_tower_arrow",
+		s -> new TowerArrowItem(s, TowerKind.FROST), new Item.Settings());
+	// The tower-ball arrow: fired from TD_BOW, sticks to any face (walls included) and
+	// becomes a single-block mini arrow turret (no stick-structure).
+	public static final Item BALL_TOWER_ARROW = register("ball_tower_arrow",
+		s -> new TowerArrowItem(s, TowerKind.BALL), new Item.Settings());
 
 	public static Item register(String name, Function<Item.Settings, Item> factory, Item.Settings settings) {
 		RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(TowerDefenseMod.MOD_ID, name));

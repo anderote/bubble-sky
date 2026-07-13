@@ -39,6 +39,8 @@ public class TdArenaState extends PersistentState {
 	// ---- persistent fields -------------------------------------------------
 	/** Enemy spawn points (block positions). */
 	public final List<BlockPos> spawnPoints = new ArrayList<>();
+	/** Core positions of every built tower, so /td reset can clear their structures. */
+	public final List<BlockPos> towers = new ArrayList<>();
 	/** The base to defend. {@code null} until {@code /td base} is run. */
 	@Nullable
 	public BlockPos base = null;
@@ -49,8 +51,11 @@ public class TdArenaState extends PersistentState {
 	/** Current (last-started) wave number; 0 = no wave yet. */
 	public int currentWave = 0;
 	public Phase phase = Phase.IDLE;
-	/** Enemies still queued to spawn in the current wave. */
+	/** Enemies still queued to spawn in the current wave (bosses + escorting horde). */
 	public int enemiesRemaining = 0;
+	/** Warlord bosses still queued to spawn this (boss) wave; 0 on a normal wave. Of the
+	 *  {@link #enemiesRemaining} left to spawn, this many are drawn as bosses first. */
+	public int bossesRemaining = 0;
 	/** Ticks until the next staggered spawn. */
 	public int spawnCooldown = 0;
 	/** Consecutive failed spawn attempts for the current enemy (transient, not saved).
@@ -96,9 +101,18 @@ public class TdArenaState extends PersistentState {
 		return base != null && !gameOver;
 	}
 
+	/** Record a newly built tower's core position (for later teardown). */
+	public void addTower(BlockPos core) {
+		if (!towers.contains(core)) {
+			towers.add(core);
+			markDirty();
+		}
+	}
+
 	/** Wipe everything back to a blank arena. */
 	public void clear() {
 		spawnPoints.clear();
+		towers.clear();
 		base = null;
 		worldId = "";
 		baseHp = 0;
@@ -106,6 +120,7 @@ public class TdArenaState extends PersistentState {
 		currentWave = 0;
 		phase = Phase.IDLE;
 		enemiesRemaining = 0;
+		bossesRemaining = 0;
 		spawnCooldown = 0;
 		spawnFailures = 0;
 		intermissionCooldown = 0;
@@ -122,6 +137,11 @@ public class TdArenaState extends PersistentState {
 			spawns[i] = spawnPoints.get(i).asLong();
 		}
 		nbt.putLongArray("spawns", spawns);
+		long[] towerArr = new long[towers.size()];
+		for (int i = 0; i < towerArr.length; i++) {
+			towerArr[i] = towers.get(i).asLong();
+		}
+		nbt.putLongArray("towers", towerArr);
 		if (base != null) {
 			nbt.putLong("base", base.asLong());
 		}
@@ -131,6 +151,7 @@ public class TdArenaState extends PersistentState {
 		nbt.putInt("wave", currentWave);
 		nbt.putString("phase", phase.name());
 		nbt.putInt("enemiesRemaining", enemiesRemaining);
+		nbt.putInt("bossesRemaining", bossesRemaining);
 		nbt.putInt("spawnCooldown", spawnCooldown);
 		nbt.putInt("intermissionCooldown", intermissionCooldown);
 		nbt.putInt("wavesSurvived", wavesSurvived);
@@ -143,6 +164,9 @@ public class TdArenaState extends PersistentState {
 		for (long packed : nbt.getLongArray("spawns").orElse(new long[0])) {
 			s.spawnPoints.add(BlockPos.fromLong(packed));
 		}
+		for (long packed : nbt.getLongArray("towers").orElse(new long[0])) {
+			s.towers.add(BlockPos.fromLong(packed));
+		}
 		if (nbt.contains("base")) {
 			s.base = BlockPos.fromLong(nbt.getLong("base", 0L));
 		}
@@ -152,6 +176,7 @@ public class TdArenaState extends PersistentState {
 		s.currentWave = nbt.getInt("wave", 0);
 		s.phase = parsePhase(nbt.getString("phase", "IDLE"));
 		s.enemiesRemaining = nbt.getInt("enemiesRemaining", 0);
+		s.bossesRemaining = nbt.getInt("bossesRemaining", 0);
 		s.spawnCooldown = nbt.getInt("spawnCooldown", 0);
 		s.intermissionCooldown = nbt.getInt("intermissionCooldown", 0);
 		s.wavesSurvived = nbt.getInt("wavesSurvived", 0);

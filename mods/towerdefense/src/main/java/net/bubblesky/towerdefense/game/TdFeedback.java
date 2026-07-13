@@ -109,7 +109,7 @@ public final class TdFeedback {
 				st.base.getX() + 0.5, st.base.getY() + 1.0, st.base.getZ() + 0.5, 1, 0, 0, 0, 0);
 		}
 		title(world,
-			Text.literal("Base destroyed").formatted(Formatting.DARK_RED, Formatting.BOLD),
+			Text.literal("The Idol has fallen").formatted(Formatting.DARK_RED, Formatting.BOLD),
 			Text.literal("Survived " + wavesSurvived + " wave" + (wavesSurvived == 1 ? "" : "s")
 				+ " — /td restart").formatted(Formatting.RED));
 	}

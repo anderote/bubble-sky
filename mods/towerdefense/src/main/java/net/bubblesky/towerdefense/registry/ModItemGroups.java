@@ -38,10 +38,16 @@ public final class ModItemGroups {
 			entries.add(ModItems.COIN);
 			entries.add(ModItems.ACID_BUCKET);
 			entries.add(ModItems.LAYOUT_WAND);
-			entries.add(ModItems.FLAG_BOW);
+			// Flag Bow retired — flag-planting folded into the unified TD bow.
+			entries.add(ModItems.TD_BOW);
+			entries.add(ModItems.ARROW_TOWER_ARROW);
+			entries.add(ModItems.CANNON_TOWER_ARROW);
+			entries.add(ModItems.FROST_TOWER_ARROW);
+			entries.add(ModItems.BALL_TOWER_ARROW);
 			entries.add(ModBlocks.ARROW_TOWER);
 			entries.add(ModBlocks.CANNON_TOWER);
 			entries.add(ModBlocks.FROST_TOWER);
+			entries.add(ModBlocks.BALL_TOWER);
 		});
 	}
 }

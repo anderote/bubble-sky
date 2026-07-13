@@ -42,6 +42,39 @@ public final class TdClientHud {
 			return;
 		}
 
+		// ---- always-on gold counter --------------------------------------------
+		// The player's current coins, shown at ALL times (not just during a match),
+		// mirroring the server sidebar. Drawn top-left so it sits clear of the
+		// wave/idol bossbar at the top-centre.
+		int gold = TdClientStatus.coins();
+		Text goldLine = Text.literal("Gold: ").formatted(Formatting.GRAY)
+			.append(Text.literal(Integer.toString(gold)).formatted(Formatting.GOLD));
+		context.drawTextWithShadow(mc.textRenderer, goldLine, 6, 6, 0xFFFFFF);
+
+		// ---- always-on RPG level + XP bar --------------------------------------
+		// Player level, a slim XP bar, and unspent-point nudge, drawn just below the gold
+		// line at top-left — clear of the top-centre wave/idol bossbar. Progression is
+		// permanent, so this is meaningful even outside a live match.
+		int level = ClientProgress.level();
+		int points = ClientProgress.unspentPoints();
+		Text levelLine = Text.literal("Lvl ").formatted(Formatting.GRAY)
+			.append(Text.literal(Integer.toString(level)).formatted(Formatting.AQUA));
+		if (points > 0) {
+			levelLine = levelLine.copy()
+				.append(Text.literal("  (+" + points + " — press P)").formatted(Formatting.GREEN));
+		}
+		context.drawTextWithShadow(mc.textRenderer, levelLine, 6, 18, 0xFFFFFF);
+		int barX = 6;
+		int barY = 29;
+		int barW = 80;
+		int barH = 4;
+		context.fill(barX - 1, barY - 1, barX + barW + 1, barY + barH + 1, 0xFF000000);
+		context.fill(barX, barY, barX + barW, barY + barH, 0xFF303030);
+		int filled = (int) (barW * ClientProgress.xpFraction());
+		if (filled > 0) {
+			context.fill(barX, barY, barX + filled, barY + barH, 0xFF39C339);
+		}
+
 		String keyName = openKey != null ? openKey.getBoundKeyLocalizedText().getString() : "?";
 		Text line;
 		if (TdClientStatus.active()) {

@@ -2,17 +2,28 @@ package net.bubblesky.towerdefense.entity;
 
 import java.util.List;
 import java.util.UUID;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.DyedColorComponent;
+import net.minecraft.entity.EntityData;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.ai.goal.LookAroundGoal;
 import net.minecraft.entity.ai.goal.LookAtEntityGoal;
 import net.minecraft.entity.ai.goal.SwimGoal;
+import net.minecraft.entity.attribute.EntityAttributeInstance;
+import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.storage.ReadView;
 import net.minecraft.storage.WriteView;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.LocalDifficulty;
+import net.minecraft.world.ServerWorldAccess;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
@@ -79,6 +90,41 @@ public abstract class TdAllyEntity extends PathAwareEntity {
 		this.goalSelector.add(8, new LookAroundGoal(this));
 
 		this.targetSelector.add(2, new AllyTargetGoal(this));
+	}
+
+	// ---- loadout / uniforms ------------------------------------------------
+	/**
+	 * Kit the ally out on spawn: give it its role's armour + weapon, lock the gear
+	 * so it never drops as loot, and hand it a small standing-army armour bonus so a
+	 * squad can actually weather a wave. Runs on {@code spawn()} (the hire path) but
+	 * not on NBT reload, so the gear rolled here persists across saves.
+	 */
+	@Override
+	public EntityData initialize(ServerWorldAccess world, LocalDifficulty difficulty,
+			SpawnReason spawnReason, @Nullable EntityData entityData) {
+		EntityData data = super.initialize(world, difficulty, spawnReason, entityData);
+		equipLoadout();
+		// Uniforms are standard-issue kit, not battlefield loot — never drop them.
+		for (EquipmentSlot slot : EquipmentSlot.values()) {
+			this.setEquipmentDropChance(slot, 0.0f);
+		}
+		// A modest flat bonus on top of the equipped plate so allies survive waves.
+		EntityAttributeInstance armor = this.getAttributeInstance(EntityAttributes.ARMOR);
+		if (armor != null) {
+			armor.setBaseValue(armor.getBaseValue() + 2.0);
+		}
+		return data;
+	}
+
+	/** Equip this ally's themed armour + weapon. Overridden per role. */
+	protected void equipLoadout() {
+	}
+
+	/** A leather armour piece tinted with the house colour via the DYED_COLOR component. */
+	protected static ItemStack dyed(Item item, int rgb) {
+		ItemStack stack = new ItemStack(item);
+		stack.set(DataComponentTypes.DYED_COLOR, new DyedColorComponent(rgb));
+		return stack;
 	}
 
 	// ---- order state -------------------------------------------------------

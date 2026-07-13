@@ -8,6 +8,7 @@ import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.projectile.thrown.SnowballEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
@@ -34,6 +35,11 @@ public class CannonTowerBlockEntity extends AbstractTowerBlockEntity {
 
 	public CannonTowerBlockEntity(BlockPos pos, BlockState state) {
 		super(ModBlockEntities.CANNON_TOWER, pos, state);
+	}
+
+	@Override
+	public net.bubblesky.towerdefense.tower.TowerKind kind() {
+		return net.bubblesky.towerdefense.tower.TowerKind.CANNON;
 	}
 
 	@Override
@@ -74,7 +80,31 @@ public class CannonTowerBlockEntity extends AbstractTowerBlockEntity {
 			}
 		}
 
+		// Visible AoE: an explosion-style burst filling the splash radius so players SEE
+		// the blast, not just feel it. Scaled up a notch per tier.
+		spawnBlastBurst(world, target.getX(), target.getBodyY(0.5), target.getZ());
+
 		world.playSound(null, cx, cy, cz, SoundEvents.ENTITY_GENERIC_EXPLODE,
 			SoundCategory.BLOCKS, 0.6f, 1.4f);
+	}
+
+	/**
+	 * A one-shot explosion burst centred on the impact point, sized to the splash
+	 * radius: a couple of explosion puffs, a cloud of large smoke filling the blast,
+	 * a bright ring of crit/sweep sparks marking the edge, and lingering rising smoke.
+	 * Particle counts grow with tier so upgraded cannons read as bigger hits.
+	 */
+	private void spawnBlastBurst(ServerWorld world, double x, double y, double z) {
+		int t = getTier();
+		double r = SPLASH_RADIUS;
+		// Core detonation: a few explosion puffs at the centre.
+		world.spawnParticles(ParticleTypes.EXPLOSION, x, y, z, 1 + t, r * 0.3, r * 0.3, r * 0.3, 0.0);
+		// Body of the blast: large smoke filling roughly the splash sphere.
+		world.spawnParticles(ParticleTypes.LARGE_SMOKE, x, y, z, 22 + 10 * t, r * 0.5, r * 0.4, r * 0.5, 0.02);
+		// Edge flash: a bright ring of crit sparks + a couple of sweep arcs.
+		world.spawnParticles(ParticleTypes.CRIT, x, y, z, 30 + 15 * t, r * 0.6, r * 0.3, r * 0.6, 0.12);
+		world.spawnParticles(ParticleTypes.SWEEP_ATTACK, x, y, z, 2 + t, r * 0.4, 0.2, r * 0.4, 0.0);
+		// Lingering rising smoke after the flash.
+		world.spawnParticles(ParticleTypes.SMOKE, x, y + 0.2, z, 12 + 4 * t, r * 0.4, 0.3, r * 0.4, 0.01);
 	}
 }
