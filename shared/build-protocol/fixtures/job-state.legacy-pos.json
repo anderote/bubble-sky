@@ -1,0 +1,8 @@
+{
+  "taskId": "legacy-grok-1",
+  "status": "building",
+  "structure": "legacy cottage",
+  "jobs": [
+    { "id": "legacy-000001", "pos": { "x": 3, "y": 70, "z": 9 }, "block": "oak_planks", "phase": "walls", "region": "shell" }
+  ]
+}

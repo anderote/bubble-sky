@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { Vec3 } from "vec3";
+import { normalizeBuildState } from "../shared/build-protocol/index.mjs";
 
 const require = createRequire(import.meta.url);
 const { Schematic } = require("prismarine-schematic");
@@ -53,7 +54,7 @@ export async function compileSchematicPlan({
     entry.id = `${slug(structureName)}-${String(index + 1).padStart(6, "0")}`;
   });
 
-  return {
+  return normalizeBuildState({
     taskId: `${slug(structureName)}-${Date.now()}`,
     status: "building",
     structure: structureName,
@@ -69,7 +70,7 @@ export async function compileSchematicPlan({
     workers,
     jobs,
     createdAt: new Date().toISOString(),
-  };
+  });
 }
 
 export async function findSchematicByName(name, cwd = process.cwd()) {

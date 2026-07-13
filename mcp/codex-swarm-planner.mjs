@@ -9,6 +9,7 @@ import {
   findSchematicByName,
   listImportedSchematics,
 } from "./blueprint-compiler.mjs";
+import { normalizeBuildState, normalizeWorkerProgress } from "../shared/build-protocol/index.mjs";
 
 const { pathfinder, Movements, goals } = pathfinderPackage;
 
@@ -779,7 +780,7 @@ function parseList(text) {
 function readState() {
   try {
     if (!fs.existsSync(statePath)) return null;
-    return JSON.parse(fs.readFileSync(statePath, "utf8"));
+    return normalizeBuildState(JSON.parse(fs.readFileSync(statePath, "utf8")));
   } catch (error) {
     console.error(`failed to read swarm state: ${error.message}`);
     return null;
@@ -788,14 +789,15 @@ function readState() {
 
 function writeState(state) {
   fs.mkdirSync(runtimeDir, { recursive: true });
-  fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+  fs.writeFileSync(statePath, `${JSON.stringify(normalizeBuildState(state), null, 2)}\n`);
 }
 
 function writeWorkerProgressFiles(taskId) {
   const progressDir = path.join(runtimeDir, "progress");
   fs.mkdirSync(progressDir, { recursive: true });
   for (const worker of workerNames()) {
-    fs.writeFileSync(path.join(progressDir, `${worker}.json`), `${JSON.stringify({ taskId, worker, doneIds: [], failedIds: [] }, null, 2)}\n`);
+    const progress = normalizeWorkerProgress({ taskId, worker, doneIds: [], failedIds: [], claimedIds: [] });
+    fs.writeFileSync(path.join(progressDir, `${worker}.json`), `${JSON.stringify(progress, null, 2)}\n`);
   }
 }
 

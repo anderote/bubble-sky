@@ -1,0 +1,25 @@
+name: Build Protocol
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-protocol-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: node --test shared/build-protocol/test/*.test.mjs
+      - run: node --check shared/build-protocol/index.cjs
+      - run: node --check shared/build-protocol/index.mjs
