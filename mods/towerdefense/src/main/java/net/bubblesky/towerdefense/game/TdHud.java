@@ -109,7 +109,7 @@ public final class TdHud {
 			case INTERMISSION -> "Wave " + st.currentWave + " cleared — next incoming";
 			case IDLE -> st.currentWave == 0 ? "Ready — /td wave" : "Wave " + st.currentWave + " done";
 		};
-		baseBar.setName(Text.literal(phase + "  —  Base " + st.baseHp + "/" + st.baseMaxHp)
+		baseBar.setName(Text.literal(phase + "  —  Idol " + st.baseHp + "/" + st.baseMaxHp)
 			.formatted(Formatting.GOLD));
 		if (!baseBar.isVisible()) {
 			baseBar.setVisible(true);

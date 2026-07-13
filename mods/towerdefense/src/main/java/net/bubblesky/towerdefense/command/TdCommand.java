@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
 import net.bubblesky.towerdefense.entity.TdAllyEntity;
+import net.bubblesky.towerdefense.game.TdMarkers;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.layout.LayoutStore;
 import net.bubblesky.towerdefense.registry.ModBlocks;
@@ -111,9 +112,13 @@ public final class TdCommand {
 
 	public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
 		dispatcher.register(CommandManager.literal("td")
-			.requires(src -> src.hasPermissionLevel(2))
+			// Open to everyone: the game runs on the coin economy, not op. Survival,
+			// non-op players can set up and play a match entirely with /td.
+			.requires(src -> true)
 			.executes(TdCommand::help)
 			.then(CommandManager.literal("tower")
+				// Free instant-build is the one genuinely-admin cheat — keep it op-gated.
+				.requires(src -> src.hasPermissionLevel(2))
 				.executes(ctx -> tower(ctx, "arrow_tower"))
 				.then(CommandManager.argument("type", StringArgumentType.word())
 					.executes(ctx -> tower(ctx, StringArgumentType.getString(ctx, "type")))))
@@ -132,6 +137,11 @@ public final class TdCommand {
 						.executes(ctx -> command(ctx, StringArgumentType.getString(ctx, "order"),
 							StringArgumentType.getString(ctx, "flag"))))))
 			.then(CommandManager.literal("spawn").executes(TdCommand::spawn))
+			.then(CommandManager.literal("idol")
+				.executes(ctx -> base(ctx, TdArenaState.DEFAULT_BASE_HP))
+				.then(CommandManager.argument("hp", IntegerArgumentType.integer(1))
+					.executes(ctx -> base(ctx, IntegerArgumentType.getInteger(ctx, "hp")))))
+			// Legacy alias: /td base still works, but /td idol is the documented name.
 			.then(CommandManager.literal("base")
 				.executes(ctx -> base(ctx, TdArenaState.DEFAULT_BASE_HP))
 				.then(CommandManager.argument("hp", IntegerArgumentType.integer(1))
@@ -160,23 +170,28 @@ public final class TdCommand {
 			.formatted(Formatting.GOLD, Formatting.BOLD), false);
 
 		header(src, "What it is");
-		body(src, "A tower-defense game. You set up a base, then waves of enemies");
-		body(src, "march toward it. Build towers to stop them and survive as long");
-		body(src, "as you can — the base falls when its HP hits 0.");
+		body(src, "A tower-defense game. You raise an Idol to defend, then waves of");
+		body(src, "enemies march toward it. Build towers to stop them and survive as");
+		body(src, "long as you can — you lose when the Idol's HP hits 0.");
 
-		header(src, "Quick start");
+		header(src, "Quick start (pick your spots)");
 		src.sendFeedback(() -> Text.literal("  1) ").formatted(Formatting.GRAY)
-			.append(Text.literal("/td arena").formatted(Formatting.YELLOW))
-			.append(Text.literal(" — stand where you want the base; sets base + 2 spawn gates.")
+			.append(Text.literal("/td idol").formatted(Formatting.YELLOW))
+			.append(Text.literal(" — stand where you want the Idol; raises it there.")
 				.formatted(Formatting.GRAY)), false);
 		src.sendFeedback(() -> Text.literal("  2) ").formatted(Formatting.GRAY)
+			.append(Text.literal("/td spawn").formatted(Formatting.YELLOW))
+			.append(Text.literal(" — stand where enemies should pour in; repeat for more gates.")
+				.formatted(Formatting.GRAY)), false);
+		src.sendFeedback(() -> Text.literal("  3) ").formatted(Formatting.GRAY)
 			.append(Text.literal("/td wave").formatted(Formatting.YELLOW))
 			.append(Text.literal(" — begin the assault!").formatted(Formatting.GRAY)), false);
+		body(src, "In a hurry? /td arena auto-places the Idol + 2 spawn gates for you.");
 
 		header(src, "Commands");
-		line(src, "/td arena [dist]", "quick-setup: base here + 2 spawn gates (N/E) at dist blocks");
-		line(src, "/td base [hp]", "set the base to defend at your position (default 100 HP)");
-		line(src, "/td spawn", "add an enemy spawn point at your position");
+		line(src, "/td idol [hp]", "raise the Idol to defend at your position (default 100 HP)");
+		line(src, "/td spawn", "add an enemy spawn point at your position (repeatable)");
+		line(src, "/td arena [dist]", "quick-setup: Idol here + 2 spawn gates (N/E) at dist blocks");
 		line(src, "/td wave", "start the next wave (alias: /td start)");
 		line(src, "/td tower [type]", "place a tower where you're looking (free/op; default arrow_tower)");
 		line(src, "/td shop", "list buyable towers and their coin prices");
@@ -184,9 +199,9 @@ public final class TdCommand {
 		line(src, "/td upgrade", "spend coins to raise the tier of the tower you're looking at");
 		line(src, "/td hire <type>", "spend coins to summon an allied soldier (footman/archer/knight)");
 		line(src, "/td command <order> [flag]", "order your allies: hold/attack/follow/move (flag = anchor)");
-		line(src, "/td status", "show wave/base info (and the tower you're looking at)");
+		line(src, "/td status", "show wave/Idol info (and the tower you're looking at)");
 		line(src, "/td restart", "reset then re-arena here for a fresh run (start with /td wave)");
-		line(src, "/td reset", "clear the arena (waves, enemies, spawns, base)");
+		line(src, "/td reset", "clear the arena (waves, enemies, spawns, Idol + markers)");
 		line(src, "/td help", "show this guide");
 
 		header(src, "Towers");
@@ -217,11 +232,11 @@ public final class TdCommand {
 		header(src, "Enemies & bosses");
 		body(src, "An escalating army — goblins, footmen, archers, knights, undead —");
 		body(src, "that grows bigger and tougher each wave. Every 5th wave a Warlord");
-		body(src, "boss marches on the base; slaying it pays bonus coins.");
+		body(src, "boss marches on the Idol; slaying it pays bonus coins.");
 
 		header(src, "HUD");
-		body(src, "Bossbar: current wave + base HP.  Sidebar: your coins.");
-		body(src, "You lose when base HP reaches 0 — then /td restart to play again.");
+		body(src, "Bossbar: current wave + Idol HP.  Sidebar: your coins.");
+		body(src, "You lose when Idol HP reaches 0 — then /td restart to play again.");
 
 		src.sendFeedback(() -> Text.literal("=================================")
 			.formatted(Formatting.GOLD), false);
@@ -551,8 +566,11 @@ public final class TdCommand {
 			st.worldId = src.getWorld().getRegistryKey().getValue().toString();
 		}
 		st.markDirty();
-		src.sendFeedback(() -> Text.literal("Spawn point #" + st.spawnPoints.size()
-			+ " added at " + pos.toShortString()).formatted(Formatting.GREEN), false);
+		TdMarkers.placeSpawn(src.getWorld(), pos, st.spawnPoints.size());
+		src.sendFeedback(() -> Text.literal("Enemy spawn #" + st.spawnPoints.size()
+			+ " added at " + pos.toShortString() + ". "
+			+ (st.base == null ? "Now set the Idol with /td idol." : "Run /td wave to begin!"))
+			.formatted(Formatting.GREEN), false);
 		return 1;
 	}
 
@@ -560,14 +578,21 @@ public final class TdCommand {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity player = src.getPlayerOrThrow();
 		TdArenaState st = TdArenaState.get(src.getServer());
+		// Clear a previous Idol marker before moving it.
+		if (st.base != null) {
+			TdMarkers.clearIdol(src.getWorld(), st.base);
+		}
 		st.base = player.getBlockPos();
 		st.baseMaxHp = hp;
 		st.baseHp = hp;
 		st.worldId = src.getWorld().getRegistryKey().getValue().toString();
 		st.gameOver = false;
 		st.markDirty();
-		src.sendFeedback(() -> Text.literal("Base set at " + st.base.toShortString()
-			+ " with " + hp + " HP.").formatted(Formatting.GREEN), false);
+		TdMarkers.placeIdol(src.getWorld(), st.base);
+		src.sendFeedback(() -> Text.literal("Idol raised at " + st.base.toShortString()
+			+ " with " + hp + " HP. "
+			+ (st.spawnPoints.isEmpty() ? "Now add a spawn with /td spawn." : "Run /td wave to begin!"))
+			.formatted(Formatting.GREEN), false);
 		return 1;
 	}
 
@@ -581,23 +606,32 @@ public final class TdCommand {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity player = src.getPlayerOrThrow();
 		TdArenaState st = TdArenaState.get(src.getServer());
+		ServerWorld world = src.getWorld();
 		BlockPos here = player.getBlockPos();
+
+		// Clear any existing markers before laying out a fresh arena here.
+		TdMarkers.clearAll(world, st);
 
 		st.base = here;
 		st.baseMaxHp = TdArenaState.DEFAULT_BASE_HP;
 		st.baseHp = TdArenaState.DEFAULT_BASE_HP;
-		st.worldId = src.getWorld().getRegistryKey().getValue().toString();
+		st.worldId = world.getRegistryKey().getValue().toString();
 		st.gameOver = false;
 		st.spawnPoints.clear();
-		// Place gates at the terrain SURFACE at each (x,z), not the base's flat Y, so on
+		// Place gates at the terrain SURFACE at each (x,z), not the idol's flat Y, so on
 		// hilly/natural terrain the gates aren't buried in a hill (which would make enemy
 		// spawns fail). The WaveManager also re-snaps at spawn time as a safety net.
-		ServerWorld world = src.getWorld();
 		st.spawnPoints.add(surfaceGate(world, here.north(distance)));
 		st.spawnPoints.add(surfaceGate(world, here.east(distance)));
 		st.markDirty();
 
-		src.sendFeedback(() -> Text.literal("Arena ready: base at " + here.toShortString()
+		// Visible markers: the Idol pillar + a gate at each auto-placed spawn.
+		TdMarkers.placeIdol(world, st.base);
+		for (int i = 0; i < st.spawnPoints.size(); i++) {
+			TdMarkers.placeSpawn(world, st.spawnPoints.get(i), i + 1);
+		}
+
+		src.sendFeedback(() -> Text.literal("Arena ready: Idol at " + here.toShortString()
 			+ " (" + st.baseMaxHp + " HP) with 2 spawn gates " + distance
 			+ " blocks N/E. Run /td wave to begin.").formatted(Formatting.GREEN), true);
 		return 1;
@@ -646,10 +680,10 @@ public final class TdCommand {
 		src.sendFeedback(() -> Text.literal("  Enemies alive: " + aliveF
 			+ (st.enemiesRemaining > 0 ? " (+" + st.enemiesRemaining + " to spawn)" : ""))
 			.formatted(Formatting.YELLOW), false);
-		src.sendFeedback(() -> Text.literal("  Base HP: "
-			+ (st.base == null ? "no base" : st.baseHp + "/" + st.baseMaxHp))
+		src.sendFeedback(() -> Text.literal("  Idol HP: "
+			+ (st.base == null ? "no idol" : st.baseHp + "/" + st.baseMaxHp))
 			.formatted(Formatting.YELLOW), false);
-		src.sendFeedback(() -> Text.literal("  Spawn points: " + st.spawnPoints.size())
+		src.sendFeedback(() -> Text.literal("  Enemy spawns: " + st.spawnPoints.size())
 			.formatted(Formatting.YELLOW), false);
 		if (!st.gameOver && st.base != null) {
 			int next = st.currentWave + 1;
@@ -684,10 +718,12 @@ public final class TdCommand {
 					|| e.getCommandTags().contains(TdAllyEntity.ALLY_TAG))
 				.forEach(net.minecraft.entity.Entity::discard);
 		}
-		// Release any force-loaded arena chunks before wiping the base/spawn positions.
+		// Remove the Idol + spawn markers (blocks + labels) before wiping their positions.
+		TdMarkers.clearAll(arena, st);
+		// Release any force-loaded arena chunks before wiping the idol/spawn positions.
 		WaveManager.releaseArenaChunks(src.getServer(), st);
 		st.clear();
-		src.sendFeedback(() -> Text.literal("Arena reset.").formatted(Formatting.GREEN), true);
+		src.sendFeedback(() -> Text.literal("Arena reset — Idol and spawns cleared.").formatted(Formatting.GREEN), true);
 		return 1;
 	}
 }

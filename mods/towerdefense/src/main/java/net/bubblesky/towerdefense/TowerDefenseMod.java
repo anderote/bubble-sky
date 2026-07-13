@@ -16,10 +16,13 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -63,6 +66,7 @@ public class TowerDefenseMod implements ModInitializer {
 
 		registerCoinDrops();
 		registerJoinHint();
+		registerStartingGear();
 
 		// Game loop: the /td command family + the endless wave state machine.
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
@@ -100,6 +104,47 @@ public class TowerDefenseMod implements ModInitializer {
 					.append(Text.literal("/td").formatted(Formatting.YELLOW))
 					.append(Text.literal(" to open the menu.").formatted(Formatting.GRAY)),
 				false));
+	}
+
+	/** Persistent player tag marking that the starting kit has already been granted. */
+	private static final String KIT_TAG = "td_starter_kit";
+
+	/**
+	 * Starting gear: the first time a player joins with the mod installed, grant a
+	 * survival TD starter kit — a bow + 64 arrows, a wooden sword, and a full set of
+	 * leather armor (equipped) — so a survival, non-op player can fight and set up a
+	 * match immediately.
+	 *
+	 * <p>Idempotent: guarded by the persistent {@link #KIT_TAG} scoreboard tag on the
+	 * player (which survives in player NBT across rejoins/reloads). {@code addCommandTag}
+	 * returns {@code true} only when the tag was newly added, so the kit is granted
+	 * exactly once per player and never re-issued on subsequent joins.
+	 */
+	private void registerStartingGear() {
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+			ServerPlayerEntity player = handler.player;
+			if (!player.addCommandTag(KIT_TAG)) {
+				return; // already kitted — do not re-grant
+			}
+			// Equip leather armor into the armor slots.
+			player.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET));
+			player.equipStack(EquipmentSlot.CHEST, new ItemStack(Items.LEATHER_CHESTPLATE));
+			player.equipStack(EquipmentSlot.LEGS, new ItemStack(Items.LEATHER_LEGGINGS));
+			player.equipStack(EquipmentSlot.FEET, new ItemStack(Items.LEATHER_BOOTS));
+			// Weapons + ammo into the inventory (drops nearby if somehow full).
+			giveOrDrop(player, new ItemStack(Items.WOODEN_SWORD));
+			giveOrDrop(player, new ItemStack(Items.BOW));
+			giveOrDrop(player, new ItemStack(Items.ARROW, 64));
+			player.sendMessage(Text.literal("Starter kit granted: bow + 64 arrows, wooden sword, leather armor.")
+				.formatted(Formatting.GREEN), false);
+		});
+	}
+
+	/** Insert a stack into the player's inventory, dropping it at their feet if full. */
+	private static void giveOrDrop(ServerPlayerEntity player, ItemStack stack) {
+		if (!player.getInventory().insertStack(stack)) {
+			player.dropItem(stack, false);
+		}
 	}
 
 	/**

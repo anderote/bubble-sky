@@ -194,14 +194,12 @@ public final class WaveManager {
 	 */
 	public static Text startNextWave(MinecraftServer server) {
 		TdArenaState st = TdArenaState.get(server);
-		if (st.base == null) {
-			return Text.literal("No base set. Use /td base first.").formatted(Formatting.RED);
-		}
-		if (st.spawnPoints.isEmpty()) {
-			return Text.literal("No spawn points. Use /td spawn first.").formatted(Formatting.RED);
+		if (st.base == null || st.spawnPoints.isEmpty()) {
+			return Text.literal("Set the Idol with /td idol and at least one spawn with /td spawn.")
+				.formatted(Formatting.RED);
 		}
 		if (st.gameOver) {
-			return Text.literal("Base was destroyed. Use /td reset to start over.").formatted(Formatting.RED);
+			return Text.literal("The Idol was destroyed. Use /td reset to start over.").formatted(Formatting.RED);
 		}
 		if (st.phase == TdArenaState.Phase.SPAWNING || st.phase == TdArenaState.Phase.ACTIVE) {
 			return Text.literal("Wave " + st.currentWave + " is still in progress.").formatted(Formatting.YELLOW);
@@ -222,7 +220,7 @@ public final class WaveManager {
 		st.markDirty();
 		if (boss) {
 			broadcast(server, Text.literal("BOSS WAVE " + st.currentWave
-				+ " — a Warlord marches on the base!").formatted(Formatting.DARK_PURPLE, Formatting.BOLD));
+				+ " — a Warlord marches on the Idol!").formatted(Formatting.DARK_PURPLE, Formatting.BOLD));
 		} else {
 			broadcast(server, Text.literal("Wave " + st.currentWave + " incoming — "
 				+ st.enemiesRemaining + " enemies!").formatted(Formatting.GOLD));
@@ -309,7 +307,7 @@ public final class WaveManager {
 			int reward = waveReward(st.currentWave);
 			payNearbyPlayers(world, st, reward);
 			broadcast(server, Text.literal("Wave " + st.currentWave + " cleared! +"
-				+ reward + " coins. Base HP " + st.baseHp + "/" + st.baseMaxHp)
+				+ reward + " coins. Idol HP " + st.baseHp + "/" + st.baseMaxHp)
 				.formatted(Formatting.GREEN));
 			TdFeedback.waveClear(world, st);
 			st.phase = TdArenaState.Phase.INTERMISSION;
@@ -545,7 +543,7 @@ public final class WaveManager {
 		// Stop pinning the arena's chunks now the match is over.
 		setArenaForced(world, st, false);
 		st.markDirty();
-		broadcast(server, Text.literal("Base destroyed! Survived " + st.wavesSurvived
+		broadcast(server, Text.literal("The Idol was destroyed! Survived " + st.wavesSurvived
 			+ " wave" + (st.wavesSurvived == 1 ? "" : "s") + ". Use /td restart to play again.")
 			.formatted(Formatting.DARK_RED));
 		TdFeedback.gameOver(world, st, st.wavesSurvived);
