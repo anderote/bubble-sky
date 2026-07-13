@@ -18,7 +18,7 @@ import net.minecraft.util.math.BlockPos;
  * single-target tower. Tier/placer economy lives in {@link AbstractTowerBlockEntity}.
  */
 public class ArrowTowerBlockEntity extends AbstractTowerBlockEntity {
-	private static final double BASE_RANGE = 16.0;
+	private static final double BASE_RANGE = 32.0;
 	private static final int BASE_COOLDOWN = 30;
 	private static final double ARROW_DAMAGE = 4.0;
 	private static final float ARROW_SPEED = 1.6f;

@@ -1,6 +1,7 @@
 package net.bubblesky.towerdefense.client;
 
 import net.bubblesky.towerdefense.TowerDefenseMod;
+import net.bubblesky.towerdefense.client.render.ColonistBipedRenderer;
 import net.bubblesky.towerdefense.client.render.FlagArrowEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TowerArrowEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TdAllyBipedRenderer;
@@ -64,6 +65,10 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		bindAlly(ModEntities.ALLY_FOOTMAN, "ally_footman");
 		bindAlly(ModEntities.ALLY_ARCHER, "ally_archer");
 		bindAlly(ModEntities.ALLY_KNIGHT, "ally_knight");
+
+		// Colony worker — the colonist skin on the same biped model.
+		EntityRendererRegistry.register(ModEntities.COLONIST, ctx -> new ColonistBipedRenderer(ctx,
+			Identifier.of(TowerDefenseMod.MOD_ID, "textures/entity/colonist.png")));
 
 		// Flag / tower arrows: rendered as vanilla-looking arrows in flight.
 		EntityRendererRegistry.register(ModEntities.FLAG_ARROW, FlagArrowEntityRenderer::new);

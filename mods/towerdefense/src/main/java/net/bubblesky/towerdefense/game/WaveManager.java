@@ -76,8 +76,14 @@ public final class WaveManager {
 	private static final double BOSS_SPEED_FACTOR = 0.9;
 
 	// ---- scaling / tuning --------------------------------------------------
-	/** Hard cap on the movement-speed attribute so late waves stay playable. */
-	private static final double SPEED_CAP = 0.5;
+	/** Every enemy shuffles slowly like a zombie — a fixed march speed regardless of the
+	 *  mob's own base speed, so goblins and knights alike lumber in at the same slow pace. */
+	private static final double ZOMBIE_MARCH_SPEED = 0.20;
+	/** Hard cap on the (zombie-slow) march speed so even deep waves never sprint. */
+	private static final double SPEED_CAP = 0.26;
+	/** Short target-acquisition range: enemies only fight an ally/player that gets within
+	 *  this range ("in the way"). The Idol (manager-steered) is always the primary target. */
+	private static final double IN_THE_WAY_RANGE = 8.0;
 	/** Long-marathon hp/damage curve — LINEAR term (per wave beyond the first). */
 	private static final double MARATHON_LINEAR = 0.10;
 	/** Long-marathon hp/damage curve — mild-POWER term coefficient. */
@@ -153,9 +159,9 @@ public final class WaveManager {
 		pool.add(ModEntities.GOBLIN_SKIRMISHER);
 		pool.add(ModEntities.GOBLIN_SKIRMISHER);
 		pool.add(ModEntities.FOOTMAN);
-		// Tier 2 — ranged pressure + sturdier melee.
+		// Tier 2 — sturdier melee. (Archers removed: the enemy army is all-melee now.)
 		if (wave >= 4) {
-			pool.add(ModEntities.ARCHER);
+			pool.add(ModEntities.MAN_AT_ARMS);
 			pool.add(ModEntities.MAN_AT_ARMS);
 		}
 		// Tier 2.5 — barbarians: a rugged heavy that gets more common as the run goes.
@@ -456,9 +462,12 @@ public final class WaveManager {
 		double baseHp = mob.getMaxHealth();
 		setAttribute(mob, EntityAttributes.MAX_HEALTH, baseHp * scale);
 		mob.setHealth(mob.getMaxHealth());
-		double baseSpeed = mob.getAttributeValue(EntityAttributes.MOVEMENT_SPEED);
+		// All enemies shuffle in slowly like zombies: a fixed slow march speed (NOT the
+		// mob's own base) with only a gentle per-wave nudge, hard-capped low.
 		setAttribute(mob, EntityAttributes.MOVEMENT_SPEED,
-			Math.min(SPEED_CAP, baseSpeed * speedScale(wave)));
+			Math.min(SPEED_CAP, ZOMBIE_MARCH_SPEED * speedScale(wave)));
+		// Only engage an ally/player that comes within range — no long-range hunting.
+		setAttribute(mob, EntityAttributes.FOLLOW_RANGE, IN_THE_WAY_RANGE);
 
 		// The archer still marches to base, but re-arm its ranged goal so it shoots
 		// players who wander into range (clearGoalsAndTasks stripped it above).
@@ -501,9 +510,9 @@ public final class WaveManager {
 		boss.setHealth(boss.getMaxHealth());
 		setAttribute(boss, EntityAttributes.ATTACK_DAMAGE, BOSS_ATTACK_BASE);
 		setAttribute(boss, EntityAttributes.SCALE, BOSS_SCALE);
-		double baseSpeed = boss.getAttributeValue(EntityAttributes.MOVEMENT_SPEED);
 		setAttribute(boss, EntityAttributes.MOVEMENT_SPEED,
-			Math.min(SPEED_CAP, baseSpeed * speedScale(wave) * BOSS_SPEED_FACTOR));
+			Math.min(SPEED_CAP, ZOMBIE_MARCH_SPEED * speedScale(wave) * BOSS_SPEED_FACTOR));
+		setAttribute(boss, EntityAttributes.FOLLOW_RANGE, IN_THE_WAY_RANGE);
 
 		steerToBase(boss, st);
 		// Only the first Warlord of the squad triggers the roar + title fanfare.

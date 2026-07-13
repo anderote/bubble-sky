@@ -35,6 +35,10 @@ public final class StatModifiers {
 	private static final Identifier VITALITY_ID = id("progression_vitality");
 	private static final Identifier STRENGTH_ID = id("progression_strength");
 	private static final Identifier AGILITY_ID = id("progression_agility");
+	// Flat "base character" buffs every player gets (on top of vanilla + allocated stats).
+	private static final Identifier BASE_HEALTH_ID = id("base_health");
+	private static final Identifier BASE_ATTACK_ID = id("base_attack");
+	private static final Identifier BASE_ARMOR_ID = id("base_armor");
 
 	// ---- per-point steps ---------------------------------------------------
 	/** Vitality: +2 max health (one heart) per point, flat. */
@@ -47,6 +51,14 @@ public final class StatModifiers {
 	private static final double BOW_PER_POINT = 0.06;
 	/** Fortune: +8% coin payout per point. */
 	private static final double COIN_PER_POINT = 0.08;
+
+	// ---- flat base-character buffs (always on, independent of skill points) --
+	/** +20 max health for every player (20 -> 40 HP / 20 hearts). */
+	private static final double BASE_HEALTH_BONUS = 20.0;
+	/** +2 base melee attack damage for every player. */
+	private static final double BASE_ATTACK_BONUS = 2.0;
+	/** +4 innate armor for every player (stacks with worn armor). */
+	private static final double BASE_ARMOR_BONUS = 4.0;
 
 	private static Identifier id(String path) {
 		return Identifier.of(TowerDefenseMod.MOD_ID, path);
@@ -68,6 +80,15 @@ public final class StatModifiers {
 		applyFlat(player, EntityAttributes.MOVEMENT_SPEED, AGILITY_ID,
 			progress.points(Stat.AGILITY) * SPEED_PER_POINT,
 			EntityAttributeModifier.Operation.ADD_MULTIPLIED_BASE);
+
+		// Flat base-character buffs — a sturdier, stronger hero by default, on top of
+		// vanilla and any allocated points. Always applied (idempotent, stable ids).
+		applyFlat(player, EntityAttributes.MAX_HEALTH, BASE_HEALTH_ID,
+			BASE_HEALTH_BONUS, EntityAttributeModifier.Operation.ADD_VALUE);
+		applyFlat(player, EntityAttributes.ATTACK_DAMAGE, BASE_ATTACK_ID,
+			BASE_ATTACK_BONUS, EntityAttributeModifier.Operation.ADD_VALUE);
+		applyFlat(player, EntityAttributes.ARMOR, BASE_ARMOR_ID,
+			BASE_ARMOR_BONUS, EntityAttributeModifier.Operation.ADD_VALUE);
 
 		if (player.getHealth() > player.getMaxHealth()) {
 			player.setHealth(player.getMaxHealth());

@@ -1,7 +1,5 @@
 package net.bubblesky.towerdefense.entity;
 
-import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
-import net.bubblesky.towerdefense.state.TdArenaState;
 import net.bubblesky.towerdefense.tower.TowerKind;
 import net.bubblesky.towerdefense.tower.TowerStructure;
 import net.minecraft.entity.Entity;
@@ -23,8 +21,8 @@ import net.minecraft.world.World;
 
 /**
  * The "shoot-to-place" projectile: fired from the TD bow when a {@code TowerArrowItem}
- * is loaded. Flies like a normal arrow, and wherever it strikes a block it raises the
- * tower's tall stick-structure (pole + ball + working core) via {@link TowerStructure},
+ * is loaded. Flies like a normal arrow, and wherever it strikes a block it places the
+ * single-block tower against the struck face via {@link TowerStructure} (ground or wall),
  * crediting the shooter as the tower's placer, then vanishes.
  *
  * <p>Non-combat: it never drops a pickup arrow (pickup stays {@code DISALLOWED}) and an
@@ -58,23 +56,10 @@ public class TowerArrowEntity extends PersistentProjectileEntity {
 	@Override
 	protected void onBlockHit(BlockHitResult blockHitResult) {
 		if (this.getWorld() instanceof ServerWorld world) {
-			// Build on the empty cell adjacent to the struck face, so the tower embeds
-			// against the block the arrow hit (same rule the flag arrow uses). This works
-			// for a vertical wall too, which is how the sticky BALL turret mounts.
+			// Place the single-block tower on the empty cell adjacent to the struck face,
+			// so it embeds against the block the arrow hit — ground or a vertical wall.
 			BlockPos base = blockHitResult.getBlockPos().offset(blockHitResult.getSide());
-			BlockPos core;
-			if (kind == TowerKind.BALL) {
-				// Single sticky turret block — NO stick-structure. Stamp the placer and
-				// register it so /td reset clears it.
-				core = base;
-				world.setBlockState(core, kind.block().getDefaultState());
-				if (world.getBlockEntity(core) instanceof AbstractTowerBlockEntity tower) {
-					tower.setPlacer(ownerUuid());
-				}
-				TdArenaState.get(world.getServer()).addTower(core);
-			} else {
-				core = TowerStructure.build(world, base, kind, ownerUuid());
-			}
+			BlockPos core = TowerStructure.build(world, base, kind, ownerUuid());
 			messageShooter(Text.literal(prettyName())
 				.formatted(Formatting.GREEN)
 				.append(Text.literal(String.format(" raised at (%d, %d, %d)",

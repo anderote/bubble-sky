@@ -80,9 +80,9 @@ public class CharacterScreen extends Screen {
 
 		// ---- header: title, level, XP bar, unspent points ----------------
 		context.drawCenteredTextWithShadow(this.textRenderer,
-			Text.literal("Character").formatted(Formatting.GOLD, Formatting.BOLD), cx, 20, 0xFFFFFF);
+			Text.literal("Character").formatted(Formatting.GOLD, Formatting.BOLD), cx, 20, 0xFFFFFFFF);
 		context.drawCenteredTextWithShadow(this.textRenderer,
-			Text.literal("Level " + ClientProgress.level()).formatted(Formatting.YELLOW), cx, 36, 0xFFFFFF);
+			Text.literal("Level " + ClientProgress.level()).formatted(Formatting.YELLOW), cx, 36, 0xFFFFFFFF);
 
 		// XP bar.
 		int barW = 200;
@@ -97,14 +97,14 @@ public class CharacterScreen extends Screen {
 		}
 		context.drawCenteredTextWithShadow(this.textRenderer,
 			Text.literal(ClientProgress.xp() + " / " + ClientProgress.xpForNextLevel() + " XP")
-				.formatted(Formatting.GRAY), cx, barY + barH + 3, 0xFFFFFF);
+				.formatted(Formatting.GRAY), cx, barY + barH + 3, 0xFFFFFFFF);
 
 		int points = ClientProgress.unspentPoints();
 		Text pointsLine = Text.literal("Skill points: ")
 			.formatted(Formatting.WHITE)
 			.append(Text.literal(Integer.toString(points))
 				.formatted(points > 0 ? Formatting.GREEN : Formatting.DARK_GRAY));
-		context.drawCenteredTextWithShadow(this.textRenderer, pointsLine, cx, 70, 0xFFFFFF);
+		context.drawCenteredTextWithShadow(this.textRenderer, pointsLine, cx, 70, 0xFFFFFFFF);
 
 		// ---- stat rows ----------------------------------------------------
 		Stat[] stats = Stat.values();
@@ -116,7 +116,7 @@ public class CharacterScreen extends Screen {
 			Text label = Text.literal(statName(stat)).formatted(Formatting.WHITE)
 				.append(Text.literal("  (" + ClientProgress.points(stat) + ")").formatted(Formatting.AQUA))
 				.append(Text.literal("  " + statEffect(stat)).formatted(Formatting.DARK_GRAY));
-			context.drawTextWithShadow(this.textRenderer, label, labelX, textY, 0xFFFFFF);
+			context.drawTextWithShadow(this.textRenderer, label, labelX, textY, 0xFFFFFFFF);
 			if (plusButtons[i] != null) {
 				plusButtons[i].active = hasPoints;
 			}

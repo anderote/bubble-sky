@@ -24,7 +24,7 @@ import net.minecraft.util.math.BlockPos;
  * {@link AbstractTowerBlockEntity}.
  */
 public class BallTowerBlockEntity extends AbstractTowerBlockEntity {
-	private static final double BASE_RANGE = 10.0;
+	private static final double BASE_RANGE = 20.0;
 	private static final int BASE_COOLDOWN = 20;
 	private static final double ARROW_DAMAGE = 2.0;
 	private static final float ARROW_SPEED = 1.6f;

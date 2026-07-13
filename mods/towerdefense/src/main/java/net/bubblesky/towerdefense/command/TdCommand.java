@@ -756,18 +756,14 @@ public final class TdCommand {
 					|| e.getCommandTags().contains(TdAllyEntity.ALLY_TAG))
 				.forEach(net.minecraft.entity.Entity::discard);
 		}
-		// Tear down every built tower's stick-structure (best-effort, only our blocks).
-		if (arena != null) {
-			for (BlockPos core : new java.util.ArrayList<>(st.towers)) {
-				TowerStructure.clear(arena, core);
-			}
-		}
+		// Towers are PERMANENT: a reset no longer removes them. They stay as normal
+		// breakable blocks in the world (break one to get its tower block back).
 		// Remove the Idol + spawn markers (blocks + labels) before wiping their positions.
 		TdMarkers.clearAll(arena, st);
 		// Release any force-loaded arena chunks before wiping the idol/spawn positions.
 		WaveManager.releaseArenaChunks(src.getServer(), st);
 		st.clear();
-		src.sendFeedback(() -> Text.literal("Arena reset — Idol and spawns cleared.").formatted(Formatting.GREEN), true);
+		src.sendFeedback(() -> Text.literal("Arena reset — Idol and spawns cleared (towers kept).").formatted(Formatting.GREEN), true);
 		return 1;
 	}
 }

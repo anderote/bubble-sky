@@ -36,6 +36,8 @@
 	"entity.towerdefense.ally_archer": "Allied Archer",
 	"entity.towerdefense.ally_knight": "Allied Knight",
 
+	"entity.towerdefense.colonist": "Colonist",
+
 	"key.categories.towerdefense": "Tower Defense",
 	"key.towerdefense.open_menu": "Open Tower Defense Menu",
 	"key.towerdefense.open_hire": "Open Hire Menu (H)",

@@ -1,6 +1,7 @@
 package net.bubblesky.towerdefense.registry;
 
 import net.bubblesky.towerdefense.TowerDefenseMod;
+import net.bubblesky.towerdefense.colony.ColonistEntity;
 import net.bubblesky.towerdefense.entity.FlagArrowEntity;
 import net.bubblesky.towerdefense.entity.TowerArrowEntity;
 import net.bubblesky.towerdefense.entity.TdAllyArcher;
@@ -75,6 +76,11 @@ public final class ModEntities {
 		registerAllyArcher("ally_archer", 0.6f, 1.95f);
 	public static final EntityType<TdFootman> ALLY_KNIGHT =
 		registerFootman("ally_knight", 0.7f, 2.0f);
+
+	// ---- colony COLONIST --------------------------------------------------
+	/** A named humanoid worker the player recruits into a colony (mine/chop/hunt/forage/haul). */
+	public static final EntityType<ColonistEntity> COLONIST =
+		registerColonist("colonist", 0.6f, 1.95f);
 
 	// ---- projectiles ------------------------------------------------------
 	/** The Flag Bow's arrow: plants a Layout flag wherever it lands. */
@@ -169,6 +175,17 @@ public final class ModEntities {
 		return Registry.register(Registries.ENTITY_TYPE, key, type);
 	}
 
+	private static EntityType<ColonistEntity> registerColonist(String name, float width, float height) {
+		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, name));
+		EntityType<ColonistEntity> type = EntityType.Builder
+			.create(ColonistEntity::new, SpawnGroup.CREATURE)
+			.dimensions(width, height)
+			.maxTrackingRange(48)
+			.build(key);
+		return Registry.register(Registries.ENTITY_TYPE, key, type);
+	}
+
 	// ---- default attributes -----------------------------------------------
 	private static DefaultAttributeContainer.Builder attrs(double hp, double atk, double speed) {
 		return HostileEntity.createHostileAttributes()
@@ -203,6 +220,10 @@ public final class ModEntities {
 		FabricDefaultAttributeRegistry.register(ALLY_FOOTMAN, allyAttrs(28.0, 5.0, 0.28));
 		FabricDefaultAttributeRegistry.register(ALLY_ARCHER, allyAttrs(20.0, 5.0, 0.26));
 		FabricDefaultAttributeRegistry.register(ALLY_KNIGHT, allyAttrs(60.0, 8.0, 0.24));
+
+		// Colonist: a sturdy worker — enough hp to survive stray mobs, a light melee hit
+		// (used when hunting), and a brisk work pace.
+		FabricDefaultAttributeRegistry.register(COLONIST, allyAttrs(24.0, 3.0, 0.30));
 	}
 
 	/** All roster types, ordered light -> heavy (used by the wave composer). */

@@ -72,6 +72,10 @@ public abstract class TdEnemyEntity extends HostileEntity {
 	 */
 	public void addAllyCombatGoals() {
 		this.goalSelector.add(3, new MeleeAttackGoal(this, 1.2, false));
+		// Prefer hired soldiers, but also cut down a PLAYER who gets in the way. Both are
+		// short-range only (the wave manager lowers each enemy's FOLLOW_RANGE on spawn), so
+		// the Idol stays the primary objective and enemies never hunt players across the map.
 		this.targetSelector.add(2, new ActiveTargetGoal<>(this, TdAllyEntity.class, true));
+		this.targetSelector.add(3, new ActiveTargetGoal<>(this, PlayerEntity.class, true));
 	}
 }

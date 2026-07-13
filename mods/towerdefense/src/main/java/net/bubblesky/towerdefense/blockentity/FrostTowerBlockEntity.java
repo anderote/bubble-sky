@@ -26,7 +26,7 @@ import net.minecraft.util.math.Box;
  * duration grow with tier.
  */
 public class FrostTowerBlockEntity extends AbstractTowerBlockEntity {
-	private static final double BASE_RANGE = 14.0;
+	private static final double BASE_RANGE = 28.0;
 	private static final int BASE_COOLDOWN = 40;
 	private static final double FROST_DAMAGE = 1.0;
 	private static final double CHILL_RADIUS = 3.0;

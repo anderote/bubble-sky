@@ -1,8 +1,6 @@
 package net.bubblesky.towerdefense.item;
 
 import java.util.UUID;
-import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
-import net.bubblesky.towerdefense.state.TdArenaState;
 import net.bubblesky.towerdefense.tower.TowerKind;
 import net.bubblesky.towerdefense.tower.TowerStructure;
 import net.minecraft.block.BlockState;
@@ -19,20 +17,11 @@ import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * The placeable "tower block" the shop hands out ({@code /td buy}). Placing it RAISES
- * the whole tower rather than dropping a single block:
- *
- * <ul>
- *   <li>ARROW / CANNON / FROST → {@link TowerStructure#build} raises the tall pole +
- *       orb + working core at the targeted cell, exactly like a landed tower arrow;</li>
- *   <li>BALL → a single sticky turret block is set against the clicked face
- *       (walls included) and registered for {@code /td reset}.</li>
- * </ul>
- *
- * <p>Either way the placing player is stamped as the tower's owner (so its kills pay
- * them coins) and the core is registered with {@link TdArenaState} so {@code /td reset}
- * tears it down. Vanilla single-block placement is fully overridden — we never call
- * {@code super.useOnBlock}.
+ * The placeable "tower block" the shop hands out ({@code /td buy}). Placing it puts down
+ * the single-block tower at the targeted cell (ground or against a wall) via
+ * {@link TowerStructure#build}, which stamps the placing player as the tower's owner (so
+ * its kills pay them coins) and registers it so {@code /td reset} tears it down. Vanilla
+ * single-block placement is otherwise overridden — we never call {@code super.useOnBlock}.
  */
 public class TowerBlockItem extends BlockItem {
 	private final TowerKind kind;
@@ -65,16 +54,9 @@ public class TowerBlockItem extends BlockItem {
 		PlayerEntity player = context.getPlayer();
 		UUID placer = player != null ? player.getUuid() : null;
 
-		if (kind == TowerKind.BALL) {
-			serverWorld.setBlockState(target, kind.block().getDefaultState());
-			if (serverWorld.getBlockEntity(target) instanceof AbstractTowerBlockEntity tower) {
-				tower.setPlacer(placer);
-			}
-			TdArenaState.get(serverWorld.getServer()).addTower(target);
-		} else {
-			// Raise the full stick-tower; build() registers the core with the arena state.
-			TowerStructure.build(serverWorld, target, kind, placer);
-		}
+		// Place the single-block tower at the targeted cell (ground or against a wall);
+		// build() stamps the placer and registers it with the arena state.
+		TowerStructure.build(serverWorld, target, kind, placer);
 
 		if (player == null || !player.getAbilities().creativeMode) {
 			context.getStack().decrement(1);

@@ -27,7 +27,7 @@ import net.minecraft.util.math.Box;
  * damage source so kills credit coins to the placer.
  */
 public class CannonTowerBlockEntity extends AbstractTowerBlockEntity {
-	private static final double BASE_RANGE = 14.0;
+	private static final double BASE_RANGE = 28.0;
 	private static final int BASE_COOLDOWN = 60;
 	private static final double CANNON_DAMAGE = 8.0;
 	private static final double SPLASH_RADIUS = 3.0;

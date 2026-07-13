@@ -1,6 +1,8 @@
 package net.bubblesky.towerdefense;
 
 import net.bubblesky.towerdefense.bridge.AgentBridge;
+import net.bubblesky.towerdefense.colony.ColonyChat;
+import net.bubblesky.towerdefense.colony.ColonyCommand;
 import net.bubblesky.towerdefense.command.TdCommand;
 import net.bubblesky.towerdefense.item.LayoutWandItem;
 import net.bubblesky.towerdefense.layout.LayoutStore;
@@ -75,6 +77,13 @@ public class TowerDefenseMod implements ModInitializer {
 		WaveManager.register();
 		TdHud.register();
 
+		// Colony layer: the /colony command + the by-name chat control, both routing
+		// through the shared ColonyOrders hub. Colonists are recruited with gold and do
+		// autonomous rule-based work (mine/chop/hunt/forage/haul) around a home flag.
+		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
+			ColonyCommand.register(dispatcher));
+		ColonyChat.register();
+
 		// RPG progression: permanent XP/levels/skill points. Registers its own XP-on-kill
 		// AFTER_DEATH listener (separate from WaveManager's boss bounty), the allocate/sync
 		// payloads, and the join/respawn/world-change stat (re)application. See progression/.
@@ -134,11 +143,11 @@ public class TowerDefenseMod implements ModInitializer {
 			if (!player.addCommandTag(KIT_TAG)) {
 				return; // already kitted — do not re-grant
 			}
-			// Equip leather armor into the armor slots.
-			player.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET));
-			player.equipStack(EquipmentSlot.CHEST, new ItemStack(Items.LEATHER_CHESTPLATE));
-			player.equipStack(EquipmentSlot.LEGS, new ItemStack(Items.LEATHER_LEGGINGS));
-			player.equipStack(EquipmentSlot.FEET, new ItemStack(Items.LEATHER_BOOTS));
+			// Equip a medium chainmail set into the armor slots.
+			player.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.CHAINMAIL_HELMET));
+			player.equipStack(EquipmentSlot.CHEST, new ItemStack(Items.CHAINMAIL_CHESTPLATE));
+			player.equipStack(EquipmentSlot.LEGS, new ItemStack(Items.CHAINMAIL_LEGGINGS));
+			player.equipStack(EquipmentSlot.FEET, new ItemStack(Items.CHAINMAIL_BOOTS));
 			// Weapons + ammo into the inventory (drops nearby if somehow full). The bow
 			// is the unified TD bow: fire = combat arrow, sneak-fire = plant a flag, and
 			// a bought tower arrow fired from it shoot-to-places that tower.
@@ -147,7 +156,7 @@ public class TowerDefenseMod implements ModInitializer {
 			giveOrDrop(player, new ItemStack(Items.ARROW, 64));
 			// Seed gold so a fresh player can afford their first towers straight away.
 			giveOrDrop(player, new ItemStack(ModItems.COIN, STARTER_GOLD));
-			player.sendMessage(Text.literal("Starter kit granted: TD bow + 64 arrows, wooden sword, leather armor, "
+			player.sendMessage(Text.literal("Starter kit granted: TD bow + 64 arrows, wooden sword, chainmail armor, "
 				+ STARTER_GOLD + " gold. Sneak+fire to plant flags; buy a tower then place/fire it to build.")
 				.formatted(Formatting.GREEN), false);
 		});

@@ -8,31 +8,27 @@ import net.minecraft.block.Blocks;
 import net.minecraft.item.Item;
 
 /**
- * The three buildable tower types, each carrying everything the "shoot-to-place"
- * flow needs: the functional core {@link Block} (the ArrowTower/Cannon/Frost block
- * whose block entity does the firing), the one-shot "tower arrow" {@link Item} the
- * shop hands out, and the decorative stick-structure palette (pole block + ball
- * block + ball radius) used to build the tall thin tower around the core.
+ * The buildable tower types. Each is a SINGLE functional block that fires from its
+ * outer face; it carries the functional core {@link Block} (whose block entity does
+ * the firing) and the one-shot "tower arrow" {@link Item} the shop hands out. The
+ * {@code pole}/{@code ball}/{@code ballRadius} fields are vestigial from the old
+ * stick-tower structure (radius 0 now keeps the muzzle offset at ~0.9).
  *
  * <p>Block/item references are wrapped in {@link Supplier}s so the enum can load
  * before {@link ModBlocks}/{@link ModItems} finish their static registration
  * (they are only dereferenced at runtime, never at class-load time).
  */
 public enum TowerKind {
-	/** Arrow tower: wood pole + stone ball. Fast, cheap, single-target. */
+	/** Arrow tower: fast, cheap, single-target. */
 	ARROW("arrow_tower", () -> ModBlocks.ARROW_TOWER, () -> ModItems.ARROW_TOWER_ARROW,
-		Blocks.OAK_LOG, Blocks.STONE, 1),
-	/** Cannon tower: dark-stone pole + a BIGGER iron ball. Slow, splash damage. */
+		Blocks.OAK_LOG, Blocks.STONE, 0),
+	/** Cannon tower: slow, high-damage splash. */
 	CANNON("cannon_tower", () -> ModBlocks.CANNON_TOWER, () -> ModItems.CANNON_TOWER_ARROW,
-		Blocks.POLISHED_DEEPSLATE, Blocks.IRON_BLOCK, 2),
-	/** Frost tower: prismarine pole + a light-blue ball. Slows the swarm. */
+		Blocks.POLISHED_DEEPSLATE, Blocks.IRON_BLOCK, 0),
+	/** Frost tower: slows the swarm. */
 	FROST("frost_tower", () -> ModBlocks.FROST_TOWER, () -> ModItems.FROST_TOWER_ARROW,
-		Blocks.PRISMARINE_BRICKS, Blocks.LIGHT_BLUE_CONCRETE, 1),
-	/**
-	 * Tower ball: a single sticky one-block mini arrow turret (no pole/orb — it is
-	 * NEVER built via {@link TowerStructure}). The pole/ball palette is only carried
-	 * for interface symmetry; {@code ballRadius 0} keeps the muzzle offset at ~0.9.
-	 */
+		Blocks.PRISMARINE_BRICKS, Blocks.LIGHT_BLUE_CONCRETE, 0),
+	/** Tower ball: a small, cheap, sticky mini arrow turret. */
 	BALL("ball_tower", () -> ModBlocks.BALL_TOWER, () -> ModItems.BALL_TOWER_ARROW,
 		Blocks.OAK_LOG, Blocks.STONE, 0);
 
@@ -78,7 +74,7 @@ public enum TowerKind {
 		return ball;
 	}
 
-	/** Radius of the top orb in blocks (1 = ~3 wide, 2 = ~5 wide). */
+	/** Vestigial (all towers are single-block); kept at 0 so the muzzle offset stays ~0.9. */
 	public int ballRadius() {
 		return ballRadius;
 	}

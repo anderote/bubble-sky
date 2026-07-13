@@ -25,7 +25,7 @@ import net.minecraft.world.World;
  *
  * <ul>
  *   <li><b>Normal draw + release</b> → fires a real combat {@link ArrowEntity}
- *       (consuming one arrow, owned by the shooter so kills pay coins).</li>
+ *       (UNLIMITED ammo — no arrow needed or consumed; owned by the shooter so kills pay coins).</li>
  *   <li><b>A "tower arrow" ({@link TowerArrowItem}) is loaded</b> → normal release
  *       instead fires a {@link TowerArrowEntity} that builds that tower where it lands
  *       (the "buy → shoot to place" flow); the tower arrow is consumed.</li>
@@ -33,8 +33,8 @@ import net.minecraft.world.World;
  *       {@link FlagArrowEntity} (folds in the retired Flag Bow).</li>
  * </ul>
  *
- * <p>Like the old Flag Bow it always starts drawing (so sneak-to-flag never needs ammo);
- * the combat branch is the only one that needs an arrow in the pack.
+ * <p>Like the old Flag Bow it always starts drawing; every branch is ammo-less — the bow
+ * has unlimited arrows — so a release always fires.
  */
 public class TdBowItem extends BowItem {
 	/** Minimum draw before a shot registers (matches vanilla's 0.1 gate). */
@@ -95,12 +95,9 @@ public class TdBowItem extends BowItem {
 			return true;
 		}
 
-		// Otherwise, normal combat: needs a real arrow (unless creative).
-		boolean creative = player.getAbilities().creativeMode;
-		int arrowSlot = creative ? -1 : findArrowSlot(player);
-		if (!creative && arrowSlot < 0) {
-			return false; // no ammo — nothing happens
-		}
+		// Otherwise, normal combat. The TD bow has UNLIMITED ammo — it never needs or
+		// consumes arrows. Fired arrows are pickup-restricted (like Infinity) so the free
+		// shots can't be farmed back off the ground.
 		if (world instanceof ServerWorld serverWorld) {
 			ArrowEntity arrow = new ArrowEntity(serverWorld, player, new ItemStack(Items.ARROW), stack);
 			arrow.setVelocity(player, player.getPitch(), player.getYaw(), 0.0f, pull * MAX_SPEED, DIVERGENCE);
@@ -111,13 +108,8 @@ public class TdBowItem extends BowItem {
 			if (pull == 1.0f) {
 				arrow.setCritical(true);
 			}
-			arrow.pickupType = creative
-				? PersistentProjectileEntity.PickupPermission.CREATIVE_ONLY
-				: PersistentProjectileEntity.PickupPermission.ALLOWED;
+			arrow.pickupType = PersistentProjectileEntity.PickupPermission.CREATIVE_ONLY;
 			serverWorld.spawnEntity(arrow);
-		}
-		if (!creative && arrowSlot >= 0) {
-			player.getInventory().getStack(arrowSlot).decrement(1);
 		}
 		playShootSound(world, player, pull);
 		return true;
@@ -142,17 +134,6 @@ public class TdBowItem extends BowItem {
 		DefaultedList<ItemStack> stacks = player.getInventory().getMainStacks();
 		for (int i = 0; i < stacks.size(); i++) {
 			if (stacks.get(i).getItem() instanceof TowerArrowItem) {
-				return i;
-			}
-		}
-		return -1;
-	}
-
-	/** First inventory slot holding a plain arrow, or -1. */
-	private static int findArrowSlot(PlayerEntity player) {
-		DefaultedList<ItemStack> stacks = player.getInventory().getMainStacks();
-		for (int i = 0; i < stacks.size(); i++) {
-			if (stacks.get(i).isOf(Items.ARROW)) {
 				return i;
 			}
 		}
