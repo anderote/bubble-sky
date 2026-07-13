@@ -8,6 +8,7 @@ import { Vec3 } from "vec3";
 import minecraftData from "../mindcraft/upstream/node_modules/minecraft-data/index.js";
 import mineflayer from "../mindcraft/upstream/node_modules/mineflayer/index.js";
 import pathfinderPackage from "../mindcraft/upstream/node_modules/mineflayer-pathfinder/index.js";
+import { blueprintJobs, blueprintStore, normalizeBounds, parseBlueprintRequest } from "./build-blueprint-memory.mjs";
 
 const { pathfinder, Movements, goals } = pathfinderPackage;
 
@@ -23,6 +24,7 @@ const historyLimit = Number(process.env.CODEX_CHAT_HISTORY_LIMIT || 2000);
 const visibilityStatePath = process.env.CODEX_CHAT_VISIBILITY_STATE || ".codex-runtime/chat-visibility.json";
 const swarmRuntimeDir = process.env.CODEX_SWARM_RUNTIME || ".codex-runtime/swarm";
 const swarmStatePath = path.join(swarmRuntimeDir, "state.json");
+const blueprints = blueprintStore(process.env.CODEX_BLUEPRINT_DIR || ".codex-runtime/blueprints");
 const delegatedDroneName = process.env.CODEX_ARCHITECT_DRONE || "CodexDrone1";
 const delegateArchitectTower = process.env.CODEX_ARCHITECT_DELEGATE_TOWER !== "0";
 const delegatedJobLimit = Number(process.env.CODEX_DELEGATED_JOB_LIMIT || 50000);
@@ -59,6 +61,9 @@ const helpLines = [
   "look at [player|me]",
   "what am I looking at",
   "keep building this red thing",
+  "save this between flags A1 and A2 as twistedStaircase1",
+  "build blueprint twistedStaircase1 here",
+  "list blueprints",
   "go to <x> <y> <z>",
   "build castle wall with two towers",
   "build fortress here",
@@ -289,6 +294,12 @@ async function runCommand(speaker, commandText) {
     return;
   }
 
+  const blueprintRequest = parseBlueprintRequest(command);
+  if (blueprintRequest && (blueprintRequest.action !== "build" || blueprints.load(blueprintRequest.name))) {
+    await runBlueprintRequest(speaker, command, blueprintRequest);
+    return;
+  }
+
   if (lower === "stop") {
     followTarget = null;
     clearAirborneFollow();
@@ -490,6 +501,12 @@ function runCommandRoutingSelfTest() {
     {
       name: "history visibility fallback",
       pass: selfTestHistoryVisibilityFallback(),
+    },
+    {
+      name: "generic blueprint memory routes",
+      pass: parseBlueprintRequest("save this to blueprints as twistedStaircase1")?.action === "save" &&
+        parseBlueprintRequest("build blueprint twistedStaircase1 here")?.action === "build" &&
+        parseBlueprintRequest("make a workable twisted staircase here") === null,
     },
   ];
 
@@ -916,6 +933,8 @@ function freeformBuildPrompt(speaker, command, origin, direction) {
     "Stay inside this box:",
     `x ${origin.x - 24}..${origin.x + 24}, y ${origin.y - 4}..${origin.y + 32}, z ${origin.z - 24}..${origin.z + 24}.`,
     "Prefer visible, recognizable silhouettes over huge solid cubes. Use air fills first only when needed.",
+    "The result must be physically usable: entrances stay open, floors are supported, and routes are traversable by a player.",
+    "For staircases, produce a continuous walkable ascent with enough headroom, correctly oriented stair states, landings where needed, and railings on exposed edges.",
     "Do not use entities, particles, execute, summon, command blocks, redstone clocks, lava, fire, water, or TNT.",
     `Player: ${speaker}`,
     `Origin near player feet: ${formatBlockPosition(origin)}`,
@@ -1468,6 +1487,146 @@ function coordinatesInsideContextBox(values, origin) {
     if (z < origin.z - 16 || z > origin.z + 16) return false;
   }
   return true;
+}
+
+async function runBlueprintRequest(speaker, command, request) {
+  if (request.action === "list") {
+    const names = blueprints.list();
+    say(names.length ? `saved blueprints: ${names.join(", ")}` : "I do not have any saved building blueprints yet.", { to: speaker });
+    return;
+  }
+  if (request.action === "forget") {
+    say(blueprints.remove(request.name) ? `forgot blueprint ${request.name}` : `I do not have a blueprint named ${request.name}`, { to: speaker });
+    return;
+  }
+  if (request.action === "save") {
+    await saveVisibleBlueprint(speaker, command, request);
+    return;
+  }
+  if (request.action === "build") {
+    await buildSavedBlueprint(speaker, command, request);
+  }
+}
+
+async function saveVisibleBlueprint(speaker, command, request) {
+  const selection = await resolveBlueprintSelection(speaker, command, request.flags || []);
+  if (!selection) return;
+  const bounds = normalizeBounds(selection.a.position, selection.b.position);
+  const center = {
+    x: Math.floor((bounds.min.x + bounds.max.x) / 2),
+    y: Math.floor((bounds.min.y + bounds.max.y) / 2),
+    z: Math.floor((bounds.min.z + bounds.max.z) / 2),
+  };
+  bot.chat(`/tp ${username} ${center.x} ${center.y} ${center.z}`);
+  await wait(Number(process.env.CODEX_BLUEPRINT_LOAD_WAIT_MS || 900));
+
+  try {
+    const exclude = [
+      selection.a.position, { ...selection.a.position, y: selection.a.position.y + 1 },
+      selection.b.position, { ...selection.b.position, y: selection.b.position.y + 1 },
+    ];
+    const blueprint = blueprints.save(request.name, bounds.min, bounds.max, readBlueprintBlock, { exclude });
+    say(`saved ${blueprint.name}: ${blueprint.size.x}x${blueprint.size.y}x${blueprint.size.z} from ${selection.a.name} to ${selection.b.name}. Build it later with "@${primaryHandle} build blueprint ${blueprint.name} here".`, { to: speaker });
+  } catch (error) {
+    say(`I could not save that blueprint: ${error.message}`, { to: speaker });
+  }
+}
+
+async function buildSavedBlueprint(speaker, command, request) {
+  const blueprint = blueprints.load(request.name);
+  if (!blueprint) {
+    say(`I do not have a blueprint named ${request.name}. Ask me to list blueprints.`, { to: speaker });
+    return;
+  }
+  const context = await resolvePhysicalContext(speaker, command);
+  const target = context.lookedBlock?.position || context.focus?.position || context.playerPosition;
+  const origin = { x: target.x, y: target.y + 1, z: target.z };
+  const jobs = blueprintJobs(blueprint, origin, delegatedDroneName);
+  say(`rebuilding ${blueprint.name} at ${formatBlockPosition(origin)} with ${jobs.length} saved block cells`, { to: speaker });
+  summonDroneToBuildSite(origin);
+  writeDelegatedState({
+    taskId: `codex-blueprint-${Date.now()}`,
+    structure: blueprint.name,
+    origin,
+    jobs,
+    requestedBy: speaker,
+    originalText: command,
+    instructions: `Rebuild saved blueprint ${blueprint.name} exactly at ${formatBlockPosition(origin)}.`,
+    allowModdedBlocks: true,
+  });
+}
+
+async function resolveBlueprintSelection(speaker, command, requestedNames) {
+  const player = await resolveVisiblePlayer(speaker);
+  await makeContextVisible(player, speaker);
+  const focus = findLookedBlock(player, command)?.position || blockPosition(player.position);
+  const markers = findLayoutFlagMarkers(focus);
+  if (requestedNames.length === 2) {
+    const selected = requestedNames.map((name) => markers.find((marker) => marker.name.toLowerCase() === name.toLowerCase()));
+    if (selected.every(Boolean)) return { a: selected[0], b: selected[1] };
+    say(`I cannot see both named flags. Visible nearby flags: ${markers.map((m) => m.name).join(", ") || "none"}.`, { to: speaker });
+    return null;
+  }
+  if (markers.length < 2) {
+    say(`I need two opposite-corner flags to know exactly what to save. Shoot both corners with the Flag Bow, then repeat "@${primaryHandle} save this as ${parseBlueprintRequest(command)?.name || "myBlueprint"}".`, { to: speaker });
+    return null;
+  }
+  if (markers.length > 2) {
+    say(`I see ${markers.length} nearby flags (${markers.map((m) => m.name).join(", ")}). Tell me "save this between flags NAME1 and NAME2 as ${parseBlueprintRequest(command)?.name || "myBlueprint"}".`, { to: speaker });
+    return null;
+  }
+  return { a: markers[0], b: markers[1] };
+}
+
+function findLayoutFlagMarkers(focus) {
+  const markers = [];
+  for (const entity of Object.values(bot.entities || {})) {
+    if (entity?.name !== "armor_stand" || !entity.position) continue;
+    const markerPos = entity.position.floored().offset(0, -1, 0);
+    if (blockDistance(markerPos, focus) > 64) continue;
+    const base = bot.blockAt(markerPos, false);
+    const spire = bot.blockAt(markerPos.offset(0, 1, 0), false);
+    if (!base?.name?.endsWith("_wool") || spire?.name !== "lightning_rod") continue;
+    markers.push({ name: entityDisplayName(entity) || `flag_${markers.length + 1}`, position: blockPosition(markerPos) });
+  }
+  if (!markers.length && vanillaBlocksByName.lightning_rod?.id != null) {
+    const positions = bot.findBlocks({ matching: vanillaBlocksByName.lightning_rod.id, maxDistance: 64, count: 16 });
+    for (const spirePos of positions) {
+      const markerPos = spirePos.offset(0, -1, 0);
+      if (bot.blockAt(markerPos, false)?.name?.endsWith("_wool")) {
+        markers.push({ name: `flag_${markers.length + 1}`, position: blockPosition(markerPos) });
+      }
+    }
+  }
+  return markers.sort((a, b) => blockDistance(a.position, focus) - blockDistance(b.position, focus));
+}
+
+function entityDisplayName(entity) {
+  const raw = entity.customName ?? entity.metadata?.[2];
+  if (typeof raw === "string") {
+    try { return plainChatComponent(JSON.parse(raw)); } catch { return raw.replace(/^"|"$/g, ""); }
+  }
+  return plainChatComponent(raw);
+}
+
+function plainChatComponent(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(plainChatComponent).join("");
+  return `${value.text || ""}${plainChatComponent(value.extra)}`;
+}
+
+function readBlueprintBlock(position) {
+  const block = bot.blockAt(new Vec3(position.x, position.y, position.z), false);
+  if (!block) throw new Error(`chunk is not loaded at ${formatBlockPosition(position)}`);
+  const name = block.name || "air";
+  const properties = block.getProperties?.() || {};
+  const state = Object.entries(properties)
+    .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join(",");
+  return state ? `${name}[${state}]` : name;
 }
 
 async function resolvePhysicalContext(speaker, command) {
@@ -2425,6 +2584,7 @@ function writeDelegatedState(state) {
     requestedBy: state.requestedBy || null,
     originalText: state.originalText || null,
     instructions: state.instructions || `Build ${state.structure} at ${formatBlockPosition(state.origin)}.`,
+    allowModdedBlocks: Boolean(state.allowModdedBlocks),
     origin: state.origin,
     jobCount: state.jobs.length,
     jobs: state.jobs,
@@ -2451,10 +2611,16 @@ function validateDelegatedJobs(state) {
     if (![job.x, job.y, job.z].every((value) => Number.isInteger(value))) {
       throw new Error(`delegated ${state.structure || "task"} has non-integer coordinates in job ${job.id}`);
     }
-    if (!isKnownVanillaBlock(commandBlockName(job.block))) {
+	if (!isKnownVanillaBlock(commandBlockName(job.block)) &&
+			!(state.allowModdedBlocks && isSafeCapturedBlockState(job.block))) {
       throw new Error(`delegated ${state.structure || "task"} has unknown block ${job.block} in job ${job.id}`);
     }
   }
+}
+
+function isSafeCapturedBlockState(block) {
+  return /^[a-z0-9_.-]+(?::[a-z0-9_./-]+)?(?:\[[a-z0-9_=,.-]+\])?$/.test(String(block)) &&
+    !/\b(?:command_block|structure_block|jigsaw|barrier)\b/.test(commandBlockName(block));
 }
 
 function archiveExistingDelegatedState(nextTaskId) {
