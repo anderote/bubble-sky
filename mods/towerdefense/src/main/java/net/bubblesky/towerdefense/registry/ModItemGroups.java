@@ -43,10 +43,12 @@ public final class ModItemGroups {
 			entries.add(ModItems.ARROW_TOWER_ARROW);
 			entries.add(ModItems.CANNON_TOWER_ARROW);
 			entries.add(ModItems.FROST_TOWER_ARROW);
+			entries.add(ModItems.LIGHTNING_TOWER_ARROW);
 			entries.add(ModItems.BALL_TOWER_ARROW);
 			entries.add(ModBlocks.ARROW_TOWER);
 			entries.add(ModBlocks.CANNON_TOWER);
 			entries.add(ModBlocks.FROST_TOWER);
+			entries.add(ModBlocks.LIGHTNING_TOWER);
 			entries.add(ModBlocks.BALL_TOWER);
 		});
 	}

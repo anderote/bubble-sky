@@ -3,6 +3,7 @@ package net.bubblesky.towerdefense;
 import net.bubblesky.towerdefense.bridge.AgentBridge;
 import net.bubblesky.towerdefense.colony.ColonyChat;
 import net.bubblesky.towerdefense.colony.ColonyCommand;
+import net.bubblesky.towerdefense.colony.ColonyRespawn;
 import net.bubblesky.towerdefense.command.TdCommand;
 import net.bubblesky.towerdefense.item.LayoutWandItem;
 import net.bubblesky.towerdefense.layout.LayoutStore;
@@ -83,6 +84,8 @@ public class TowerDefenseMod implements ModInitializer {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 			ColonyCommand.register(dispatcher));
 		ColonyChat.register();
+		// Respawn at your colony home flag (no bed needed) instead of world spawn.
+		ColonyRespawn.register();
 
 		// RPG progression: permanent XP/levels/skill points. Registers its own XP-on-kill
 		// AFTER_DEATH listener (separate from WaveManager's boss bounty), the allocate/sync

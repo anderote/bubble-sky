@@ -77,6 +77,8 @@ public final class ModItems {
 		s -> new TowerArrowItem(s, TowerKind.CANNON), new Item.Settings());
 	public static final Item FROST_TOWER_ARROW = register("frost_tower_arrow",
 		s -> new TowerArrowItem(s, TowerKind.FROST), new Item.Settings());
+	public static final Item LIGHTNING_TOWER_ARROW = register("lightning_tower_arrow",
+		s -> new TowerArrowItem(s, TowerKind.LIGHTNING), new Item.Settings());
 	// The tower-ball arrow: fired from TD_BOW, sticks to any face (walls included) and
 	// becomes a single-block mini arrow turret (no stick-structure).
 	public static final Item BALL_TOWER_ARROW = register("ball_tower_arrow",

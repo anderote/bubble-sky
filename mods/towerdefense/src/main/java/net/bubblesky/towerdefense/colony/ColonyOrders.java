@@ -47,7 +47,7 @@ public final class ColonyOrders {
 		ColonyState.Flag flag = state.addFlag(player.getBlockPos(), dim);
 		ColonyMarkers.placeFlag(world, flag.pos(), flag.name());
 		player.sendMessage(Text.literal("Colony flag '" + flag.name() + "' planted at "
-			+ flag.pos().toShortString() + ". Recruit colonists with /colony recruit.")
+			+ flag.pos().toShortString() + " — you'll respawn here. Recruit colonists with /colony recruit.")
 			.formatted(Formatting.GREEN), false);
 		return 1;
 	}

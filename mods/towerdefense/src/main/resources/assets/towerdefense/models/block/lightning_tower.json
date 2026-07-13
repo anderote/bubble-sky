@@ -1,0 +1,7 @@
+{
+	"parent": "minecraft:block/cube_column",
+	"textures": {
+		"end": "minecraft:block/lightning_rod",
+		"side": "minecraft:block/light_blue_concrete"
+	}
+}

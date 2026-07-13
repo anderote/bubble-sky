@@ -41,19 +41,20 @@ Two-pane custom screen (not a chest/container GUI). Rendered with GUI primitives
 ╭─────────────  My Towers  ──────────────╮   coins: 63🪙
 │  ┌────┐ ┌────┐ ┌────┐ ┌────┐            │  ╭─ Frost Tower ─────────╮
 │  │🏹L2│ │💣L1│ │❄ L3│ │🔵L1│            │  │ Tier 3 · MAX          │
-│  └────┘ └────┘ └MAX─┘ └────┘            │  │ Range 9  Dmg ×2.0     │
-│  ┌────┐                                 │  │ Cooldown 0.6s         │
-│  │🏹L1│   ← click an icon to select     │  │                       │
-│  └────┘                                 │  │ [ Upgrade — MAX ]     │
+│  └★★──┘ └────┘ └MAX─┘ └────┘            │  │ Veterancy ★7  (2.0×)  │
+│  ┌────┐                                 │  │ 412/560 kills → ★8    │
+│  │🏹L1│   ← click an icon to select     │  │ Range 9  Dmg ×2.0     │
+│  └────┘                                 │  │ Cooldown 0.6s         │
+│                                         │  │ [ Upgrade — MAX ]     │
 │                                         │  │ [ Sell — +18🪙 ]      │
 ╰─────────────────────────────────────────╯  ╰───────────────────────╯
 ```
 
-- **Left:** scrollable grid of your placed towers; each icon = tower-type texture + tier badge (or `MAX`).
-- **Right:** detail pane for the selected tower — kind, live stats (tier, range, damage multiplier, cooldown in seconds), an **Upgrade** button (shows next-tier cost; disabled at MAX or if unaffordable) and a **Sell** button (shows refund). Your coin balance shown top-right.
+- **Left:** scrollable grid of your placed towers; each icon = tower-type texture + a tier badge (or `MAX`) and a small veterancy indicator (e.g. star pips / rank number).
+- **Right:** detail pane for the selected tower — kind, **veterancy level (0–10) + its stat multiplier and XP-to-next-rank**, live stats (tier, range, damage multiplier, cooldown in seconds — reflecting both tier and veterancy), an **Upgrade** button (shows next-tier cost; disabled at MAX or if unaffordable) and a **Sell** button (shows refund). Your coin balance shown top-right.
 
 ### Networking (reuse the `progression.net` pattern)
-- **S2C `TowerRosterPayload`** — sent on open and after every action. Carries the player's coin count plus, per owned tower, `{posId, kind, tier, range, cooldown, dmgMult, upgradeCost, refund, isMaxed}`. `posId` is the encoded `BlockPos` long.
+- **S2C `TowerRosterPayload`** — sent on open and after every action. Carries the player's coin count plus, per owned tower, `{posId, kind, tier, range, cooldown, dmgMult, upgradeCost, refund, isMaxed, vetLevel, vetXp, vetXpToNext, vetMult, kills}`. `posId` is the encoded `BlockPos` long.
 - **C2S `TowerActionPayload`** — `{posId, action ∈ {UPGRADE, SELL}}`. Server re-validates ownership + affordability + max-tier, mutates world/registry, then pushes a fresh `TowerRosterPayload`.
 - **Refactor:** extract the existing `TdCommand.upgrade()` logic (`command/TdCommand.java:327-358`) into a shared `TowerService.upgradeTower(world, player, pos)` called by both the `/td upgrade` command and the UI. Add `TowerService.sellTower(world, player, pos)`.
 
@@ -123,13 +124,57 @@ Unit-test the damage math where feasible (sharpshooter percent-max-HP + crit res
 
 ---
 
+## Feature 4 — Turret veterancy
+
+### Purpose
+Give every tower a long-tail, earned progression that runs parallel to the coin-bought tier upgrades: towers accumulate kills, gain XP, and rank up through **10 veterancy levels**, becoming substantially stronger the longer they survive and perform. This rewards keeping towers alive across many waves and makes individual towers feel like they have history.
+
+### Model
+Veterancy is **earned** (via kills), separate and independent from **tier** (bought with coins). Both multipliers stack.
+
+- **State on `AbstractTowerBlockEntity`** (new persisted fields, NBT keys `"kills"` and `"vetXp"`):
+  - `kills` — total kills credited to this tower (display/stat).
+  - `vetXp` — accumulated veterancy XP.
+  - `vetLevel` (0–10) is **derived** from `vetXp` against a threshold table (not stored separately, to avoid drift).
+- **XP source:** each kill credited to the tower grants XP. Base 1 XP per kill, optionally weighted by enemy strength (e.g. bosses worth more) so late waves advance veterancy faster than trivial early ones. (Weighting factor is a tunable constant; default: `xp = 1 + bossBonus`.)
+- **XP curve (long grind):** cumulative thresholds grow geometrically so level 10 takes hundreds of kills. Defined as `static final` constants (a 10-entry table). Illustrative cumulative kills-to-rank: ★1≈5, ★2≈15, ★3≈35, ★5≈100, ★7≈260, ★10≈600+. Exact numbers tunable in-class.
+
+### Stat effect
+A **veterancy multiplier** `vetMult(level)` scales from `1.0` at level 0 to **~2.5× at level 10** (≈ +0.15 per level), applied primarily to **damage**, on top of the tier `damageMultiplier`. Secondary, gentler gains: range grows modestly (up to +2–3 blocks at ★10) and cooldown shrinks modestly (down to ~-20% at ★10). Net effect at max veterancy ≈ the "2–3× the stats" target.
+
+Applied in the block entity's existing derived-stat methods:
+- `damage` → `base × tierDamageMult × vetMult(level)`
+- `range()` → existing tier range `+ vetRangeBonus(level)`
+- `cooldownTicks()` → existing tier cooldown `× vetCooldownFactor(level)`
+
+This composes cleanly with the new towers: the Sharpshooter's percent-max-HP + crit and the Flamethrower's burn DoT all scale through the same `vetMult`.
+
+### Kill attribution to a tower
+Kills currently credit the **placer** (a player) for coins; veterancy additionally needs to credit the **tower** that dealt the killing blow. Add lightweight source-tower tagging:
+- Tag each tower projectile/shot with its origin tower `BlockPos` (alongside the existing placer ownership). For the Sharpshooter's hitscan and the Flamethrower's burn DoT, carry the same source-tower tag on the damage.
+- On enemy death (reuse the existing `AFTER_DEATH` hooks in `TowerDefenseMod`/`WaveManager`), if the killing damage traces to a tower, increment that tower's `kills`/`vetXp` and re-derive `vetLevel`. Guard against the tower having been removed.
+
+### Feedback
+- **Rank-up:** when a tower crosses a veterancy threshold, play a particle burst + sound at the tower and (optionally) a brief broadcast to the owner. 
+- **Display:** veterancy level, multiplier, and XP-to-next surface in the My Towers panel (Feature 1). In-world nameplate/hologram display is out of scope for now (panel-only), consistent with the earlier UI decisions.
+
+### Interaction with sell
+Selling a tower forfeits its accumulated veterancy (refund is still based only on coins invested). This is intended — veterancy is a reason **not** to sell a seasoned tower.
+
+### Testing
+Unit-test the pure logic: `vetLevel` derivation from `vetXp` against the threshold table, `vetMult`/range/cooldown mappings at each level, and XP accrual/weighting. Manual in-game pass: confirm kills credit the correct tower, ranks advance, stats visibly increase, and rank-up feedback fires.
+
+---
+
 ## Out of scope (YAGNI)
 - Tower locate/teleport, rename/labels (explicitly deferred).
 - Reward chests/crates and per-player reward instancing (loose shared drops chosen).
 - Roster "all towers"/team view and toggle (personal roster only).
+- In-world veterancy nameplates/holograms (panel display only).
 - External JSON config (mod uses in-class constants throughout).
 
 ## Implementation order (suggested)
 1. New tower types (self-contained, immediately playable, and they populate the shop/panel).
-2. Wave-completion rewards (localized to `WaveManager` + one new class).
-3. My Towers panel (largest surface: registry + networking + screen).
+2. Turret veterancy (touches `AbstractTowerBlockEntity` stat methods + kill attribution; best done before the panel so the panel can surface it).
+3. Wave-completion rewards (localized to `WaveManager` + one new class).
+4. My Towers panel (largest surface: registry + networking + screen; displays tier + veterancy).

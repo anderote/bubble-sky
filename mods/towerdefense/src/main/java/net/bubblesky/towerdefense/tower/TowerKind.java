@@ -30,7 +30,10 @@ public enum TowerKind {
 		Blocks.PRISMARINE_BRICKS, Blocks.LIGHT_BLUE_CONCRETE, 0),
 	/** Tower ball: a small, cheap, sticky mini arrow turret. */
 	BALL("ball_tower", () -> ModBlocks.BALL_TOWER, () -> ModItems.BALL_TOWER_ARROW,
-		Blocks.OAK_LOG, Blocks.STONE, 0);
+		Blocks.OAK_LOG, Blocks.STONE, 0),
+	/** Lightning tower: slow, powerful, chains lightning bolts between enemies. */
+	LIGHTNING("lightning_tower", () -> ModBlocks.LIGHTNING_TOWER, () -> ModItems.LIGHTNING_TOWER_ARROW,
+		Blocks.LIGHTNING_ROD, Blocks.LIGHT_BLUE_CONCRETE, 0);
 
 	private final String id;
 	private final Supplier<Block> core;

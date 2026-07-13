@@ -33,7 +33,7 @@ import org.jetbrains.annotations.Nullable;
  * NBT getters take an explicit default ({@code getInt(key, def)}).
  */
 public abstract class AbstractTowerBlockEntity extends BlockEntity {
-	public static final int MAX_TIER = 3;
+	public static final int MAX_TIER = 6;
 
 	/** Upgrade level, 1..MAX_TIER. */
 	protected int tier = 1;
@@ -80,19 +80,21 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 		markDirty();
 	}
 
-	/** +2 blocks of range per tier above 1. */
+	/** +3 blocks of range per tier above 1. */
 	protected double range() {
-		return baseRange() + (tier - 1) * 2.0;
+		return baseRange() + (tier - 1) * 3.0;
 	}
 
-	/** Cooldown shrinks 20% per tier (tier 3 fires at 60% of the base cadence). */
+	/** Cooldown shrinks ~15% per tier (multiplicative, so it never reaches zero): a
+	 *  tier-6 tower fires at ~44% of its base cadence. */
 	protected int cooldownTicks() {
-		return Math.max(1, (int) Math.round(baseCooldown() * (1.0 - 0.2 * (tier - 1))));
+		return Math.max(1, (int) Math.round(baseCooldown() * Math.pow(0.85, tier - 1)));
 	}
 
-    /** Damage/effect multiplier: 1.0 / 1.5 / 2.0 for tiers 1-3. */
+	/** Damage/effect multiplier: geometric x1.5 per tier — 1.0 / 1.5 / 2.25 / 3.38 / 5.06 /
+	 *  7.59 for tiers 1-6, so a fully upgraded tower is severely powerful. */
 	protected double damageMultiplier() {
-		return 1.0 + 0.5 * (tier - 1);
+		return Math.pow(1.5, tier - 1);
 	}
 
 	/** Resolve the placer to an online player, or null (offline / unset). */

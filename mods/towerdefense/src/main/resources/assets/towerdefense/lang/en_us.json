@@ -12,6 +12,7 @@
 	"item.towerdefense.arrow_tower_arrow": "Arrow Tower Arrow",
 	"item.towerdefense.cannon_tower_arrow": "Cannon Tower Arrow",
 	"item.towerdefense.frost_tower_arrow": "Frost Tower Arrow",
+	"item.towerdefense.lightning_tower_arrow": "Lightning Tower Arrow",
 	"item.towerdefense.ball_tower_arrow": "Tower Ball Arrow",
 
 	"entity.towerdefense.flag_arrow": "Flag Arrow",
@@ -21,6 +22,7 @@
 	"block.towerdefense.arrow_tower": "Arrow Tower",
 	"block.towerdefense.cannon_tower": "Cannon Tower",
 	"block.towerdefense.frost_tower": "Frost Tower",
+	"block.towerdefense.lightning_tower": "Lightning Tower",
 	"block.towerdefense.ball_tower": "Tower Ball",
 
 	"entity.towerdefense.goblin_skirmisher": "Goblin Skirmisher",

@@ -7,6 +7,7 @@ import net.bubblesky.towerdefense.block.ArrowTowerBlock;
 import net.bubblesky.towerdefense.block.BallTowerBlock;
 import net.bubblesky.towerdefense.block.CannonTowerBlock;
 import net.bubblesky.towerdefense.block.FrostTowerBlock;
+import net.bubblesky.towerdefense.block.LightningTowerBlock;
 import net.bubblesky.towerdefense.item.TowerBlockItem;
 import net.bubblesky.towerdefense.tower.TowerKind;
 import net.minecraft.block.AbstractBlock;
@@ -56,6 +57,17 @@ public final class ModBlocks {
 			.nonOpaque()
 			.sounds(BlockSoundGroup.GLASS),
 		TowerKind.FROST);
+
+	// Slow, powerful, higher-cost tower: smites the nearest enemy with a lightning bolt
+	// and chains to a couple of nearby ones. No projectile, so nothing piles up.
+	public static final Block LIGHTNING_TOWER = registerTower("lightning_tower",
+		LightningTowerBlock::new,
+		AbstractBlock.Settings.create()
+			.strength(3.5f, 7.0f)
+			.requiresTool()
+			.nonOpaque()
+			.sounds(BlockSoundGroup.METAL),
+		TowerKind.LIGHTNING);
 
 	// The single-block sticky mini turret (no pole/orb). Placeable on any face.
 	public static final Block BALL_TOWER = registerTower("ball_tower",

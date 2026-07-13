@@ -60,6 +60,7 @@ public final class TdCommand {
 		TOWERS.put("arrow_tower", new TowerDef(ModBlocks.ARROW_TOWER, 10));
 		TOWERS.put("cannon_tower", new TowerDef(ModBlocks.CANNON_TOWER, 25));
 		TOWERS.put("frost_tower", new TowerDef(ModBlocks.FROST_TOWER, 20));
+		TOWERS.put("lightning_tower", new TowerDef(ModBlocks.LIGHTNING_TOWER, 40));
 		TOWERS.put("ball_tower", new TowerDef(ModBlocks.BALL_TOWER, 8));
 	}
 
@@ -128,7 +129,10 @@ public final class TdCommand {
 			.then(CommandManager.literal("shop").executes(TdCommand::shop))
 			.then(CommandManager.literal("buy")
 				.then(CommandManager.argument("type", StringArgumentType.word())
-					.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type")))))
+					.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type"), 1))
+					.then(CommandManager.argument("count", IntegerArgumentType.integer(1, 64))
+						.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type"),
+							IntegerArgumentType.getInteger(ctx, "count"))))))
 			.then(CommandManager.literal("upgrade").executes(TdCommand::upgrade))
 			.then(CommandManager.literal("hire")
 				.then(CommandManager.argument("type", StringArgumentType.word())
@@ -211,10 +215,12 @@ public final class TdCommand {
 		int arrow = TOWERS.get("arrow_tower").price();
 		int cannon = TOWERS.get("cannon_tower").price();
 		int frost = TOWERS.get("frost_tower").price();
+		int lightning = TOWERS.get("lightning_tower").price();
 		int ball = TOWERS.get("ball_tower").price();
 		line(src, "arrow_tower", arrow + " coins — fast, single-target, cheap");
 		line(src, "cannon_tower", cannon + " coins — slow, splash/AoE damage");
 		line(src, "frost_tower", frost + " coins — slows enemies down");
+		line(src, "lightning_tower", lightning + " coins — powerful bolt that chains between enemies");
 		line(src, "ball_tower", ball + " coins — sticky 1-block mini turret (mounts on walls)");
 		body(src, "Buy → get a placeable tower block → place it to raise the tower.");
 		body(src, "The ball tower sticks to any face; the others rise from the ground.");
@@ -293,7 +299,7 @@ public final class TdCommand {
 	 * The shoot-to-place tower arrows still exist for players who prefer them, but the
 	 * shop now sells the simpler place-a-block path.
 	 */
-	private static int buy(CommandContext<ServerCommandSource> ctx, String type) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+	private static int buy(CommandContext<ServerCommandSource> ctx, String type, int count) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity player = src.getPlayerOrThrow();
 
@@ -303,22 +309,24 @@ public final class TdCommand {
 			src.sendError(Text.literal("Unknown tower '" + type + "'. Try /td shop."));
 			return 0;
 		}
+		int total = def.price() * count;
 		int coins = countCoins(player);
-		if (coins < def.price()) {
-			src.sendError(Text.literal("Not enough coins: need " + def.price() + ", have " + coins + "."));
+		if (coins < total) {
+			src.sendError(Text.literal("Not enough coins: need " + total + " for " + count + "x "
+				+ type + ", have " + coins + "."));
 			return 0;
 		}
-		// Hand out the placeable tower block (drops at feet if the pack is full).
-		ItemStack block = new ItemStack(def.block());
-		if (!player.getInventory().insertStack(block)) {
-			player.dropItem(block, false);
+		// Hand out the placeable tower blocks as a stack (drops any that don't fit in the pack).
+		ItemStack blocks = new ItemStack(def.block(), count);
+		if (!player.getInventory().insertStack(blocks)) {
+			player.dropItem(blocks, false);
 		}
-		removeCoins(player, def.price());
-		int remaining = coins - def.price();
+		removeCoins(player, total);
+		int remaining = coins - total;
 		String howTo = kind == TowerKind.BALL
-			? " Place it on any block face (walls too) to mount the turret."
-			: " Place it on the ground to raise the tower.";
-		src.sendFeedback(() -> Text.literal("Bought " + type + " for " + def.price()
+			? " Place them on any block face (walls too) to mount the turrets."
+			: " Place them on the ground to raise the towers.";
+		src.sendFeedback(() -> Text.literal("Bought " + count + "x " + type + " for " + total
 			+ " coins (" + remaining + " left)." + howTo)
 			.formatted(Formatting.GREEN), false);
 		return 1;

@@ -5,6 +5,7 @@ import net.bubblesky.towerdefense.blockentity.ArrowTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.BallTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.CannonTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.FrostTowerBlockEntity;
+import net.bubblesky.towerdefense.blockentity.LightningTowerBlockEntity;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
 import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.registry.Registries;
@@ -33,6 +34,11 @@ public final class ModBlockEntities {
 		Registry.register(Registries.BLOCK_ENTITY_TYPE,
 			Identifier.of(TowerDefenseMod.MOD_ID, "frost_tower"),
 			FabricBlockEntityTypeBuilder.create(FrostTowerBlockEntity::new, ModBlocks.FROST_TOWER).build());
+
+	public static final BlockEntityType<LightningTowerBlockEntity> LIGHTNING_TOWER =
+		Registry.register(Registries.BLOCK_ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, "lightning_tower"),
+			FabricBlockEntityTypeBuilder.create(LightningTowerBlockEntity::new, ModBlocks.LIGHTNING_TOWER).build());
 
 	public static final BlockEntityType<BallTowerBlockEntity> BALL_TOWER =
 		Registry.register(Registries.BLOCK_ENTITY_TYPE,

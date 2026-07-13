@@ -55,6 +55,8 @@ public class ArrowTowerBlockEntity extends AbstractTowerBlockEntity {
 		double horizontal = Math.sqrt(dx * dx + dz * dz);
 		arrow.setVelocity(dx, dy + horizontal * 0.2, dz, ARROW_SPEED, ARROW_DIVERGENCE);
 		arrow.setDamage(ARROW_DAMAGE * damageMultiplier());
+		// Non-collectible so the arena doesn't flood with pickup arrows.
+		arrow.pickupType = net.minecraft.entity.projectile.PersistentProjectileEntity.PickupPermission.DISALLOWED;
 
 		// Credit the placer so tower kills pay coins (arrow's attacker == owner).
 		ServerPlayerEntity owner = placerPlayer(world);
