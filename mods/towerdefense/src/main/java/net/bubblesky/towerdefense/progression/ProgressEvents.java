@@ -32,7 +32,9 @@ import net.minecraft.util.Formatting;
  * multiplies that by {@value #BOSS_XP_MULT}. The killer (if a player) gets the full
  * amount; other players within {@value #SHARE_RADIUS} blocks of the corpse share a
  * {@value #SHARE_FRACTION} fraction each. Because enemy max health already scales with
- * the wave, XP naturally grows as the run deepens.
+ * the wave, XP naturally grows as the run deepens. Each recipient's raw share is further
+ * scaled by their own {@link Stat#INTELLIGENCE} multiplier ({@link ProgressLookup#xpMult})
+ * before being banked, in {@link #award}.
  */
 public final class ProgressEvents {
 
@@ -111,10 +113,15 @@ public final class ProgressEvents {
 		}
 	}
 
-	/** Bank XP for one player, fire a level-up message on any level gained, then resync. */
+	/**
+	 * Bank XP for one player, fire a level-up message on any level gained, then resync.
+	 * The raw kill/share amount is scaled by the recipient's OWN {@link Stat#INTELLIGENCE}
+	 * multiplier before being banked, so each player's XP gain reflects their own points.
+	 */
 	private static void award(ProgressState state, ServerPlayerEntity player, int xp) {
 		PlayerProgress progress = state.forPlayer(player.getUuid());
-		int gained = progress.addXp(xp);
+		int scaledXp = Math.max(1, (int) Math.round(xp * ProgressLookup.xpMult(player)));
+		int gained = progress.addXp(scaledXp);
 		state.markDirty();
 		if (gained > 0) {
 			int pts = progress.getUnspentPoints();

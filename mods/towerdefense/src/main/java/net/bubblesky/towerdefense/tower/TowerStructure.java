@@ -27,14 +27,22 @@ public final class TowerStructure {
 	 * clear it later. Returns the tower position. Server-thread only.
 	 */
 	public static BlockPos build(ServerWorld world, BlockPos pos, TowerKind kind, @Nullable UUID placer) {
+		return build(world, pos, kind, placer, 1);
+	}
+
+	/** Place the tower already upgraded to {@code tier}, stamping placer + the coins invested to reach it. */
+	public static BlockPos build(ServerWorld world, BlockPos pos, TowerKind kind, @Nullable UUID placer, int tier) {
 		world.setBlockState(pos, kind.block().getDefaultState());
-		if (placer != null && world.getBlockEntity(pos) instanceof AbstractTowerBlockEntity tower) {
-			tower.setPlacer(placer);
+		int base = net.bubblesky.towerdefense.command.TdCommand.priceOfPublic(world, pos);
+		int invested = net.bubblesky.towerdefense.command.TdCommand.costToTier(base, tier);
+		if (world.getBlockEntity(pos) instanceof AbstractTowerBlockEntity tower) {
+			if (placer != null) {
+				tower.setPlacer(placer);
+			}
+			tower.setTier(tier);
+			tower.setInvested(invested);
 		}
 		TdArenaState.get(world.getServer()).addTower(pos);
-		if (world.getBlockEntity(pos) instanceof AbstractTowerBlockEntity t) {
-			t.setInvested(net.bubblesky.towerdefense.command.TdCommand.priceOfPublic(world, pos));
-		}
 		return pos;
 	}
 

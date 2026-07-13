@@ -76,7 +76,7 @@ public class CannonTowerBlockEntity extends AbstractTowerBlockEntity {
 		List<HostileEntity> hit = world.getNonSpectatingEntities(HostileEntity.class, blast);
 		for (HostileEntity mob : hit) {
 			if (mob.isAlive() && mob.squaredDistanceTo(target) <= SPLASH_RADIUS * SPLASH_RADIUS) {
-				mob.damage(world, source, damage);
+				damageAndCredit(world, mob, source, damage);
 			}
 		}
 

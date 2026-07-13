@@ -6,10 +6,10 @@ import net.minecraft.server.network.ServerPlayerEntity;
 
 /**
  * Tiny server-side convenience for reading a player's use-time multipliers straight
- * from a {@link PlayerEntity}, so gameplay call-sites (bow fire, coin payout) can apply
- * progression with a one-line lookup and no {@link ProgressState} boilerplate.
+ * from a {@link PlayerEntity}, so gameplay call-sites (bow fire, coin payout, XP award)
+ * can apply progression with a one-line lookup and no {@link ProgressState} boilerplate.
  *
- * <p>Both helpers default to {@code 1.0} (no effect) for anything that isn't a fully
+ * <p>All helpers default to {@code 1.0} (no effect) for anything that isn't a fully
  * resolved server player — keeping the hooks safe to call unconditionally.
  */
 public final class ProgressLookup {
@@ -27,6 +27,12 @@ public final class ProgressLookup {
 	public static double coinMult(PlayerEntity player) {
 		PlayerProgress progress = progressOf(player);
 		return progress == null ? 1.0 : StatModifiers.coinMult(progress);
+	}
+
+	/** XP-gain multiplier for a player (1.0 if not a server player). */
+	public static double xpMult(PlayerEntity player) {
+		PlayerProgress progress = progressOf(player);
+		return progress == null ? 1.0 : StatModifiers.xpMult(progress);
 	}
 
 	private static PlayerProgress progressOf(PlayerEntity player) {

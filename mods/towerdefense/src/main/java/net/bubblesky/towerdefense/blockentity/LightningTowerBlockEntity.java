@@ -84,7 +84,7 @@ public class LightningTowerBlockEntity extends AbstractTowerBlockEntity {
 		// Smite + damage the primary target.
 		strike(world, owner, target.getX(), target.getBodyY(0.0), target.getZ());
 		if (target.isAlive()) {
-			target.damage(world, source, primaryDamage);
+			damageAndCredit(world, target, source, primaryDamage);
 		}
 
 		// Chain: jump to the nearest hostiles within CHAIN_RANGE of the primary (not the
@@ -94,7 +94,7 @@ public class LightningTowerBlockEntity extends AbstractTowerBlockEntity {
 		for (HostileEntity mob : nearbyChainTargets(world, target)) {
 			strike(world, owner, mob.getX(), mob.getBodyY(0.0), mob.getZ());
 			if (mob.isAlive()) {
-				mob.damage(world, source, chainDamage);
+				damageAndCredit(world, mob, source, chainDamage);
 			}
 		}
 

@@ -80,7 +80,7 @@ public class FrostTowerBlockEntity extends AbstractTowerBlockEntity {
 			if (mob.isAlive() && mob.squaredDistanceTo(target) <= CHILL_RADIUS * CHILL_RADIUS) {
 				mob.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, amplifier));
 				if (damage > 0.0f) {
-					mob.damage(world, source, damage);
+					damageAndCredit(world, mob, source, damage);
 				}
 			}
 		}

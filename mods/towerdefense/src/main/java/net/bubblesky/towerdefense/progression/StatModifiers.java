@@ -12,19 +12,21 @@ import net.minecraft.util.Identifier;
 /**
  * Turns a {@link PlayerProgress}'s spent points into live gameplay effects.
  *
- * <p>Three stats map to vanilla attribute modifiers, applied in {@link #apply}:
+ * <p>Four stats map to vanilla attribute modifiers, applied in {@link #apply}:
  * <ul>
- *   <li>{@link Stat#VITALITY} → {@code generic.max_health} +2 HP (1 heart) per point</li>
- *   <li>{@link Stat#STRENGTH} → {@code generic.attack_damage} +0.5 per point (melee)</li>
- *   <li>{@link Stat#AGILITY} → {@code generic.movement_speed} +2% (of base) per point</li>
+ *   <li>{@link Stat#VITALITY} → {@code generic.max_health} +4 HP (2 hearts) per point</li>
+ *   <li>{@link Stat#STRENGTH} → {@code generic.attack_damage} +1.0 per point (melee)</li>
+ *   <li>{@link Stat#AGILITY} → {@code generic.movement_speed} +3% (of base) per point</li>
+ *   <li>{@link Stat#RESILIENCE} → {@code generic.armor} +1 per point</li>
  * </ul>
  * Each uses a STABLE per-stat modifier {@link Identifier}, and application is
  * remove-then-add: re-applying on every join/respawn/allocate refreshes the modifier
  * in place instead of stacking a fresh copy each relog.
  *
- * <p>The remaining two stats are read at use-time as multipliers rather than baked
- * into attributes: {@link #bowMult} (+6% fired-arrow damage per {@link Stat#MARKSMANSHIP}
- * point) and {@link #coinMult} (+8% coin payout per {@link Stat#FORTUNE} point).
+ * <p>The remaining three stats are read at use-time as multipliers rather than baked
+ * into attributes: {@link #bowMult} (+10% fired-arrow damage per {@link Stat#MARKSMANSHIP}
+ * point), {@link #coinMult} (+12% coin payout per {@link Stat#FORTUNE} point), and
+ * {@link #xpMult} (+8% XP gained per {@link Stat#INTELLIGENCE} point).
  */
 public final class StatModifiers {
 
@@ -35,22 +37,27 @@ public final class StatModifiers {
 	private static final Identifier VITALITY_ID = id("progression_vitality");
 	private static final Identifier STRENGTH_ID = id("progression_strength");
 	private static final Identifier AGILITY_ID = id("progression_agility");
+	private static final Identifier RESILIENCE_ID = id("progression_resilience");
 	// Flat "base character" buffs every player gets (on top of vanilla + allocated stats).
 	private static final Identifier BASE_HEALTH_ID = id("base_health");
 	private static final Identifier BASE_ATTACK_ID = id("base_attack");
 	private static final Identifier BASE_ARMOR_ID = id("base_armor");
 
 	// ---- per-point steps ---------------------------------------------------
-	/** Vitality: +2 max health (one heart) per point, flat. */
-	private static final double HEALTH_PER_POINT = 2.0;
-	/** Strength: +0.5 melee attack damage per point, flat. */
-	private static final double ATTACK_PER_POINT = 0.5;
-	/** Agility: +2% movement speed per point (fraction of the base value). */
-	private static final double SPEED_PER_POINT = 0.02;
-	/** Marksmanship: +6% fired-arrow damage per point. */
-	private static final double BOW_PER_POINT = 0.06;
-	/** Fortune: +8% coin payout per point. */
-	private static final double COIN_PER_POINT = 0.08;
+	/** Vitality: +4 max health (two hearts) per point, flat. */
+	private static final double HEALTH_PER_POINT = 4.0;
+	/** Strength: +1.0 melee attack damage per point, flat. */
+	private static final double ATTACK_PER_POINT = 1.0;
+	/** Agility: +3% movement speed per point (fraction of the base value). */
+	private static final double SPEED_PER_POINT = 0.03;
+	/** Resilience: +1 armor per point, flat. */
+	private static final double ARMOR_PER_POINT = 1.0;
+	/** Marksmanship: +10% fired-arrow damage per point. */
+	private static final double BOW_PER_POINT = 0.10;
+	/** Fortune: +12% coin payout per point. */
+	private static final double COIN_PER_POINT = 0.12;
+	/** Intelligence: +8% XP gained per point. */
+	private static final double XP_PER_POINT = 0.08;
 
 	// ---- flat base-character buffs (always on, independent of skill points) --
 	/** +20 max health for every player (20 -> 40 HP / 20 hearts). */
@@ -80,6 +87,9 @@ public final class StatModifiers {
 		applyFlat(player, EntityAttributes.MOVEMENT_SPEED, AGILITY_ID,
 			progress.points(Stat.AGILITY) * SPEED_PER_POINT,
 			EntityAttributeModifier.Operation.ADD_MULTIPLIED_BASE);
+		applyFlat(player, EntityAttributes.ARMOR, RESILIENCE_ID,
+			progress.points(Stat.RESILIENCE) * ARMOR_PER_POINT,
+			EntityAttributeModifier.Operation.ADD_VALUE);
 
 		// Flat base-character buffs — a sturdier, stronger hero by default, on top of
 		// vanilla and any allocated points. Always applied (idempotent, stable ids).
@@ -109,13 +119,18 @@ public final class StatModifiers {
 	}
 
 	// ---- use-time multipliers ----------------------------------------------
-	/** Fired-arrow damage multiplier (1.0 at zero points; +6% per Marksmanship point). */
+	/** Fired-arrow damage multiplier (1.0 at zero points; +10% per Marksmanship point). */
 	public static double bowMult(PlayerProgress progress) {
 		return 1.0 + progress.points(Stat.MARKSMANSHIP) * BOW_PER_POINT;
 	}
 
-	/** Coin-payout multiplier (1.0 at zero points; +8% per Fortune point). */
+	/** Coin-payout multiplier (1.0 at zero points; +12% per Fortune point). */
 	public static double coinMult(PlayerProgress progress) {
 		return 1.0 + progress.points(Stat.FORTUNE) * COIN_PER_POINT;
+	}
+
+	/** XP-gain multiplier (1.0 at zero points; +8% per Intelligence point). */
+	public static double xpMult(PlayerProgress progress) {
+		return 1.0 + progress.points(Stat.INTELLIGENCE) * XP_PER_POINT;
 	}
 }

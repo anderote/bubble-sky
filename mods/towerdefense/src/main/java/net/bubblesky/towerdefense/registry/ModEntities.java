@@ -4,6 +4,7 @@ import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.colony.ColonistEntity;
 import net.bubblesky.towerdefense.entity.FlagArrowEntity;
 import net.bubblesky.towerdefense.entity.TowerArrowEntity;
+import net.bubblesky.towerdefense.entity.TowerBoltEntity;
 import net.bubblesky.towerdefense.entity.TdAllyArcher;
 import net.bubblesky.towerdefense.entity.TdAllyEntity;
 import net.bubblesky.towerdefense.entity.TdArcherEnemy;
@@ -89,6 +90,12 @@ public final class ModEntities {
 	/** The shoot-to-place tower arrow: builds a tower structure wherever it lands. */
 	public static final EntityType<TowerArrowEntity> TOWER_ARROW = registerTowerArrow("tower_arrow");
 
+	/**
+	 * The ARROW/BALL towers' combat projectile: a real arrow that deals owner-credited
+	 * damage + knockback on hit, then vanishes almost immediately (no lingering clutter).
+	 */
+	public static final EntityType<TowerBoltEntity> TOWER_BOLT = registerTowerBolt("tower_bolt");
+
 	private static EntityType<FlagArrowEntity> registerFlagArrow(String name) {
 		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
 			Identifier.of(TowerDefenseMod.MOD_ID, name));
@@ -106,6 +113,18 @@ public final class ModEntities {
 			Identifier.of(TowerDefenseMod.MOD_ID, name));
 		EntityType<TowerArrowEntity> type = EntityType.Builder
 			.<TowerArrowEntity>create(TowerArrowEntity::new, SpawnGroup.MISC)
+			.dimensions(0.5f, 0.5f)
+			.maxTrackingRange(4)
+			.trackingTickInterval(20)
+			.build(key);
+		return Registry.register(Registries.ENTITY_TYPE, key, type);
+	}
+
+	private static EntityType<TowerBoltEntity> registerTowerBolt(String name) {
+		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, name));
+		EntityType<TowerBoltEntity> type = EntityType.Builder
+			.<TowerBoltEntity>create(TowerBoltEntity::new, SpawnGroup.MISC)
 			.dimensions(0.5f, 0.5f)
 			.maxTrackingRange(4)
 			.trackingTickInterval(20)

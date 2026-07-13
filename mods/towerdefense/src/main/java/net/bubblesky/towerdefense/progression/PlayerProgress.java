@@ -22,17 +22,23 @@ import net.minecraft.nbt.NbtCompound;
 public class PlayerProgress {
 
 	/**
-	 * The five RPG stats a skill point can be spent on. Three drive vanilla attribute
-	 * modifiers ({@link StatModifiers}); {@link #MARKSMANSHIP} and {@link #FORTUNE} are
-	 * read at use-time as multipliers (bow damage / coin payout) rather than attributes.
-	 * The ordinal order is the wire order used by the sync payload, so DO NOT reorder.
+	 * The seven RPG stats a skill point can be spent on. {@link #VITALITY},
+	 * {@link #STRENGTH}, {@link #AGILITY}, and {@link #RESILIENCE} drive vanilla
+	 * attribute modifiers ({@link StatModifiers}); {@link #MARKSMANSHIP},
+	 * {@link #FORTUNE}, and {@link #INTELLIGENCE} are read at use-time as multipliers
+	 * (bow damage / coin payout / XP gain) rather than attributes.
+	 * The ordinal order is the wire order used by the sync payload, so DO NOT reorder —
+	 * {@link #INTELLIGENCE} and {@link #RESILIENCE} were appended after the original
+	 * five so existing saves/allocations stay valid.
 	 */
 	public enum Stat {
 		VITALITY,
 		STRENGTH,
 		AGILITY,
 		MARKSMANSHIP,
-		FORTUNE
+		FORTUNE,
+		INTELLIGENCE,
+		RESILIENCE
 	}
 
 	// ---- state -------------------------------------------------------------

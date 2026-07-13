@@ -13,8 +13,10 @@ const ROUTER_PROVIDER = process.env.GROK_ROUTER_PROVIDER || 'xai'
 const ROUTER_MODEL = process.env.GROK_ROUTER_MODEL || process.env.XAI_MODEL || 'grok-4.20-0309-non-reasoning'
 const routerLLM = createLLM({ provider: ROUTER_PROVIDER })
 const USERNAME = process.env.MC_USER || 'Grok'
-// Grok ONLY responds to these people (allowlist) — everyone/everything else is ignored.
+// Grok responds to people on this allowlist (GROK_ALLOW, comma-separated). Use '*' or
+// 'all' to let Grok respond to EVERY player. Default: claudebert only.
 const ALLOW = new Set((process.env.GROK_ALLOW || 'claudebert').toLowerCase().split(',').map(s => s.trim()).filter(Boolean))
+const ALLOW_ALL = ALLOW.has('*') || ALLOW.has('all')
 const BOTNAMES = /^(Grok|GrokDev|Overseer|Assistant|Tester|Codex.*|.*Drone\d+|ViscousVermin\d+|CodexSwarm\d+)$/i
 
 function log(...a) { console.log(`[${new Date().toISOString()}]`, ...a) }
@@ -198,7 +200,11 @@ const STOP_RE = /\b(stop|cancel|halt|abort|nvm|nevermind|freeze|stop building)\b
 // Main chat handler — shared across transports (mineflayer 'chat' event or bridge
 // /chat polling both feed it (username, message)). Router + dispatch are shared.
 async function onChat(username, message) {
-  if (!ALLOW.has(username.toLowerCase())) return
+  // Human players ONLY: never react to bots/agents (Grok itself, Codex, drones, the swarm
+  // — BOTNAMES matches them all) or to our own username. This also kills the self-feedback
+  // loop where Grok answered its own chat when the allowlist was opened up.
+  if (BOTNAMES.test(username) || username.toLowerCase() === USERNAME.toLowerCase()) return
+  if (!ALLOW_ALL && !ALLOW.has(username.toLowerCase())) return
   // ---- STOP FAST-PATH (before the LLM, and works even when busy===true) ----
   // Clearing the command queue is the INSTANT stop — it's what floods /fill+/setblock.
   // The `aborted` flag then stops the build loop from re-filling it.

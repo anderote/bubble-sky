@@ -410,6 +410,7 @@ public final class WaveManager {
 				+ reward + " coins. Idol HP " + st.baseHp + "/" + st.baseMaxHp)
 				.formatted(Formatting.GREEN));
 			TdFeedback.waveClear(world, st);
+			dropWaveReward(server, world, st);
 			st.phase = TdArenaState.Phase.INTERMISSION;
 			st.intermissionCooldown = INTERMISSION_TICKS;
 			st.markDirty();
@@ -468,9 +469,9 @@ public final class WaveManager {
 			Math.min(SPEED_CAP, ZOMBIE_MARCH_SPEED * speedScale(wave)));
 		// Only engage an ally/player that comes within range — no long-range hunting.
 		setAttribute(mob, EntityAttributes.FOLLOW_RANGE, IN_THE_WAY_RANGE);
-		// Immune to knockback so tower hits deal damage without shoving them off their
-		// steady march to the Idol.
-		setAttribute(mob, EntityAttributes.KNOCKBACK_RESISTANCE, 1.0);
+		// Mostly knockback-resistant (0.5): arrow hits nudge them back a little (slowing
+		// their advance) without launching them off their march to the Idol.
+		setAttribute(mob, EntityAttributes.KNOCKBACK_RESISTANCE, 0.5);
 
 		// The archer still marches to base, but re-arm its ranged goal so it shoots
 		// players who wander into range (clearGoalsAndTasks stripped it above).
@@ -516,7 +517,7 @@ public final class WaveManager {
 		setAttribute(boss, EntityAttributes.MOVEMENT_SPEED,
 			Math.min(SPEED_CAP, ZOMBIE_MARCH_SPEED * speedScale(wave) * BOSS_SPEED_FACTOR));
 		setAttribute(boss, EntityAttributes.FOLLOW_RANGE, IN_THE_WAY_RANGE);
-		setAttribute(boss, EntityAttributes.KNOCKBACK_RESISTANCE, 1.0);
+		setAttribute(boss, EntityAttributes.KNOCKBACK_RESISTANCE, 0.5);
 
 		steerToBase(boss, st);
 		// Only the first Warlord of the squad triggers the roar + title fanfare.
@@ -637,25 +638,47 @@ public final class WaveManager {
 			return;
 		}
 
-		// Normal enemy: re-check the pathfinder on a throttle while blocked; otherwise
-		// (re)start the march the moment a route exists.
+		// Normal enemy: try to path to the Idol; if a full route exists, march it. If not —
+		// whether the way is WALLED or the Idol is simply too far for the (range-bounded)
+		// pathfinder — fall back so the enemy STILL seeks the Idol from anywhere on the map:
+		// dig a wall if one is directly ahead, otherwise beeline straight at the Idol until
+		// it's close enough for real pathfinding to take over the final approach.
 		if (te.repathCooldown > 0) {
 			te.repathCooldown--;
 		}
-		if (!te.blockedFromBase || te.repathCooldown <= 0) {
+		if (te.repathCooldown <= 0) {
 			te.repathCooldown = WALL_REPATH_INTERVAL;
 			Path path = nav.findPathTo(st.base, 1);
-			boolean canReach = path != null && path.reachesTarget();
-			if (canReach) {
+			if (path != null && path.reachesTarget()) {
 				nav.startMovingAlong(path, NAV_SPEED);
 				te.blockedFromBase = false;
 				return;
 			}
-			te.blockedFromBase = true;
+			// digTowardBase returns true only when a breakable block sits DIRECTLY ahead
+			// (a real wall); false means open ground → head straight for the Idol instead.
+			te.blockedFromBase = digTowardBase(world, mob, st, WALL_DIG_RATE);
+			if (!te.blockedFromBase) {
+				beelineToBase(mob, st);
+			}
+			return;
 		}
+		// Between re-paths, keep acting on the last decision every tick.
 		if (te.blockedFromBase) {
 			digTowardBase(world, mob, st, WALL_DIG_RATE);
+		} else {
+			beelineToBase(mob, st);
 		}
+	}
+
+	/** Walk straight at the Idol via the move control (no pathfinding). The fallback that
+	 *  lets an enemy seek the Idol from beyond pathfinding range or across open ground until
+	 *  it gets close enough for {@link EntityNavigation} to path the rest of the way. */
+	private static void beelineToBase(MobEntity mob, TdArenaState st) {
+		if (st.base == null) {
+			return;
+		}
+		mob.getMoveControl().moveTo(st.base.getX() + 0.5, st.base.getY() + 0.5,
+			st.base.getZ() + 0.5, NAV_SPEED);
 	}
 
 	/**
@@ -788,6 +811,24 @@ public final class WaveManager {
 	}
 
 	// ---- rewards / lose ----------------------------------------------------
+	/** Drop the wave-completion loot bundle at one random enemy spawn gate. */
+	private static void dropWaveReward(MinecraftServer server, ServerWorld world, TdArenaState st) {
+		if (st.spawnPoints.isEmpty()) {
+			return;
+		}
+		boolean bossWave = BOSS_WAVE_INTERVAL > 0 && st.currentWave % BOSS_WAVE_INTERVAL == 0;
+		List<ItemStack> loot = WaveRewards.rollDrops(st.currentWave, bossWave, world.random);
+		BlockPos gate = surfaceSpawn(world, st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size())));
+		for (ItemStack stack : loot) {
+			ItemEntity drop = new ItemEntity(world, gate.getX() + 0.5, gate.getY() + 0.5, gate.getZ() + 0.5, stack);
+			drop.setToDefaultPickupDelay();
+			drop.setVelocity((world.random.nextDouble() - 0.5) * 0.2, 0.2, (world.random.nextDouble() - 0.5) * 0.2);
+			world.spawnEntity(drop);
+		}
+		broadcast(server, Text.literal("Wave " + st.currentWave + " rewards dropped at a spawn gate!")
+			.formatted(Formatting.AQUA));
+	}
+
 	private static void payNearbyPlayers(ServerWorld world, TdArenaState st, int coins) {
 		double bx = st.base.getX() + 0.5;
 		double by = st.base.getY() + 0.5;

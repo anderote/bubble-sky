@@ -44,6 +44,8 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 	protected int cooldown = 0;
 	/** Total coins invested in this tower (buy price + upgrades); drives the sell refund. */
 	protected int invested = 0;
+	/** Kills credited to this tower; drives veterancy rank. */
+	protected int veterancyKills = 0;
 
 	protected AbstractTowerBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
 		super(type, pos, state);
@@ -75,6 +77,12 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 		tier++;
 		markDirty();
 		return true;
+	}
+
+	/** Set the tier directly (used when placing a pre-upgraded tower). Clamped 1..MAX_TIER. */
+	public void setTier(int newTier) {
+		this.tier = Math.max(1, Math.min(MAX_TIER, newTier));
+		markDirty();
 	}
 
 	public void setPlacer(UUID id) {
@@ -114,21 +122,92 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 		return damageMultiplier();
 	}
 
-	/** +3 blocks of range per tier above 1. */
+	// ---- veterancy (kill-earned rank) --------------------------------------
+	/** Cumulative kills required to REACH each veterancy level (index = level, 0..MAX_VETERANCY). */
+	private static final int[] VET_KILLS = {0, 5, 15, 35, 65, 110, 175, 265, 385, 540, 750};
+	public static final int MAX_VETERANCY = 10;
+
+	/** Current veterancy level 0..MAX_VETERANCY, derived from kills. */
+	public int getVeterancy() {
+		int level = 0;
+		for (int i = 1; i <= MAX_VETERANCY; i++) {
+			if (veterancyKills >= VET_KILLS[i]) {
+				level = i;
+			} else {
+				break;
+			}
+		}
+		return level;
+	}
+
+	public int getKills() {
+		return veterancyKills;
+	}
+
+	/** Kills still needed to reach the next rank (0 if maxed). */
+	public int killsToNextVeterancy() {
+		int lvl = getVeterancy();
+		return lvl >= MAX_VETERANCY ? 0 : VET_KILLS[lvl + 1] - veterancyKills;
+	}
+
+	/** Veterancy stat multiplier: 1.0 at rank 0 → 2.5 at rank 10 (+0.15/rank). */
+	private double veterancyMult() {
+		return 1.0 + 0.15 * getVeterancy();
+	}
+
+	/**
+	 * Deal damage to a mob AND, if this tower's damage killed it, credit a veterancy kill.
+	 * Every tower's fire()/DoT MUST route damage through here (instead of calling
+	 * mob.damage directly) so kills are attributed to the right tower. Returns whether
+	 * the damage was applied (mirrors LivingEntity#damage).
+	 */
+	public boolean damageAndCredit(ServerWorld world, net.minecraft.entity.LivingEntity mob,
+			net.minecraft.entity.damage.DamageSource source, float amount) {
+		boolean wasAlive = mob.isAlive();
+		boolean applied = mob.damage(world, source, amount);
+		if (wasAlive && !mob.isAlive()) {
+			int before = getVeterancy();
+			veterancyKills++;
+			markDirty();
+			if (getVeterancy() > before) {
+				onVeterancyRankUp(world);
+			}
+		}
+		return applied;
+	}
+
+	private void onVeterancyRankUp(ServerWorld world) {
+		BlockPos p = getPos();
+		world.playSound(null, p, net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP,
+			net.minecraft.sound.SoundCategory.BLOCKS, 0.7f, 1.4f);
+		world.spawnParticles(net.minecraft.particle.ParticleTypes.HAPPY_VILLAGER,
+			p.getX() + 0.5, p.getY() + 1.0, p.getZ() + 0.5, 18, 0.4, 0.4, 0.4, 0.05);
+		ServerPlayerEntity owner = placerPlayer(world);
+		if (owner != null) {
+			owner.sendMessage(net.minecraft.text.Text.literal(
+				kind().id().replace("_tower", "") + " tower reached veterancy " + getVeterancy() + "!")
+				.formatted(net.minecraft.util.Formatting.GOLD), true);
+		}
+	}
+
+	/** +3 blocks of range per tier above 1, plus up to +2 blocks from veterancy. */
 	protected double range() {
-		return baseRange() + (tier - 1) * 3.0;
+		return baseRange() + (tier - 1) * 3.0 + 0.2 * getVeterancy();
 	}
 
 	/** Cooldown shrinks ~15% per tier (multiplicative, so it never reaches zero): a
-	 *  tier-6 tower fires at ~44% of its base cadence. */
+	 *  tier-6 tower fires at ~44% of its base cadence. Veterancy shaves off up to another
+	 *  20% at rank 10. */
 	protected int cooldownTicks() {
-		return Math.max(1, (int) Math.round(baseCooldown() * Math.pow(0.85, tier - 1)));
+		double vet = 1.0 - 0.02 * getVeterancy();
+		return Math.max(1, (int) Math.round(baseCooldown() * Math.pow(0.85, tier - 1) * vet));
 	}
 
 	/** Damage/effect multiplier: geometric x1.5 per tier — 1.0 / 1.5 / 2.25 / 3.38 / 5.06 /
-	 *  7.59 for tiers 1-6, so a fully upgraded tower is severely powerful. */
+	 *  7.59 for tiers 1-6, so a fully upgraded tower is severely powerful. Veterancy adds a
+	 *  further up-to-2.5x on top (1.0 at rank 0 → 2.5 at rank 10). */
 	protected double damageMultiplier() {
-		return Math.pow(1.5, tier - 1);
+		return Math.pow(1.5, tier - 1) * veterancyMult();
 	}
 
 	/** Resolve the placer to an online player, or null (offline / unset). */
@@ -211,6 +290,7 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 			}
 		}
 		this.invested = Math.max(0, view.getInt("invested", 0));
+		this.veterancyKills = Math.max(0, view.getInt("vet_kills", 0));
 	}
 
 	@Override
@@ -221,5 +301,6 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 			view.putString("placer", placer.toString());
 		}
 		view.putInt("invested", invested);
+		view.putInt("vet_kills", veterancyKills);
 	}
 }

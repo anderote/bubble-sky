@@ -24,7 +24,7 @@ import net.minecraft.util.Formatting;
  */
 public class CharacterScreen extends Screen {
 
-	private static final int ROW_H = 24;
+	private static final int ROW_H = 22;
 	private static final int PLUS_W = 22;
 
 	/** Per-stat "+" buttons, in {@link Stat} order, so render can toggle their state. */
@@ -113,9 +113,10 @@ public class CharacterScreen extends Screen {
 			Stat stat = stats[i];
 			int y = contentTop + i * ROW_H;
 			int textY = y + 6;
+			int pts = ClientProgress.points(stat);
 			Text label = Text.literal(statName(stat)).formatted(Formatting.WHITE)
-				.append(Text.literal("  (" + ClientProgress.points(stat) + ")").formatted(Formatting.AQUA))
-				.append(Text.literal("  " + statEffect(stat)).formatted(Formatting.DARK_GRAY));
+				.append(Text.literal("  (" + pts + ")").formatted(Formatting.AQUA))
+				.append(Text.literal("  " + appliedBonus(stat, pts)).formatted(Formatting.DARK_GRAY));
 			context.drawTextWithShadow(this.textRenderer, label, labelX, textY, 0xFFFFFFFF);
 			if (plusButtons[i] != null) {
 				plusButtons[i].active = hasPoints;
@@ -131,17 +132,21 @@ public class CharacterScreen extends Screen {
 			case AGILITY -> "Agility";
 			case MARKSMANSHIP -> "Marksmanship";
 			case FORTUNE -> "Fortune";
+			case INTELLIGENCE -> "Intelligence";
+			case RESILIENCE -> "Resilience";
 		};
 	}
 
-	/** Short per-point effect blurb for a stat. */
-	private static String statEffect(Stat stat) {
+	/** The player's CURRENT total bonus from a stat, given points spent. */
+	private static String appliedBonus(Stat stat, int points) {
 		return switch (stat) {
-			case VITALITY -> "+2 HP";
-			case STRENGTH -> "+0.5 melee";
-			case AGILITY -> "+2% speed";
-			case MARKSMANSHIP -> "+6% bow dmg";
-			case FORTUNE -> "+8% coins";
+			case VITALITY -> "+" + (points * 4) + " HP";
+			case STRENGTH -> "+" + String.format("%.1f", points * 1.0) + " melee";
+			case AGILITY -> "+" + (points * 3) + "% speed";
+			case MARKSMANSHIP -> "+" + (points * 10) + "% ranged dmg";
+			case FORTUNE -> "+" + (points * 12) + "% coins";
+			case INTELLIGENCE -> "+" + (points * 8) + "% XP";
+			case RESILIENCE -> "+" + points + " armor";
 		};
 	}
 

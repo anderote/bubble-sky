@@ -4,6 +4,7 @@ import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.client.render.ColonistBipedRenderer;
 import net.bubblesky.towerdefense.client.render.FlagArrowEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TowerArrowEntityRenderer;
+import net.bubblesky.towerdefense.client.render.TowerBoltEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TdAllyBipedRenderer;
 import net.bubblesky.towerdefense.client.render.TdBipedEntityRenderer;
 import net.bubblesky.towerdefense.client.screen.CharacterScreen;
@@ -74,6 +75,8 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		// Flag / tower arrows: rendered as vanilla-looking arrows in flight.
 		EntityRendererRegistry.register(ModEntities.FLAG_ARROW, FlagArrowEntityRenderer::new);
 		EntityRendererRegistry.register(ModEntities.TOWER_ARROW, TowerArrowEntityRenderer::new);
+		// The arrow/ball towers' combat bolt: also drawn as a vanilla arrow (it just vanishes on hit).
+		EntityRendererRegistry.register(ModEntities.TOWER_BOLT, TowerBoltEntityRenderer::new);
 
 		// Acid renders as a translucent green liquid.
 		BlockRenderLayerMap.putBlock(ModBlocks.ACID, BlockRenderLayer.TRANSLUCENT);

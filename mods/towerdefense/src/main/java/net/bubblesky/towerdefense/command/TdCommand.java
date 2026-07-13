@@ -131,10 +131,14 @@ public final class TdCommand {
 			.then(CommandManager.literal("shop").executes(TdCommand::shop))
 			.then(CommandManager.literal("buy")
 				.then(CommandManager.argument("type", StringArgumentType.word())
-					.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type"), 1))
+					.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type"), 1, 1))
 					.then(CommandManager.argument("count", IntegerArgumentType.integer(1, 64))
 						.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type"),
-							IntegerArgumentType.getInteger(ctx, "count"))))))
+							IntegerArgumentType.getInteger(ctx, "count"), 1))
+						.then(CommandManager.argument("tier", IntegerArgumentType.integer(1, AbstractTowerBlockEntity.MAX_TIER))
+							.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type"),
+								IntegerArgumentType.getInteger(ctx, "count"),
+								IntegerArgumentType.getInteger(ctx, "tier")))))))
 			.then(CommandManager.literal("upgrade").executes(TdCommand::upgrade))
 			.then(CommandManager.literal("hire")
 				.then(CommandManager.argument("type", StringArgumentType.word())
@@ -301,7 +305,7 @@ public final class TdCommand {
 	 * The shoot-to-place tower arrows still exist for players who prefer them, but the
 	 * shop now sells the simpler place-a-block path.
 	 */
-	private static int buy(CommandContext<ServerCommandSource> ctx, String type, int count) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+	private static int buy(CommandContext<ServerCommandSource> ctx, String type, int count, int tier) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity player = src.getPlayerOrThrow();
 
@@ -311,15 +315,22 @@ public final class TdCommand {
 			src.sendError(Text.literal("Unknown tower '" + type + "'. Try /td shop."));
 			return 0;
 		}
-		int total = def.price() * count;
+		int perTower = costToTier(def.price(), tier);
+		int total = perTower * count;
 		int coins = countCoins(player);
 		if (coins < total) {
 			src.sendError(Text.literal("Not enough coins: need " + total + " for " + count + "x "
-				+ type + ", have " + coins + "."));
+				+ type + " T" + tier + ", have " + coins + "."));
 			return 0;
 		}
 		// Hand out the placeable tower blocks as a stack (drops any that don't fit in the pack).
 		ItemStack blocks = new ItemStack(def.block(), count);
+		if (tier > 1) {
+			net.minecraft.nbt.NbtCompound nbt = new net.minecraft.nbt.NbtCompound();
+			nbt.putInt("td_tier", tier);
+			blocks.set(net.minecraft.component.DataComponentTypes.CUSTOM_DATA,
+				net.minecraft.component.type.NbtComponent.of(nbt));
+		}
 		if (!player.getInventory().insertStack(blocks)) {
 			player.dropItem(blocks, false);
 		}
@@ -328,7 +339,7 @@ public final class TdCommand {
 		String howTo = kind == TowerKind.BALL
 			? " Place them on any block face (walls too) to mount the turrets."
 			: " Place them on the ground to raise the towers.";
-		src.sendFeedback(() -> Text.literal("Bought " + count + "x " + type + " for " + total
+		src.sendFeedback(() -> Text.literal("Bought " + count + "x " + type + " T" + tier + " for " + total
 			+ " coins (" + remaining + " left)." + howTo)
 			.formatted(Formatting.GREEN), false);
 		return 1;
@@ -582,6 +593,15 @@ public final class TdCommand {
 	/** Public catalogue price of the tower block at a position (default 10). */
 	public static int priceOfPublic(ServerWorld world, BlockPos pos) {
 		return priceOf(world, pos);
+	}
+
+	/** Total coins to buy a tower of base price {@code basePrice} already built to {@code tier}. */
+	public static int costToTier(int basePrice, int tier) {
+		int total = basePrice; // tier 1 = just the base price
+		for (int t = 1; t < tier; t++) {
+			total += basePrice * t; // upgrading t -> t+1 costs base*t (matches /td upgrade)
+		}
+		return total;
 	}
 
 	// ---- coin helpers ------------------------------------------------------

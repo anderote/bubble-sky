@@ -56,7 +56,8 @@ public class TowerBlockItem extends BlockItem {
 
 		// Place the single-block tower at the targeted cell (ground or against a wall);
 		// build() stamps the placer and registers it with the arena state.
-		TowerStructure.build(serverWorld, target, kind, placer);
+		int tier = readTier(context.getStack());
+		TowerStructure.build(serverWorld, target, kind, placer, tier);
 
 		if (player == null || !player.getAbilities().creativeMode) {
 			context.getStack().decrement(1);
@@ -65,5 +66,15 @@ public class TowerBlockItem extends BlockItem {
 		serverWorld.playSound(null, target, placedSound.getSoundGroup().getPlaceSound(),
 			SoundCategory.BLOCKS, 1.0f, 1.0f);
 		return ActionResult.SUCCESS;
+	}
+
+	/** Read the pre-upgrade tier encoded on a purchased tower stack (default 1). */
+	private static int readTier(ItemStack stack) {
+		net.minecraft.component.type.NbtComponent data = stack.get(net.minecraft.component.DataComponentTypes.CUSTOM_DATA);
+		if (data == null) {
+			return 1;
+		}
+		net.minecraft.nbt.NbtCompound nbt = data.copyNbt();
+		return nbt.getInt("td_tier", 1);
 	}
 }
