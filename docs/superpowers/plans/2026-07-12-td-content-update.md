@@ -809,7 +809,8 @@ class TowerVeterancyTest {
 	@Test
 	void maxLevelIsTenAndTakesHundreds() {
 		assertEquals(10, TowerVeterancy.MAX_LEVEL);
-		assertTrue(TowerVeterancy.xpForNextLevel(9) > 500, "grind to max should be hundreds of kills");
+		assertTrue(TowerVeterancy.levelForXp(500) < 10, "should not reach max before hundreds of XP");
+		assertEquals(10, TowerVeterancy.levelForXp(750), "max reached at the top cumulative threshold");
 		assertEquals(0, TowerVeterancy.xpForNextLevel(10)); // maxed: nothing more
 	}
 
@@ -976,26 +977,59 @@ After `upgrade()` (line 76) add:
 ```
 (add `import net.bubblesky.towerdefense.blockentity.TowerVeterancy;` — same package, so no import actually needed; drop the import.)
 
-- [ ] **Step 3: Fold veterancy into the derived-stat methods**
+- [ ] **Step 3: Fold veterancy into the derived-stat methods (layered onto the current geometric scaling — DO NOT revert MAX_TIER=6 / geometric)**
 
-Replace `range()` (84-86), `cooldownTicks()` (89-91), and `damageMultiplier()` (94-96) with:
+The current in-tree methods are geometric. Multiply/add the veterancy term into each, keeping the tier scaling exactly as-is. Replace the current `range()`:
 
 ```java
-	/** +2 blocks/tier above 1, plus a veterancy range bonus. */
+	/** +3 blocks of range per tier above 1. */
 	protected double range() {
-		return baseRange() + (tier - 1) * 2.0 + TowerVeterancy.rangeBonus(getVetLevel());
+		return baseRange() + (tier - 1) * 3.0;
 	}
+```
+with:
 
-	/** Cooldown shrinks 20%/tier and is further shortened by veterancy. */
+```java
+	/** +3 blocks of range per tier above 1, plus a veterancy range bonus. */
+	protected double range() {
+		return baseRange() + (tier - 1) * 3.0 + TowerVeterancy.rangeBonus(getVetLevel());
+	}
+```
+
+Replace the current `cooldownTicks()`:
+
+```java
+	/** Cooldown shrinks ~15% per tier (multiplicative, so it never reaches zero): a
+	 *  tier-6 tower fires at ~44% of its base cadence. */
 	protected int cooldownTicks() {
-		double tierFactor = 1.0 - 0.2 * (tier - 1);
-		double vetFactor = TowerVeterancy.cooldownFactor(getVetLevel());
-		return Math.max(1, (int) Math.round(baseCooldown() * tierFactor * vetFactor));
+		return Math.max(1, (int) Math.round(baseCooldown() * Math.pow(0.85, tier - 1)));
 	}
+```
+with:
 
-	/** Damage/effect multiplier: tier (1.0/1.5/2.0) times the veterancy multiplier. */
+```java
+	/** Cooldown shrinks ~15% per tier (multiplicative), further shortened by veterancy. */
+	protected int cooldownTicks() {
+		return Math.max(1, (int) Math.round(
+			baseCooldown() * Math.pow(0.85, tier - 1) * TowerVeterancy.cooldownFactor(getVetLevel())));
+	}
+```
+
+Replace the current `damageMultiplier()`:
+
+```java
+	/** Damage/effect multiplier: geometric x1.5 per tier — 1.0 / 1.5 / 2.25 / 3.38 / 5.06 /
+	 *  7.59 for tiers 1-6, so a fully upgraded tower is severely powerful. */
 	protected double damageMultiplier() {
-		return (1.0 + 0.5 * (tier - 1)) * TowerVeterancy.damageMult(getVetLevel());
+		return Math.pow(1.5, tier - 1);
+	}
+```
+with:
+
+```java
+	/** Damage/effect multiplier: geometric x1.5 per tier, times the veterancy multiplier. */
+	protected double damageMultiplier() {
+		return Math.pow(1.5, tier - 1) * TowerVeterancy.damageMult(getVetLevel());
 	}
 ```
 
@@ -1682,16 +1716,16 @@ In `AbstractTowerBlockEntity.java` add field (after `vetXp`): `protected int inv
 ```
 Persist it: in `readData` add `this.invested = Math.max(0, view.getInt("invested", 0));`; in `writeData` add `view.putInt("invested", invested);`.
 
-- [ ] **Step 2: Record `invested` on buy + upgrade**
+- [ ] **Step 2: Record `invested` at placement**
 
-In `TdCommand.buy` (after `removeCoins(player, def.price());`, line 316) the tower block is only *given* to the player, not yet placed — so set `invested` at **placement** instead: in `TowerStructure.build`, after registering, seed invested from the catalogue price. Since `TowerStructure` doesn't know the price, add a hook: after `TowerRegistry...register(...)` in `build`, set:
+Set `invested` at **placement**, not in `buy` — this is signature-independent (works with the current bulk-buy `buy(ctx, type, count)`, since each placed block individually cost the single catalogue price). In `TowerStructure.build`, after the `TowerRegistry...register(...)` line added in Task D1 Step 5, add:
 
 ```java
 		if (world.getBlockEntity(pos) instanceof AbstractTowerBlockEntity tower) {
 			tower.setInvested(net.bubblesky.towerdefense.command.TdCommand.priceOfPublic(pos, world));
 		}
 ```
-Add a public accessor to `TdCommand` mirroring the private `priceOf`:
+Add a public accessor to `TdCommand` mirroring the private `priceOf` (do **not** alter `buy`):
 
 ```java
 	/** Public catalogue price of the tower block at a position (default 10). */
@@ -1699,7 +1733,7 @@ Add a public accessor to `TdCommand` mirroring the private `priceOf`:
 		return priceOf(world, pos);
 	}
 ```
-In `TdCommand.upgrade`, after `removeCoins(player, cost);` (line 353) add `tower.addInvested(cost);`.
+Upgrade cost is added to `invested` inside `TowerService.upgrade` (Step 3), so no separate edit to `TdCommand.upgrade` is needed for invested — Step 4 replaces that command body with a delegation to `TowerService`.
 
 - [ ] **Step 3: Create `TowerService`**
 
@@ -1796,7 +1830,7 @@ Add the two public passthroughs to `TdCommand` (mirroring the private helpers):
 
 - [ ] **Step 4: Route `/td upgrade` through the service**
 
-Replace the body of `TdCommand.upgrade` (lines 342-357) so it aims at a tower then delegates:
+In `TdCommand.upgrade` (currently ~line 335; keep the `lookedAtTower` null-check at the top), replace everything from the max-tier check through the final `return 1;` — i.e. the tier/cost/coins/upgrade/feedback block — with a delegation to `TowerService`:
 
 ```java
 		BlockPos pos = tower.getPos();
