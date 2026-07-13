@@ -5,14 +5,20 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
+import net.bubblesky.towerdefense.entity.TdAllyEntity;
 import net.bubblesky.towerdefense.game.WaveManager;
+import net.bubblesky.towerdefense.layout.LayoutStore;
 import net.bubblesky.towerdefense.registry.ModBlocks;
+import net.bubblesky.towerdefense.registry.ModEntities;
 import net.bubblesky.towerdefense.registry.ModItems;
 import net.bubblesky.towerdefense.state.TdArenaState;
 import net.minecraft.block.Block;
 import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.SpawnReason;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
@@ -23,6 +29,8 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Heightmap;
 
 /**
@@ -55,6 +63,39 @@ public final class TdCommand {
 	public record ShopEntry(String id, int price) {
 	}
 
+	// ---- hireable allies ---------------------------------------------------
+	/** Hard cap on how many allies may be alive in the arena at once. */
+	private static final int MAX_ALLIES = 20;
+
+	/** A hireable ally: its entity type plus the coin price to summon it. */
+	private record AllyDef(EntityType<? extends TdAllyEntity> type, int price) {
+	}
+
+	/** The ally storefront (insertion order = display order). */
+	private static final Map<String, AllyDef> ALLIES = new LinkedHashMap<>();
+
+	static {
+		ALLIES.put("footman", new AllyDef(ModEntities.ALLY_FOOTMAN, 15));
+		ALLIES.put("archer", new AllyDef(ModEntities.ALLY_ARCHER, 20));
+		ALLIES.put("knight", new AllyDef(ModEntities.ALLY_KNIGHT, 40));
+	}
+
+	/** Public, immutable view of a hireable ally (id + coin price) for client UIs. */
+	public record HireEntry(String id, int price) {
+	}
+
+	/**
+	 * The ally storefront as an ordered list — the single source of truth shared with
+	 * the client menu so its Hire section always matches {@code /td hire}.
+	 */
+	public static java.util.List<HireEntry> hireCatalogue() {
+		java.util.List<HireEntry> list = new java.util.ArrayList<>();
+		for (Map.Entry<String, AllyDef> e : ALLIES.entrySet()) {
+			list.add(new HireEntry(e.getKey(), e.getValue().price()));
+		}
+		return list;
+	}
+
 	/**
 	 * The storefront catalogue as an ordered list — the single source of truth
 	 * shared with the client Tower Defense menu so its shop always reflects the
@@ -81,6 +122,15 @@ public final class TdCommand {
 				.then(CommandManager.argument("type", StringArgumentType.word())
 					.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type")))))
 			.then(CommandManager.literal("upgrade").executes(TdCommand::upgrade))
+			.then(CommandManager.literal("hire")
+				.then(CommandManager.argument("type", StringArgumentType.word())
+					.executes(ctx -> hire(ctx, StringArgumentType.getString(ctx, "type")))))
+			.then(CommandManager.literal("command")
+				.then(CommandManager.argument("order", StringArgumentType.word())
+					.executes(ctx -> command(ctx, StringArgumentType.getString(ctx, "order"), null))
+					.then(CommandManager.argument("flag", StringArgumentType.word())
+						.executes(ctx -> command(ctx, StringArgumentType.getString(ctx, "order"),
+							StringArgumentType.getString(ctx, "flag"))))))
 			.then(CommandManager.literal("spawn").executes(TdCommand::spawn))
 			.then(CommandManager.literal("base")
 				.executes(ctx -> base(ctx, TdArenaState.DEFAULT_BASE_HP))
@@ -132,6 +182,8 @@ public final class TdCommand {
 		line(src, "/td shop", "list buyable towers and their coin prices");
 		line(src, "/td buy <type>", "spend coins to build a tower where you're looking");
 		line(src, "/td upgrade", "spend coins to raise the tier of the tower you're looking at");
+		line(src, "/td hire <type>", "spend coins to summon an allied soldier (footman/archer/knight)");
+		line(src, "/td command <order> [flag]", "order your allies: hold/attack/follow/move (flag = anchor)");
 		line(src, "/td status", "show wave/base info (and the tower you're looking at)");
 		line(src, "/td restart", "reset then re-arena here for a fresh run (start with /td wave)");
 		line(src, "/td reset", "clear the arena (waves, enemies, spawns, base)");
@@ -145,6 +197,17 @@ public final class TdCommand {
 		line(src, "cannon_tower", cannon + " coins — slow, splash/AoE damage");
 		line(src, "frost_tower", frost + " coins — slows enemies down");
 		body(src, "Aim at a tower and /td upgrade to raise its tier for coins.");
+
+		header(src, "Allied soldiers");
+		int aFoot = ALLIES.get("footman").price();
+		int aArch = ALLIES.get("archer").price();
+		int aKnight = ALLIES.get("knight").price();
+		line(src, "footman", aFoot + " coins — melee ally that charges the enemy");
+		line(src, "archer", aArch + " coins — ranged ally that shoots from afar");
+		line(src, "knight", aKnight + " coins — heavy melee ally, tanky front line");
+		body(src, "Hire with /td hire <type> (cap " + MAX_ALLIES + "). Orders via /td command:");
+		body(src, "hold = defend a spot, attack = advance on the wave, follow = trail you,");
+		body(src, "move [flag] = march to a flag/where you look, then hold there.");
 
 		header(src, "Economy");
 		body(src, "Kill enemies to drop coins; walk over them to pick them up. Spend");
@@ -252,6 +315,136 @@ public final class TdCommand {
 		src.sendFeedback(() -> Text.literal("Upgraded to tier " + newTier + " for " + cost
 			+ " coins (" + remaining + " left).").formatted(Formatting.GREEN), false);
 		return 1;
+	}
+
+	// ---- hireable allies ---------------------------------------------------
+	/**
+	 * Hire a friendly unit for coins: {@code /td hire <footman|archer|knight>}. Deducts
+	 * the ally's price from the player's coins (same economy as {@code /td buy}), caps
+	 * the squad at {@link #MAX_ALLIES}, and spawns the unit at the player, set to
+	 * FOLLOW its owner until given another order.
+	 */
+	private static int hire(CommandContext<ServerCommandSource> ctx, String type) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		ServerWorld world = src.getWorld();
+
+		AllyDef def = ALLIES.get(type);
+		if (def == null) {
+			src.sendError(Text.literal("Unknown ally '" + type + "'. Try footman, archer or knight."));
+			return 0;
+		}
+		int existing = countAllies(world);
+		if (existing >= MAX_ALLIES) {
+			src.sendError(Text.literal("Ally cap reached (" + MAX_ALLIES + "). Dismiss some first (/td reset)."));
+			return 0;
+		}
+		int coins = countCoins(player);
+		if (coins < def.price()) {
+			src.sendError(Text.literal("Not enough coins: need " + def.price() + ", have " + coins + "."));
+			return 0;
+		}
+
+		BlockPos spawnPos = player.getBlockPos();
+		TdAllyEntity ally = def.type().spawn(world, spawnPos, SpawnReason.EVENT);
+		if (ally == null) {
+			src.sendError(Text.literal("Couldn't spawn the ally here — try open ground."));
+			return 0;
+		}
+		ally.addCommandTag(TdAllyEntity.ALLY_TAG);
+		ally.setPersistent();
+		// Default order: trail the player who hired it.
+		ally.setOrder(TdAllyEntity.Order.FOLLOW, null, player.getUuid());
+
+		removeCoins(player, def.price());
+		int remaining = coins - def.price();
+		src.sendFeedback(() -> Text.literal("Hired " + type + " for " + def.price()
+			+ " coins (" + remaining + " left). It will FOLLOW you — use /td command <hold|attack|follow|move>.")
+			.formatted(Formatting.GREEN), false);
+		return 1;
+	}
+
+	/**
+	 * Order the player's allies: {@code /td command <hold|attack|follow|move> [flag]}.
+	 * HOLD/MOVE anchor on the named Layout flag if given, else the player's position
+	 * (MOVE uses the block the player is looking at when no flag is supplied). FOLLOW
+	 * re-binds the squad to the commanding player. Affects every ally this player owns.
+	 */
+	private static int command(CommandContext<ServerCommandSource> ctx, String orderName, String flagName)
+			throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		ServerWorld world = src.getWorld();
+
+		TdAllyEntity.Order order;
+		try {
+			order = TdAllyEntity.Order.valueOf(orderName.toUpperCase(java.util.Locale.ROOT));
+		} catch (IllegalArgumentException e) {
+			src.sendError(Text.literal("Unknown order '" + orderName + "'. Use hold, attack, follow or move."));
+			return 0;
+		}
+
+		// Resolve an anchor for HOLD / MOVE (flag > looked-at block > player position).
+		Vec3d anchor = null;
+		String anchorDesc = "";
+		if (order == TdAllyEntity.Order.HOLD || order == TdAllyEntity.Order.MOVE) {
+			if (flagName != null) {
+				LayoutStore.Flag flag = LayoutStore.getFlag(flagName);
+				if (flag == null) {
+					src.sendError(Text.literal("No flag named '" + flagName + "'. Plant one with the Flag Bow / wand."));
+					return 0;
+				}
+				anchor = new Vec3d(flag.x() + 0.5, flag.y(), flag.z() + 0.5);
+				anchorDesc = " at flag " + flag.name();
+			} else if (order == TdAllyEntity.Order.MOVE) {
+				HitResult hit = player.raycast(48.0, 1.0f, false);
+				BlockPos p = hit.getType() == HitResult.Type.BLOCK
+					? ((BlockHitResult) hit).getBlockPos() : player.getBlockPos();
+				anchor = new Vec3d(p.getX() + 0.5, p.getY(), p.getZ() + 0.5);
+				anchorDesc = " to " + p.toShortString();
+			} else {
+				anchor = new Vec3d(player.getX(), player.getY(), player.getZ());
+				anchorDesc = " here";
+			}
+		}
+
+		List<TdAllyEntity> squad = alliesOf(world, player.getUuid());
+		if (squad.isEmpty()) {
+			src.sendError(Text.literal("You have no allies. Hire some with /td hire <type>."));
+			return 0;
+		}
+		for (TdAllyEntity ally : squad) {
+			ally.setOrder(order, anchor, player.getUuid());
+		}
+		final String desc = anchorDesc;
+		final int n = squad.size();
+		src.sendFeedback(() -> Text.literal(n + " all" + (n == 1 ? "y" : "ies") + " ordered to "
+			+ order.name() + desc + ".").formatted(Formatting.GREEN), false);
+		return 1;
+	}
+
+	/** All live allies in the arena (or near the player) owned by {@code owner}. */
+	private static List<TdAllyEntity> alliesOf(ServerWorld world, java.util.UUID owner) {
+		Box box = allyScanBox(world);
+		return world.getEntitiesByClass(TdAllyEntity.class, box,
+			a -> a.isAlive() && owner.equals(a.getOwner()));
+	}
+
+	/** Count every live ally in the arena (for the hire cap). */
+	private static int countAllies(ServerWorld world) {
+		return world.getEntitiesByClass(TdAllyEntity.class, allyScanBox(world),
+			a -> a.isAlive()).size();
+	}
+
+	/** A broad box covering the arena (around the base) or the whole loaded area. */
+	private static Box allyScanBox(ServerWorld world) {
+		TdArenaState st = TdArenaState.get(world.getServer());
+		if (st.base != null) {
+			return new Box(st.base).expand(160.0);
+		}
+		// No base yet: scan a large box around the world spawn as a fallback.
+		BlockPos s = world.getSpawnPos();
+		return new Box(s).expand(160.0);
 	}
 
 	// ---- op / free placement -----------------------------------------------
@@ -485,8 +678,11 @@ public final class TdCommand {
 		TdArenaState st = TdArenaState.get(src.getServer());
 		ServerWorld arena = st.getArenaWorld(src.getServer());
 		if (st.base != null && arena != null) {
+			// Clear both wave enemies AND friendly allies from the field.
 			arena.getOtherEntities(null, new net.minecraft.util.math.Box(st.base).expand(128.0),
-				e -> e.getCommandTags().contains(WaveManager.ENEMY_TAG)).forEach(net.minecraft.entity.Entity::discard);
+				e -> e.getCommandTags().contains(WaveManager.ENEMY_TAG)
+					|| e.getCommandTags().contains(TdAllyEntity.ALLY_TAG))
+				.forEach(net.minecraft.entity.Entity::discard);
 		}
 		// Release any force-loaded arena chunks before wiping the base/spawn positions.
 		WaveManager.releaseArenaChunks(src.getServer(), st);
