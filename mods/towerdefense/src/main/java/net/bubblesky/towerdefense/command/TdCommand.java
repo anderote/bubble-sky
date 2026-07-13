@@ -59,12 +59,12 @@ public final class TdCommand {
 	static {
 		// Prices are 5x the original values. The ball tower is intentionally OMITTED from
 		// the shop (its block/entity stay registered but dormant — no longer purchasable).
-		TOWERS.put("arrow_tower", new TowerDef(ModBlocks.ARROW_TOWER, 50));
-		TOWERS.put("cannon_tower", new TowerDef(ModBlocks.CANNON_TOWER, 125));
-		TOWERS.put("frost_tower", new TowerDef(ModBlocks.FROST_TOWER, 100));
-		TOWERS.put("lightning_tower", new TowerDef(ModBlocks.LIGHTNING_TOWER, 200));
-		TOWERS.put("flame_tower", new TowerDef(ModBlocks.FLAME_TOWER, 150));
-		TOWERS.put("sharpshooter_tower", new TowerDef(ModBlocks.SHARPSHOOTER_TOWER, 250));
+		TOWERS.put("arrow_tower", new TowerDef(ModBlocks.ARROW_TOWER, 20));
+		TOWERS.put("cannon_tower", new TowerDef(ModBlocks.CANNON_TOWER, 50));
+		TOWERS.put("frost_tower", new TowerDef(ModBlocks.FROST_TOWER, 40));
+		TOWERS.put("lightning_tower", new TowerDef(ModBlocks.LIGHTNING_TOWER, 80));
+		TOWERS.put("flame_tower", new TowerDef(ModBlocks.FLAME_TOWER, 60));
+		TOWERS.put("sharpshooter_tower", new TowerDef(ModBlocks.SHARPSHOOTER_TOWER, 100));
 	}
 
 	/** Public, immutable view of a buyable tower (id + coin price) for client UIs. */

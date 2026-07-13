@@ -131,6 +131,13 @@ public final class WaveManager {
 	private static final int SURFACE_SPAWN_OFFSET = 1;
 	/** Length of the between-waves intermission (ticks; 20t = 1s). */
 	private static final int INTERMISSION_TICKS = 100;
+	/** The intermission grows this many ticks per wave (1s), for more breathing room later. */
+	private static final int INTERMISSION_GROWTH = 20;
+	/** Cap on the growing between-waves intermission (600t = 30s). */
+	private static final int INTERMISSION_CAP = 600;
+	/** Ticks an enemy may go with NO progress toward the Idol before it's culled as stuck
+	 *  (lost underground / wedged in terrain), so a wave can't hang on a lost mob. 1200t = 60s. */
+	private static final int STUCK_TIMEOUT = 1200;
 	/** Navigation speed multiplier used when steering enemies at the base. */
 	private static final double NAV_SPEED = 1.2;
 	/** Squared distance (blocks^2) at which an enemy "reaches" the base. */
@@ -289,12 +296,18 @@ public final class WaveManager {
 		if (st.gameOver) {
 			return Text.literal("The Idol was destroyed. Use /td reset to start over.").formatted(Formatting.RED);
 		}
-		if (st.phase == TdArenaState.Phase.SPAWNING || st.phase == TdArenaState.Phase.ACTIVE) {
-			return Text.literal("Wave " + st.currentWave + " is still in progress.").formatted(Formatting.YELLOW);
-		}
+		// No "wave in progress" guard: /td wave ALWAYS launches the next wave — skipping the
+		// intermission pause, or stacking a fresh wave on top of a live one (a rush).
+		boolean stacking = st.phase == TdArenaState.Phase.SPAWNING || st.phase == TdArenaState.Phase.ACTIVE;
 		beginWave(server, st);
-		return Text.literal("Wave " + st.currentWave + " starting: "
+		return Text.literal("Wave " + st.currentWave + (stacking ? " force-started (stacking onto the live wave)! " : " starting: ")
 			+ st.enemiesRemaining + " enemies incoming!").formatted(Formatting.GOLD);
+	}
+
+	/** Between-waves pause (ticks), growing with the wave number for more breathing room in
+	 *  later waves — from {@link #INTERMISSION_TICKS} at wave 1 up to {@link #INTERMISSION_CAP}. */
+	private static int intermissionTicks(int wave) {
+		return Math.min(INTERMISSION_CAP, INTERMISSION_TICKS + Math.max(0, wave - 1) * INTERMISSION_GROWTH);
 	}
 
 	private static void beginWave(MinecraftServer server, TdArenaState st) {
@@ -415,7 +428,7 @@ public final class WaveManager {
 			TdFeedback.waveClear(world, st);
 			dropWaveReward(server, world, st);
 			st.phase = TdArenaState.Phase.INTERMISSION;
-			st.intermissionCooldown = INTERMISSION_TICKS;
+			st.intermissionCooldown = intermissionTicks(st.currentWave);
 			st.markDirty();
 		}
 	}
@@ -579,7 +592,8 @@ public final class WaveManager {
 		double bz = st.base.getZ() + 0.5;
 		double scale = waveScale(Math.max(1, st.currentWave));
 		for (Entity e : enemies(world, st)) {
-			if (e.squaredDistanceTo(bx, by, bz) <= ARRIVAL_DIST_SQ) {
+			double distSq = e.squaredDistanceTo(bx, by, bz);
+			if (distSq <= ARRIVAL_DIST_SQ) {
 				// Each enemy deals its OWN attack damage (scaled by the wave), so a
 				// heavy knight punches the base far harder than a goblin.
 				double atk = e instanceof MobEntity m
@@ -589,6 +603,23 @@ public final class WaveManager {
 				TdFeedback.baseHit(world, st);
 				e.discard();
 			} else if (e instanceof MobEntity mob) {
+				// Stuck-enemy cleanup: cull an enemy that makes NO progress toward the Idol
+				// for STUCK_TIMEOUT (lost underground / wedged in terrain) so the wave can
+				// finish instead of hanging on a lost mob. Any progress resets the timer.
+				if (mob instanceof TdEnemyEntity te) {
+					if (distSq < te.bestDistSq) {
+						te.bestDistSq = distSq;
+						te.stuckTicks = 0;
+					} else if (++te.stuckTicks > STUCK_TIMEOUT) {
+						e.discard();
+						continue;
+					}
+				}
+				// Drown: an enemy caught underwater takes drowning damage — a water moat is
+				// a real defense, and it flushes out anything that wanders into water.
+				if (mob.isSubmergedInWater() && mob.age % 20 == 0) {
+					mob.damage(world, world.getDamageSources().drown(), 4.0f);
+				}
 				steerOrDig(world, mob, st);
 			}
 		}

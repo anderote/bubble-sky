@@ -203,8 +203,13 @@ async function onChat(username, message) {
   // Human players ONLY: never react to bots/agents (Grok itself, Codex, drones, the swarm
   // — BOTNAMES matches them all) or to our own username. This also kills the self-feedback
   // loop where Grok answered its own chat when the allowlist was opened up.
-  if (BOTNAMES.test(username) || username.toLowerCase() === USERNAME.toLowerCase()) return
-  if (!ALLOW_ALL && !ALLOW.has(username.toLowerCase())) return
+  const u = username.toLowerCase()
+  if (u === USERNAME.toLowerCase()) return  // never react to our own chat (kills the feedback loop)
+  // Names EXPLICITLY listed in GROK_ALLOW are always allowed — even if they match the bot
+  // name pattern (e.g. adding "viscousvermin9"). Otherwise ignore bots/agents/drones.
+  const explicit = ALLOW.has(u)
+  if (!explicit && BOTNAMES.test(username)) return
+  if (!ALLOW_ALL && !explicit) return
   // ---- STOP FAST-PATH (before the LLM, and works even when busy===true) ----
   // Clearing the command queue is the INSTANT stop — it's what floods /fill+/setblock.
   // The `aborted` flag then stops the build loop from re-filling it.

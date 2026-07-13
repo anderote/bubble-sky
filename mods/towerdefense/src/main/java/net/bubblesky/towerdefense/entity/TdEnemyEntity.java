@@ -33,6 +33,11 @@ public abstract class TdEnemyEntity extends HostileEntity {
 	public int repathCooldown = 0;
 	/** True while this enemy has NO path to the Idol and is smashing through a wall. */
 	public boolean blockedFromBase = false;
+	/** Closest distance^2 to the Idol this enemy has ever reached (for stuck detection). */
+	public double bestDistSq = Double.MAX_VALUE;
+	/** Ticks with no progress toward the Idol; the wave manager culls an enemy that stays
+	 *  stuck too long (lost underground / wedged in terrain) so the wave can finish. */
+	public int stuckTicks = 0;
 
 	/** Squared distance (blocks^2) within which an enemy engages an ally/player that gets
 	 *  "in the way". Kept short even though FOLLOW_RANGE is set large (so the enemy can
