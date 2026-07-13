@@ -115,7 +115,7 @@ const server = http.createServer(async (request, response) => {
       const minutes = Math.max(1, Math.min(120, Number(body.minutes || 5)));
       state.postponements[body.release || "next"] = Date.now() + minutes * 60_000;
       writeJson(stateFile, state);
-      const event = publish("deploy.postponed", { id: body.release || "next" }, `${body.requester || "A player"} postponed deployment ${minutes} minutes.`);
+      const event = publish("deploy.postponed", { id: body.release || "next" }, `${body.requester || "A player"} postponed deployment ${minutes} minutes.`, { minutes });
       return sendJson(response, 200, event);
     }
     const readyMatch = url.pathname.match(/^\/v1\/deploy\/ready\/([^/]+)$/);

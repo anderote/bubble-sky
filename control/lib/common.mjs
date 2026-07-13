@@ -60,6 +60,51 @@ export function clip(text, length = 600) {
   return clean.length <= length ? clean : `${clean.slice(0, length - 1)}…`;
 }
 
+export function parseDurationMinutes(input) {
+  let text = String(input || "").toLowerCase().trim()
+    .replace(/\b(?:please|deployment|deploy|release|restart|delay|postpone|wait|later|for|by|another)\b/g, " ")
+    .replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  text = text
+    .replace(/\bhalf\s+(?:an?\s+)?hour\b/g, "30 minutes")
+    .replace(/\b(?:a\s+)?quarter\s+(?:of\s+an?\s+|an?\s+)?hour\b/g, "15 minutes")
+    .replace(/\b(?:an?|one)\s+and\s+a\s+half\s+hours?\b/g, "90 minutes")
+    .replace(/\b(an?|one)\s+hours?\b/g, "60 minutes")
+    .replace(/\b(an?|one)\s+minutes?\b/g, "1 minute")
+    .replace(/\ba\s+couple(?:\s+of)?\s+minutes?\b/g, "2 minutes")
+    .replace(/\ba\s+few\s+minutes?\b/g, "3 minutes");
+  text = replaceNumberWords(text);
+  let total = 0;
+  let matched = false;
+  const pattern = /(\d+(?:\.\d+)?)\s*(days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|seconds?|secs?|sec|s)\b/g;
+  for (const match of text.matchAll(pattern)) {
+    matched = true;
+    const value = Number(match[1]);
+    const unit = match[2];
+    if (/^d/.test(unit)) total += value * 1440;
+    else if (/^h/.test(unit)) total += value * 60;
+    else if (/^s/.test(unit)) total += value / 60;
+    else total += value;
+  }
+  if (!matched) {
+    const bare = text.match(/^\d+(?:\.\d+)?$/);
+    if (bare) total = Number(bare[0]);
+    else return null;
+  }
+  return Math.max(1, Math.round(total));
+}
+
+function replaceNumberWords(text) {
+  const small = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19 };
+  const tens = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+  return text.replace(/\b([a-z]+)(?:[-\s]+([a-z]+))?\s+(?=(?:days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m|seconds?|secs?|sec|s)\b)/g, (whole, first, second) => {
+    if (small[first] !== undefined && !second) return `${small[first]} `;
+    if (tens[first] !== undefined && !second) return `${tens[first]} `;
+    if (tens[first] !== undefined && small[second] !== undefined) return `${tens[first] + small[second]} `;
+    return whole;
+  });
+}
+
 export function loadConfig(configPath) {
   const resolved = expandHome(configPath || process.env.BUBBLE_STATION_CONFIG || "~/.config/bubble-sky/station.json");
   const config = readJson(resolved);

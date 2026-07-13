@@ -44,7 +44,8 @@ Paired commands:
 @dev work andrew-mac/claude fix poison tower targeting
 @dev reply chat-abc123 keep going and compare both approaches
 @dev status dev-abc123
-@dev later 5
+@dev later 10mins
+@dev postpone for half an hour
 ```
 
 `ask` preserves the agent session for `reply`. `work` starts from `origin/main` in a separate
@@ -59,7 +60,8 @@ the exact third-party files in `release/mods.lock.json`, verifies SHA-256 values
 `bubble-sky-release.tgz` under an immutable `play-<git-sha>` GitHub release.
 
 Both watchers download and verify it, report readiness, and wait until every configured peer is
-ready. Each Station announces a five-minute countdown. `@dev later 5` postpones it. Role-specific
+ready. Each Station announces a five-minute countdown. Natural durations such as
+`@dev later 10mins`, `@dev wait 1h 30m`, or `@dev postpone for half an hour` postpone it. Role-specific
 deployment then closes Minecraft, swaps the complete mods directory, snapshots/stops/restarts the
 server when applicable, restarts configured agents, launches Prism with `--server`, and reports
 success. Previous mod directories remain available for automatic rollback on failure.
