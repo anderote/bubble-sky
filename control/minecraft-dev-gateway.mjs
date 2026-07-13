@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { clip, fetchJson, loadConfig } from "./lib/common.mjs";
+import { clip, fetchJson, loadConfig, parseDurationMinutes } from "./lib/common.mjs";
 
 const config = loadConfig(process.argv[2]);
 const mc = config.minecraft || {};
@@ -79,11 +79,11 @@ async function handleMessage(speaker, raw, whispered) {
       if (old.kind !== "chat") return tell(speaker, "Dev jobs are continued through their PR. Start a new @dev work request if needed.");
       return submit(speaker, { kind: "chat", provider: old.provider, targetNode: old.nodeId, prompt, continuationOf: parent });
     }
-    const later = command.match(/^(?:later|wait|postpone)(?:\s+\S+)?\s+(\d+)\s*(?:m|min|minutes?)?$/i) || command.match(/^(\d+)\s+minutes?$/i);
-    if (later) {
-      const minutes = Number(later[1]);
-      await api("/v1/deploy/postpone", { method: "POST", body: { minutes, requester: speaker } });
-      return tell(speaker, `Okay—deployment postponed ${minutes} minutes.`);
+    if (/^(?:later|wait|postpone|delay)\b/i.test(command) || /\b(?:mins?|minutes?|hours?|hrs?|seconds?|secs?)\b/i.test(command)) {
+      const minutes = parseDurationMinutes(command);
+      if (!minutes) return tell(speaker, "Tell me how long, e.g. @dev later 10mins or @dev postpone for half an hour.");
+      const delayed = await api("/v1/deploy/postpone", { method: "POST", body: { minutes, requester: speaker } });
+      return tell(speaker, `Okay—deployment postponed ${delayed.minutes} minutes.`);
     }
     const directed = command.match(/^(ask|chat|work|dev)\s+(?:(\S+)\/)?(codex|claude)\s+([\s\S]+)$/i);
     if (directed) return submit(speaker, { kind: /^(work|dev)$/i.test(directed[1]) ? "dev" : "chat", targetNode: directed[2] || undefined, provider: directed[3].toLowerCase(), prompt: directed[4] });
@@ -104,7 +104,7 @@ function showHelp(player) {
     "@dev work alli-mac/codex <change> — create a dev PR",
     "@dev reply [job-id] <text> — continue a conversation",
     "@dev status [job-id] — inspect work",
-    "@dev later 5 — postpone an announced deployment",
+    "@dev later 10mins — postpone an announced deployment (natural durations work)",
   ].forEach((line) => tell(player, line));
 }
 

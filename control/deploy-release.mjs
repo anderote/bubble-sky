@@ -19,7 +19,7 @@ if (!fs.existsSync(target)) fs.cpSync(bundle, target, { recursive: true });
 
 const noticeMinutes = now ? 0 : Number(config.deployment?.noticeMinutes ?? 5);
 if (noticeMinutes) {
-  await notice(`Release ${manifest.release} is ready. I will update this game in ${noticeMinutes} minutes.`, [{ label: "Delay", command: "@dev later 5" }]);
+  await notice(`Deployment ready! Will restart and auto-setup in ${noticeMinutes} mins, or message e.g. '@dev later 10mins'. Release: ${manifest.release}.`, [{ label: "Delay", command: "@dev later 10mins" }]);
   let deadline = Date.now() + noticeMinutes * 60_000;
   while (Date.now() < deadline) {
     const stationState = readJson(path.join(config.runtimeDir, "station-state.json"), { postponements: {} });
