@@ -123,21 +123,16 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 	}
 
 	// ---- veterancy (kill-earned rank) --------------------------------------
-	/** Cumulative kills required to REACH each veterancy level (index = level, 0..MAX_VETERANCY). */
-	private static final int[] VET_KILLS = {0, 5, 15, 35, 65, 110, 175, 265, 385, 540, 750};
-	public static final int MAX_VETERANCY = 10;
+	/** Kills to earn one veterancy rank. */
+	private static final int KILLS_PER_RANK = 20;
+	/** Damage bonus per rank (+25%/rank). */
+	private static final double DAMAGE_PER_RANK = 0.25;
+	/** Rank cap: 6 ranks → +150% = 2.5x damage at {@code 6 * KILLS_PER_RANK} = 120 kills. */
+	public static final int MAX_VETERANCY = 6;
 
-	/** Current veterancy level 0..MAX_VETERANCY, derived from kills. */
+	/** Current veterancy rank 0..MAX_VETERANCY: one rank per {@link #KILLS_PER_RANK} kills. */
 	public int getVeterancy() {
-		int level = 0;
-		for (int i = 1; i <= MAX_VETERANCY; i++) {
-			if (veterancyKills >= VET_KILLS[i]) {
-				level = i;
-			} else {
-				break;
-			}
-		}
-		return level;
+		return Math.min(MAX_VETERANCY, veterancyKills / KILLS_PER_RANK);
 	}
 
 	public int getKills() {
@@ -146,13 +141,12 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 
 	/** Kills still needed to reach the next rank (0 if maxed). */
 	public int killsToNextVeterancy() {
-		int lvl = getVeterancy();
-		return lvl >= MAX_VETERANCY ? 0 : VET_KILLS[lvl + 1] - veterancyKills;
+		return getVeterancy() >= MAX_VETERANCY ? 0 : KILLS_PER_RANK - (veterancyKills % KILLS_PER_RANK);
 	}
 
-	/** Veterancy stat multiplier: 1.0 at rank 0 → 2.5 at rank 10 (+0.15/rank). */
+	/** Veterancy damage multiplier: 1.0 at rank 0 → 2.5 at rank 6 (+25%/rank, one rank per 20 kills). */
 	private double veterancyMult() {
-		return 1.0 + 0.15 * getVeterancy();
+		return 1.0 + DAMAGE_PER_RANK * getVeterancy();
 	}
 
 	/**
