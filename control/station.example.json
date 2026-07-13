@@ -1,0 +1,27 @@
+{
+  "nodeId": "alli-mac",
+  "displayName": "Alli's Mac",
+  "repoRoot": "~/Documents/bubble-sky",
+  "runtimeDir": "~/.local/share/bubble-sky",
+  "sharedToken": "CHANGE_ME",
+  "listen": { "host": "0.0.0.0", "port": 25880 },
+  "publicUrl": "http://alli-mac.local:25880",
+  "roles": ["client", "codex-agent", "swarm"],
+  "providers": [
+    { "name": "codex", "adapter": "codex", "command": "/opt/homebrew/bin/codex", "timeoutMs": 1800000 }
+  ],
+  "peers": [
+    { "nodeId": "andrew-mac", "url": "http://andrew-mac.local:25880" }
+  ],
+  "minecraft": {
+    "host": "192.168.86.188",
+    "port": 25565,
+    "username": "DevStation",
+    "allowedPlayers": ["allibell", "claudebert"]
+  },
+  "deployment": {
+    "releaseChannel": "play",
+    "prismInstance": "bubble-sky-1.21.6",
+    "serverAddress": "192.168.86.188:25565"
+  }
+}

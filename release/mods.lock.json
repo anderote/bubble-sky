@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "minecraft": "1.21.6",
+  "fabricLoader": "0.19.3",
+  "java": 21,
+  "mods": [
+    { "project": "fabric-api", "filename": "fabric-api-0.128.2+1.21.6.jar", "sha256": "6e1d4547d7debd18da80532e561f02f167545219516af5b63c8a803a8f09822f", "side": "both" },
+    { "project": "blockus", "filename": "blockus-2.13.2+1.21.8.jar", "sha256": "5afd8ae93d2b58dd7ec24fc5eeb8ad3220e3518a23a4beaadcddc4383347f571", "side": "both" },
+    { "project": "macaws-furniture", "filename": "mcw-furniture-3.4.1-mc1.21.6fabric.jar", "sha256": "ceed6c46cdfb02cfd2fbe3a12f3cbe791c6f912516282f1e93c715f964f863fb", "side": "both" },
+    { "project": "macaws-windows", "filename": "mcw-mcwwindows-2.4.2-mc1.21.6fabric.jar", "sha256": "1f3fc53fd486f207c71ff0e009162c084bc3d6a700e0127dac174e81a0a2deeb", "side": "both" },
+    { "project": "macaws-doors", "filename": "mcw-doors-1.1.5-mc1.21.6fabric.jar", "sha256": "d50efc7e1972ad900e068af1e9068ea2a0bccf4ca8c3186f87824920d3a6836a", "side": "both" },
+    { "project": "macaws-fences-and-walls", "filename": "mcw-mcwfences-1.2.1-mc1.21.6fabric.jar", "sha256": "7bdbb30f33fac73bfc1010f9f10814c033046a7e42626f19d170c0027b69432b", "side": "both" },
+    { "project": "farmers-delight-refabricated", "filename": "FarmersDelight-1.21.8-3.3.3+refabricated.jar", "sha256": "123ca27f4423fdc1f047de0952b135d32e0c4d9a4d3bd281fe2d991a31e8b73d", "side": "both" },
+    { "project": "xaeros-minimap", "filename": "Xaeros_Minimap_25.2.7_Fabric_1.21.6.jar", "sha256": "c1e1240789342cccea633d4adc087e798800e7fbdcb976cf7d2a36918715b83c", "side": "client" }
+  ]
+}
