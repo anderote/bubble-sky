@@ -7,7 +7,6 @@ import net.bubblesky.towerdefense.layout.LayoutStore;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.bubblesky.towerdefense.game.TdHud;
 import net.bubblesky.towerdefense.game.WaveManager;
-import net.bubblesky.towerdefense.entity.TdFriendlyEntity;
 import net.bubblesky.towerdefense.registry.ModBlockEntities;
 import net.bubblesky.towerdefense.registry.ModBlocks;
 import net.bubblesky.towerdefense.registry.ModEntities;
@@ -22,7 +21,6 @@ import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import org.slf4j.Logger;
@@ -122,16 +120,9 @@ public class TowerDefenseMod implements ModInitializer {
 			if (!(entity instanceof HostileEntity)) {
 				return;
 			}
-			// Direct player/tower shots resolve normally. Hired melee units resolve
-			// through their persisted owner so the whole army participates in the economy.
-			PlayerEntity creditedPlayer = damageSource.getAttacker() instanceof PlayerEntity player
-				? player : null;
-			if (creditedPlayer == null && damageSource.getAttacker() instanceof TdFriendlyEntity hired
-					&& hired.getOwnerUuid() != null) {
-				ServerPlayerEntity owner = world.getServer().getPlayerManager().getPlayer(hired.getOwnerUuid());
-				creditedPlayer = owner;
-			}
-			if (creditedPlayer == null) {
+			// Only reward player kills. getAttacker() resolves to the player for
+			// direct melee and for any projectile the player owns.
+			if (!(damageSource.getAttacker() instanceof PlayerEntity)) {
 				return;
 			}
 			int count = COIN_DROP_MIN + world.random.nextInt(COIN_DROP_MAX - COIN_DROP_MIN + 1);

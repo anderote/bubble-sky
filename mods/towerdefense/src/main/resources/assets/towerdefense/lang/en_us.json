@@ -23,12 +23,11 @@
 	"entity.towerdefense.man_at_arms": "Man-at-Arms",
 	"entity.towerdefense.undead_soldier": "Undead Soldier",
 	"entity.towerdefense.heavy_knight": "Heavy Knight",
-	"entity.towerdefense.hired_militia": "Hired Militia",
-	"entity.towerdefense.hired_archer": "Hired Archer",
-	"entity.towerdefense.hired_shield_guard": "Hired Shield Guard",
-	"entity.towerdefense.hired_heavy_knight": "Hired Heavy Knight",
-	"entity.towerdefense.hired_wizard": "Hired Wizard",
+	"entity.towerdefense.ally_footman": "Allied Footman",
+	"entity.towerdefense.ally_archer": "Allied Archer",
+	"entity.towerdefense.ally_knight": "Allied Knight",
 
 	"key.categories.towerdefense": "Tower Defense",
-	"key.towerdefense.open_menu": "Open Tower Defense Menu"
+	"key.towerdefense.open_menu": "Open Tower Defense Menu",
+	"key.towerdefense.open_hire": "Open Hire Menu (H)"
 }

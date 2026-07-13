@@ -58,7 +58,10 @@ public class TdArcherEnemy extends TdEnemyEntity implements RangedAttackMob {
 		if (!(this.getWorld() instanceof ServerWorld world)) {
 			return;
 		}
-		ArrowEntity arrow = new ArrowEntity(world, this, new ItemStack(Items.ARROW), ItemStack.EMPTY);
+		// The final arg is the WEAPON stack: on 1.21.6 an EMPTY (but non-null) weapon
+		// throws "Invalid weapon firing an arrow" and crashes the server, so pass a
+		// valid bow.
+		ArrowEntity arrow = new ArrowEntity(world, this, new ItemStack(Items.ARROW), new ItemStack(Items.BOW));
 		double dx = target.getX() - this.getX();
 		double dy = target.getBodyY(0.3333) - arrow.getY();
 		double dz = target.getZ() - this.getZ();

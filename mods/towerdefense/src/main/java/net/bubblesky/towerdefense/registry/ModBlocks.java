@@ -52,7 +52,7 @@ public final class ModBlocks {
 			.sounds(BlockSoundGroup.GLASS),
 		true);
 
-	/** Recruitment anchor. A nearby barracks is required before infantry can be hired. */
+	/** Visual anchor for a compact purchased barracks outpost. */
 	public static final Block BARRACKS = register("barracks", Block::new,
 		AbstractBlock.Settings.create()
 			.strength(4.0f, 8.0f)

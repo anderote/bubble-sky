@@ -2,9 +2,10 @@ package net.bubblesky.towerdefense.client;
 
 import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.client.render.FlagArrowEntityRenderer;
+import net.bubblesky.towerdefense.client.render.TdAllyBipedRenderer;
 import net.bubblesky.towerdefense.client.render.TdBipedEntityRenderer;
-import net.bubblesky.towerdefense.client.render.TdFriendlyEntityRenderer;
 import net.bubblesky.towerdefense.client.screen.TowerDefenseScreen;
+import net.bubblesky.towerdefense.entity.TdAllyEntity;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
 import net.bubblesky.towerdefense.registry.ModBlocks;
 import net.bubblesky.towerdefense.registry.ModEntities;
@@ -39,6 +40,7 @@ public class TowerDefenseModClient implements ClientModInitializer {
 	private static final String KEY_CATEGORY = "key.categories.towerdefense";
 
 	private static KeyBinding openMenuKey;
+	private static KeyBinding hireKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -48,11 +50,11 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		bind(ModEntities.MAN_AT_ARMS, "man_at_arms");
 		bind(ModEntities.UNDEAD_SOLDIER, "undead_soldier");
 		bind(ModEntities.HEAVY_KNIGHT, "heavy_knight");
-		bindFriendly(ModEntities.HIRED_MILITIA, "footman");
-		bindFriendly(ModEntities.HIRED_ARCHER, "archer");
-		bindFriendly(ModEntities.HIRED_SHIELD_GUARD, "man_at_arms");
-		bindFriendly(ModEntities.HIRED_HEAVY_KNIGHT, "heavy_knight");
-		bindFriendly(ModEntities.HIRED_WIZARD, "undead_soldier");
+
+		// Friendly ally roster (blue-tinted biped skins).
+		bindAlly(ModEntities.ALLY_FOOTMAN, "ally_footman");
+		bindAlly(ModEntities.ALLY_ARCHER, "ally_archer");
+		bindAlly(ModEntities.ALLY_KNIGHT, "ally_knight");
 
 		// Flag Bow's arrow: rendered as a vanilla-looking arrow in flight.
 		EntityRendererRegistry.register(ModEntities.FLAG_ARROW, FlagArrowEntityRenderer::new);
@@ -66,14 +68,20 @@ public class TowerDefenseModClient implements ClientModInitializer {
 			InputUtil.Type.KEYSYM,
 			GLFW.GLFW_KEY_J,
 			KEY_CATEGORY));
+		hireKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+			"key.towerdefense.open_hire",
+			InputUtil.Type.KEYSYM,
+			GLFW.GLFW_KEY_H,
+			KEY_CATEGORY));
 
-		// Open the screen on keypress (works whether or not a match is running,
-		// so players can START one from the menu).
+		// Open the control screen on J (full menu) or H (hire). Always drain the
+		// press queues; open only when in-world with no other screen up.
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
-			while (openMenuKey.wasPressed()) {
-				if (client.currentScreen == null && client.player != null) {
-					client.setScreen(new TowerDefenseScreen());
-				}
+			boolean open = false;
+			while (openMenuKey.wasPressed()) open = true;
+			while (hireKey.wasPressed()) open = true;
+			if (open && client.currentScreen == null && client.player != null) {
+				client.setScreen(new TowerDefenseScreen());
 			}
 		});
 
@@ -86,9 +94,8 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		EntityRendererRegistry.register(type, ctx -> new TdBipedEntityRenderer(ctx, texture));
 	}
 
-	private static void bindFriendly(EntityType<net.bubblesky.towerdefense.entity.TdFriendlyEntity> type,
-			String skin) {
+	private static void bindAlly(EntityType<? extends TdAllyEntity> type, String skin) {
 		Identifier texture = Identifier.of(TowerDefenseMod.MOD_ID, "textures/entity/" + skin + ".png");
-		EntityRendererRegistry.register(type, ctx -> new TdFriendlyEntityRenderer(ctx, texture));
+		EntityRendererRegistry.register(type, ctx -> new TdAllyBipedRenderer(ctx, texture));
 	}
 }
