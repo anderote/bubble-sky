@@ -145,7 +145,7 @@ public class FlameTowerBlockEntity extends AbstractTowerBlockEntity {
 		for (HostileEntity mob : world.getNonSpectatingEntities(HostileEntity.class, cone)) {
 			if (mob.isAlive() && mob.squaredDistanceTo(target) <= CONE_RADIUS * CONE_RADIUS) {
 				mob.setOnFireFor(BURN_SECONDS);
-				mob.damage(world, source, damage);
+				damageAndCredit(world, mob, source, damage);
 			}
 		}
 
@@ -280,7 +280,7 @@ public class FlameTowerBlockEntity extends AbstractTowerBlockEntity {
 			BlockPos feet = mob.getBlockPos();
 			if (burningTiles.containsKey(feet) || burningTiles.containsKey(feet.down())) {
 				mob.setOnFireFor(BURN_SECONDS);
-				mob.damage(world, source, damage);
+				damageAndCredit(world, mob, source, damage);
 			}
 		}
 	}

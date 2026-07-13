@@ -9,6 +9,7 @@ import net.bubblesky.towerdefense.block.CannonTowerBlock;
 import net.bubblesky.towerdefense.block.FlameTowerBlock;
 import net.bubblesky.towerdefense.block.FrostTowerBlock;
 import net.bubblesky.towerdefense.block.LightningTowerBlock;
+import net.bubblesky.towerdefense.block.SharpshooterTowerBlock;
 import net.bubblesky.towerdefense.item.TowerBlockItem;
 import net.bubblesky.towerdefense.tower.TowerKind;
 import net.minecraft.block.AbstractBlock;
@@ -80,6 +81,17 @@ public final class ModBlocks {
 			.nonOpaque()
 			.sounds(BlockSoundGroup.STONE),
 		TowerKind.FLAME);
+
+	// Long-range, slow-firing precision tower: targets the toughest enemy in range (not
+	// the nearest) and hits it hard with a flat-plus-percent-max-HP shot, sometimes crit.
+	public static final Block SHARPSHOOTER_TOWER = registerTower("sharpshooter_tower",
+		SharpshooterTowerBlock::new,
+		AbstractBlock.Settings.create()
+			.strength(3.5f, 7.0f)
+			.requiresTool()
+			.nonOpaque()
+			.sounds(BlockSoundGroup.STONE),
+		TowerKind.SHARPSHOOTER);
 
 	// The single-block sticky mini turret (no pole/orb). Placeable on any face.
 	public static final Block BALL_TOWER = registerTower("ball_tower",

@@ -36,7 +36,10 @@ public enum TowerKind {
 		Blocks.LIGHTNING_ROD, Blocks.LIGHT_BLUE_CONCRETE, 0),
 	/** Flamethrower tower: fast, close-range; sprays fire and leaves burning ground. */
 	FLAME("flame_tower", () -> ModBlocks.FLAME_TOWER, () -> ModItems.FLAME_TOWER_ARROW,
-		Blocks.MAGMA_BLOCK, Blocks.BLAST_FURNACE, 0);
+		Blocks.MAGMA_BLOCK, Blocks.BLAST_FURNACE, 0),
+	/** Sharpshooter tower: very long range, slow cadence; targets the toughest enemy in range. */
+	SHARPSHOOTER("sharpshooter_tower", () -> ModBlocks.SHARPSHOOTER_TOWER, () -> ModItems.SHARPSHOOTER_TOWER_ARROW,
+		Blocks.POLISHED_BLACKSTONE, Blocks.EMERALD_BLOCK, 0);
 
 	private final String id;
 	private final Supplier<Block> core;

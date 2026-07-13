@@ -7,6 +7,7 @@ import net.bubblesky.towerdefense.blockentity.CannonTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.FlameTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.FrostTowerBlockEntity;
 import net.bubblesky.towerdefense.blockentity.LightningTowerBlockEntity;
+import net.bubblesky.towerdefense.blockentity.SharpshooterTowerBlockEntity;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
 import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.registry.Registries;

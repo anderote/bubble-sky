@@ -93,6 +93,8 @@ public class MyTowersScreen extends Screen {
 			context.drawTextWithShadow(this.textRenderer,
 				Text.literal("T" + r.tier() + (r.maxed() ? "*" : "")).formatted(Formatting.AQUA),
 				x + 4, y + 20, 0xFFFFFFFF);
+			context.drawTextWithShadow(this.textRenderer,
+				Text.literal("★" + r.vetLevel()).formatted(Formatting.GOLD), x + 20, y + 20, 0xFFFFFFFF);
 		}
 		renderDetail(context, rows);
 	}
@@ -116,6 +118,8 @@ public class MyTowersScreen extends Screen {
 		String[] lines = {
 			prettify(kind.id()),
 			"Tier " + r.tier() + (r.maxed() ? " (MAX)" : ""),
+			"Veterancy: rank " + r.vetLevel() + " / " + net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity.MAX_VETERANCY
+				+ "  (" + r.kills() + " kills)",
 			"Range " + r.range() + "   Damage x" + String.format("%.2f", r.dmgPct() / 100.0),
 			"Cooldown " + String.format("%.1fs", r.cooldownTicks() / 20.0),
 			r.maxed() ? "Upgrade: MAX tier" : ("Upgrade cost: " + r.upgradeCost() + " coins"),

@@ -12,7 +12,7 @@ import net.minecraft.util.Identifier;
 public record TowerRosterPayload(int coins, List<Row> rows) implements CustomPayload {
 
 	public record Row(long posId, int kindOrdinal, int tier, int range, int cooldownTicks,
-		int dmgPct, int upgradeCost, int refund, boolean maxed) {
+		int dmgPct, int upgradeCost, int refund, boolean maxed, int vetLevel, int kills) {
 	}
 
 	public static final CustomPayload.Id<TowerRosterPayload> ID =
@@ -34,6 +34,8 @@ public record TowerRosterPayload(int coins, List<Row> rows) implements CustomPay
 			buf.writeVarInt(r.upgradeCost());
 			buf.writeVarInt(r.refund());
 			buf.writeBoolean(r.maxed());
+			buf.writeVarInt(r.vetLevel());
+			buf.writeVarInt(r.kills());
 		}
 	}
 
@@ -43,7 +45,8 @@ public record TowerRosterPayload(int coins, List<Row> rows) implements CustomPay
 		List<Row> rows = new ArrayList<>(n);
 		for (int i = 0; i < n; i++) {
 			rows.add(new Row(buf.readLong(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
-				buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean()));
+				buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(),
+				buf.readVarInt(), buf.readVarInt()));
 		}
 		return new TowerRosterPayload(coins, rows);
 	}

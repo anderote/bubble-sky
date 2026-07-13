@@ -66,7 +66,9 @@ public final class TowerUiEvents {
 				(int) Math.round(tower.displayDamageMultiplier() * 100),
 				maxed ? 0 : TowerService.upgradeCost(world, tower),
 				TowerService.refund(world, tower),
-				maxed));
+				maxed,
+				tower.getVeterancy(),
+				tower.getKills()));
 		}
 		ServerPlayNetworking.send(player, new TowerRosterPayload(TdCommand.countCoinsPublic(player), rows));
 	}
