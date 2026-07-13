@@ -7,12 +7,17 @@ import com.mojang.brigadier.context.CommandContext;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
+import net.bubblesky.towerdefense.entity.TdFriendlyEntity;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.registry.ModBlocks;
+import net.bubblesky.towerdefense.registry.ModEntities;
 import net.bubblesky.towerdefense.registry.ModItems;
 import net.bubblesky.towerdefense.state.TdArenaState;
 import net.minecraft.block.Block;
+import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.SpawnReason;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
@@ -23,6 +28,8 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Direction;
 import net.minecraft.world.Heightmap;
 
 /**
@@ -44,11 +51,24 @@ public final class TdCommand {
 
 	/** The storefront catalogue (insertion order = display order). */
 	private static final Map<String, TowerDef> TOWERS = new LinkedHashMap<>();
+	private record DefenseDef(int price, String description) {}
+	private record HireDef(EntityType<TdFriendlyEntity> type, int price, String displayName) {}
+	private static final Map<String, DefenseDef> DEFENSES = new LinkedHashMap<>();
+	private static final Map<String, HireDef> HIRES = new LinkedHashMap<>();
+	private static final int BARRACKS_RANGE = 16;
+	private static final int MAX_HIRED_UNITS = 12;
 
 	static {
 		TOWERS.put("arrow_tower", new TowerDef(ModBlocks.ARROW_TOWER, 10));
 		TOWERS.put("cannon_tower", new TowerDef(ModBlocks.CANNON_TOWER, 25));
 		TOWERS.put("frost_tower", new TowerDef(ModBlocks.FROST_TOWER, 20));
+		DEFENSES.put("wall", new DefenseDef(5, "3-wide, 2-high obstacle"));
+		DEFENSES.put("barracks", new DefenseDef(30, "recruits and rallies infantry"));
+		HIRES.put("militia", new HireDef(ModEntities.HIRED_MILITIA, 8, "Militia"));
+		HIRES.put("archer", new HireDef(ModEntities.HIRED_ARCHER, 12, "Archer"));
+		HIRES.put("shield_guard", new HireDef(ModEntities.HIRED_SHIELD_GUARD, 18, "Shield Guard"));
+		HIRES.put("heavy_knight", new HireDef(ModEntities.HIRED_HEAVY_KNIGHT, 28, "Heavy Knight"));
+		HIRES.put("wizard", new HireDef(ModEntities.HIRED_WIZARD, 30, "Wizard"));
 	}
 
 	/** Public, immutable view of a buyable tower (id + coin price) for client UIs. */
@@ -63,6 +83,18 @@ public final class TdCommand {
 	public static java.util.List<ShopEntry> catalogue() {
 		java.util.List<ShopEntry> list = new java.util.ArrayList<>();
 		for (Map.Entry<String, TowerDef> e : TOWERS.entrySet()) {
+			list.add(new ShopEntry(e.getKey(), e.getValue().price()));
+		}
+		for (Map.Entry<String, DefenseDef> e : DEFENSES.entrySet()) {
+			list.add(new ShopEntry(e.getKey(), e.getValue().price()));
+		}
+		return list;
+	}
+
+	/** Public infantry catalogue for the client menu. */
+	public static java.util.List<ShopEntry> hireCatalogue() {
+		java.util.List<ShopEntry> list = new java.util.ArrayList<>();
+		for (Map.Entry<String, HireDef> e : HIRES.entrySet()) {
 			list.add(new ShopEntry(e.getKey(), e.getValue().price()));
 		}
 		return list;
@@ -80,6 +112,9 @@ public final class TdCommand {
 			.then(CommandManager.literal("buy")
 				.then(CommandManager.argument("type", StringArgumentType.word())
 					.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type")))))
+			.then(CommandManager.literal("hire")
+				.then(CommandManager.argument("type", StringArgumentType.word())
+					.executes(ctx -> hire(ctx, StringArgumentType.getString(ctx, "type")))))
 			.then(CommandManager.literal("upgrade").executes(TdCommand::upgrade))
 			.then(CommandManager.literal("spawn").executes(TdCommand::spawn))
 			.then(CommandManager.literal("base")
@@ -131,6 +166,7 @@ public final class TdCommand {
 		line(src, "/td tower [type]", "place a tower where you're looking (free/op; default arrow_tower)");
 		line(src, "/td shop", "list buyable towers and their coin prices");
 		line(src, "/td buy <type>", "spend coins to build a tower where you're looking");
+		line(src, "/td hire <type>", "hire infantry near a purchased barracks");
 		line(src, "/td upgrade", "spend coins to raise the tier of the tower you're looking at");
 		line(src, "/td status", "show wave/base info (and the tower you're looking at)");
 		line(src, "/td restart", "reset then re-arena here for a fresh run (start with /td wave)");
@@ -145,6 +181,13 @@ public final class TdCommand {
 		line(src, "cannon_tower", cannon + " coins — slow, splash/AoE damage");
 		line(src, "frost_tower", frost + " coins — slows enemies down");
 		body(src, "Aim at a tower and /td upgrade to raise its tier for coins.");
+		line(src, "wall", "5 coins — a 3-wide, 2-high blocking section");
+		line(src, "barracks", "30 coins — unlocks infantry hiring nearby");
+
+		header(src, "Hired infantry");
+		for (Map.Entry<String, HireDef> e : HIRES.entrySet()) {
+			line(src, e.getKey(), e.getValue().price() + " coins — " + e.getValue().displayName());
+		}
 
 		header(src, "Economy");
 		body(src, "Kill enemies to drop coins; walk over them to pick them up. Spend");
@@ -183,10 +226,18 @@ public final class TdCommand {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity player = src.getPlayerOrThrow();
 		int coins = countCoins(player);
-		src.sendFeedback(() -> Text.literal("Tower Shop").formatted(Formatting.GOLD), false);
+		src.sendFeedback(() -> Text.literal("Defense Shop").formatted(Formatting.GOLD), false);
 		for (Map.Entry<String, TowerDef> e : TOWERS.entrySet()) {
 			int price = e.getValue().price();
 			line(src, e.getKey(), price + " coins  (/td buy " + e.getKey() + ")");
+		}
+		for (Map.Entry<String, DefenseDef> e : DEFENSES.entrySet()) {
+			line(src, e.getKey(), e.getValue().price() + " coins — " + e.getValue().description()
+				+ "  (/td buy " + e.getKey() + ")");
+		}
+		src.sendFeedback(() -> Text.literal("Infantry (requires a barracks)").formatted(Formatting.GOLD), false);
+		for (Map.Entry<String, HireDef> e : HIRES.entrySet()) {
+			line(src, e.getKey(), e.getValue().price() + " coins  (/td hire " + e.getKey() + ")");
 		}
 		src.sendFeedback(() -> Text.literal("  Your coins: " + coins).formatted(Formatting.AQUA), false);
 		src.sendFeedback(() -> Text.literal("  Upgrades cost (tower price x current tier); use /td upgrade.")
@@ -199,9 +250,53 @@ public final class TdCommand {
 		ServerPlayerEntity player = src.getPlayerOrThrow();
 		ServerWorld world = src.getWorld();
 
-		TowerDef def = TOWERS.get(type);
+		TowerDef tower = TOWERS.get(type);
+		DefenseDef defense = DEFENSES.get(type);
+		if (tower == null && defense == null) {
+			src.sendError(Text.literal("Unknown defense '" + type + "'. Try /td shop."));
+			return 0;
+		}
+		int price = tower != null ? tower.price() : defense.price();
+		int coins = countCoins(player);
+		if (coins < price) {
+			src.sendError(Text.literal("Not enough coins: need " + price + ", have " + coins + "."));
+			return 0;
+		}
+		BlockPos placePos = placementTarget(src, player, world);
+		if (placePos == null) {
+			return 0;
+		}
+		boolean placed = tower != null
+			? placeTower(world, placePos, tower.block(), player)
+			: placeDefense(src, player, world, placePos, type);
+		if (!placed) return 0;
+		removeCoins(player, price);
+		int remaining = coins - price;
+		src.sendFeedback(() -> Text.literal("Bought " + type + " for " + price
+			+ " coins (" + remaining + " left).").formatted(Formatting.GREEN), false);
+		return 1;
+	}
+
+	private static int hire(CommandContext<ServerCommandSource> ctx, String type)
+			throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		ServerWorld world = src.getWorld();
+		HireDef def = HIRES.get(type);
 		if (def == null) {
-			src.sendError(Text.literal("Unknown tower '" + type + "'. Try /td shop."));
+			src.sendError(Text.literal("Unknown infantry type '" + type + "'. Try /td shop."));
+			return 0;
+		}
+		BlockPos rally = placementTarget(src, player, world);
+		if (rally == null) return 0;
+		if (!hasBarracksNear(world, rally)) {
+			src.sendError(Text.literal("Build a barracks within " + BARRACKS_RANGE + " blocks first."));
+			return 0;
+		}
+		long owned = world.getEntitiesByClass(TdFriendlyEntity.class, new Box(rally).expand(128),
+			e -> player.getUuid().equals(e.getOwnerUuid())).size();
+		if (owned >= MAX_HIRED_UNITS) {
+			src.sendError(Text.literal("Infantry cap reached (" + MAX_HIRED_UNITS + ")."));
 			return 0;
 		}
 		int coins = countCoins(player);
@@ -209,15 +304,15 @@ public final class TdCommand {
 			src.sendError(Text.literal("Not enough coins: need " + def.price() + ", have " + coins + "."));
 			return 0;
 		}
-		BlockPos placePos = placementTarget(src, player, world);
-		if (placePos == null) {
-			return 0;
-		}
-		placeTower(world, placePos, def.block(), player);
+		TdFriendlyEntity unit = def.type().create(world, SpawnReason.COMMAND);
+		if (unit == null) return 0;
+		unit.refreshPositionAndAngles(rally.getX() + 0.5, rally.getY(), rally.getZ() + 0.5, player.getYaw(), 0);
+		unit.assign(player.getUuid(), rally);
+		unit.setCustomName(Text.literal("Hired " + def.displayName()));
+		if (!world.spawnEntity(unit)) return 0;
 		removeCoins(player, def.price());
-		int remaining = coins - def.price();
-		src.sendFeedback(() -> Text.literal("Bought " + type + " for " + def.price()
-			+ " coins (" + remaining + " left).").formatted(Formatting.GREEN), false);
+		src.sendFeedback(() -> Text.literal("Hired " + def.displayName() + " for " + def.price()
+			+ " coins. Rally: " + rally.toShortString()).formatted(Formatting.GREEN), false);
 		return 1;
 	}
 
@@ -294,11 +389,50 @@ public final class TdCommand {
 	}
 
 	/** Place the tower and stamp the placer UUID so its kills credit that player. */
-	private static void placeTower(ServerWorld world, BlockPos pos, Block block, ServerPlayerEntity placer) {
-		world.setBlockState(pos, block.getDefaultState());
+	private static boolean placeTower(ServerWorld world, BlockPos pos, Block block, ServerPlayerEntity placer) {
+		if (!world.setBlockState(pos, block.getDefaultState())) return false;
 		if (world.getBlockEntity(pos) instanceof AbstractTowerBlockEntity tower) {
 			tower.setPlacer(placer.getUuid());
 		}
+		return true;
+	}
+
+	private static boolean placeDefense(ServerCommandSource src, ServerPlayerEntity player, ServerWorld world,
+			BlockPos origin, String type) {
+		if ("wall".equals(type)) {
+			Direction side = player.getHorizontalFacing().rotateYClockwise();
+			for (int across = -1; across <= 1; across++) for (int up = 0; up <= 1; up++) {
+				if (!world.getBlockState(origin.offset(side, across).up(up)).isReplaceable()) {
+					src.sendError(Text.literal("The wall footprint is obstructed."));
+					return false;
+				}
+			}
+			for (int across = -1; across <= 1; across++) for (int up = 0; up <= 1; up++)
+				world.setBlockState(origin.offset(side, across).up(up), Blocks.COBBLED_DEEPSLATE.getDefaultState());
+			return true;
+		}
+		for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) for (int y = 0; y <= 2; y++) {
+			if (!world.getBlockState(origin.add(x, y, z)).isReplaceable()) {
+				src.sendError(Text.literal("The 3x3 barracks footprint is obstructed."));
+				return false;
+			}
+		}
+		for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++)
+			world.setBlockState(origin.add(x, 0, z), Blocks.SPRUCE_PLANKS.getDefaultState());
+		world.setBlockState(origin, ModBlocks.BARRACKS.getDefaultState());
+		for (int x : new int[] {-1, 1}) for (int z : new int[] {-1, 1})
+			world.setBlockState(origin.add(x, 1, z), Blocks.SPRUCE_FENCE.getDefaultState());
+		for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++)
+			world.setBlockState(origin.add(x, 2, z), Blocks.SPRUCE_SLAB.getDefaultState());
+		return true;
+	}
+
+	private static boolean hasBarracksNear(ServerWorld world, BlockPos center) {
+		for (BlockPos p : BlockPos.iterate(center.add(-BARRACKS_RANGE, -4, -BARRACKS_RANGE),
+				center.add(BARRACKS_RANGE, 4, BARRACKS_RANGE))) {
+			if (world.getBlockState(p).isOf(ModBlocks.BARRACKS)) return true;
+		}
+		return false;
 	}
 
 	/** The tower the player is aiming at (within 30 blocks), or null. */
@@ -486,7 +620,8 @@ public final class TdCommand {
 		ServerWorld arena = st.getArenaWorld(src.getServer());
 		if (st.base != null && arena != null) {
 			arena.getOtherEntities(null, new net.minecraft.util.math.Box(st.base).expand(128.0),
-				e -> e.getCommandTags().contains(WaveManager.ENEMY_TAG)).forEach(net.minecraft.entity.Entity::discard);
+				e -> e.getCommandTags().contains(WaveManager.ENEMY_TAG) || e instanceof TdFriendlyEntity)
+				.forEach(net.minecraft.entity.Entity::discard);
 		}
 		// Release any force-loaded arena chunks before wiping the base/spawn positions.
 		WaveManager.releaseArenaChunks(src.getServer(), st);

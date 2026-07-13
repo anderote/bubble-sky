@@ -15,6 +15,7 @@
 	"block.towerdefense.arrow_tower": "Arrow Tower",
 	"block.towerdefense.cannon_tower": "Cannon Tower",
 	"block.towerdefense.frost_tower": "Frost Tower",
+	"block.towerdefense.barracks": "Barracks",
 
 	"entity.towerdefense.goblin_skirmisher": "Goblin Skirmisher",
 	"entity.towerdefense.footman": "Footman",
@@ -22,6 +23,11 @@
 	"entity.towerdefense.man_at_arms": "Man-at-Arms",
 	"entity.towerdefense.undead_soldier": "Undead Soldier",
 	"entity.towerdefense.heavy_knight": "Heavy Knight",
+	"entity.towerdefense.hired_militia": "Hired Militia",
+	"entity.towerdefense.hired_archer": "Hired Archer",
+	"entity.towerdefense.hired_shield_guard": "Hired Shield Guard",
+	"entity.towerdefense.hired_heavy_knight": "Hired Heavy Knight",
+	"entity.towerdefense.hired_wizard": "Hired Wizard",
 
 	"key.categories.towerdefense": "Tower Defense",
 	"key.towerdefense.open_menu": "Open Tower Defense Menu"

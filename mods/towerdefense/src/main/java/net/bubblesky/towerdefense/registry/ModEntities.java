@@ -4,6 +4,7 @@ import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.entity.FlagArrowEntity;
 import net.bubblesky.towerdefense.entity.TdArcherEnemy;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
+import net.bubblesky.towerdefense.entity.TdFriendlyEntity;
 import net.bubblesky.towerdefense.entity.TdMeleeEnemy;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
 import net.minecraft.entity.EntityType;
@@ -11,6 +12,7 @@ import net.minecraft.entity.SpawnGroup;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.mob.HostileEntity;
+import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
@@ -54,6 +56,12 @@ public final class ModEntities {
 	public static final EntityType<TdMeleeEnemy> HEAVY_KNIGHT =
 		registerMelee("heavy_knight", 0.7f, 2.0f);
 
+	public static final EntityType<TdFriendlyEntity> HIRED_MILITIA = registerFriendly("hired_militia");
+	public static final EntityType<TdFriendlyEntity> HIRED_ARCHER = registerFriendly("hired_archer");
+	public static final EntityType<TdFriendlyEntity> HIRED_SHIELD_GUARD = registerFriendly("hired_shield_guard");
+	public static final EntityType<TdFriendlyEntity> HIRED_HEAVY_KNIGHT = registerFriendly("hired_heavy_knight");
+	public static final EntityType<TdFriendlyEntity> HIRED_WIZARD = registerFriendly("hired_wizard");
+
 	// ---- projectiles ------------------------------------------------------
 	/** The Flag Bow's arrow: plants a Layout flag wherever it lands. */
 	public static final EntityType<FlagArrowEntity> FLAG_ARROW = registerFlagArrow("flag_arrow");
@@ -92,6 +100,15 @@ public final class ModEntities {
 		return Registry.register(Registries.ENTITY_TYPE, key, type);
 	}
 
+	private static EntityType<TdFriendlyEntity> registerFriendly(String name) {
+		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, name));
+		EntityType<TdFriendlyEntity> type = EntityType.Builder
+			.create(TdFriendlyEntity::new, SpawnGroup.CREATURE)
+			.dimensions(0.6f, 1.95f).maxTrackingRange(48).build(key);
+		return Registry.register(Registries.ENTITY_TYPE, key, type);
+	}
+
 	// ---- default attributes -----------------------------------------------
 	private static DefaultAttributeContainer.Builder attrs(double hp, double atk, double speed) {
 		return HostileEntity.createHostileAttributes()
@@ -109,6 +126,18 @@ public final class ModEntities {
 		FabricDefaultAttributeRegistry.register(MAN_AT_ARMS, attrs(30.0, 5.0, 0.24));
 		FabricDefaultAttributeRegistry.register(UNDEAD_SOLDIER, attrs(25.0, 5.0, 0.22));
 		FabricDefaultAttributeRegistry.register(HEAVY_KNIGHT, attrs(60.0, 8.0, 0.20));
+		FabricDefaultAttributeRegistry.register(HIRED_MILITIA, friendlyAttrs(24.0, 4.0, 0.28));
+		FabricDefaultAttributeRegistry.register(HIRED_ARCHER, friendlyAttrs(20.0, 3.0, 0.27));
+		FabricDefaultAttributeRegistry.register(HIRED_SHIELD_GUARD,
+			friendlyAttrs(50.0, 4.0, 0.22).add(EntityAttributes.KNOCKBACK_RESISTANCE, 0.7));
+		FabricDefaultAttributeRegistry.register(HIRED_HEAVY_KNIGHT, friendlyAttrs(70.0, 9.0, 0.20));
+		FabricDefaultAttributeRegistry.register(HIRED_WIZARD, friendlyAttrs(26.0, 3.0, 0.25));
+	}
+
+	private static DefaultAttributeContainer.Builder friendlyAttrs(double hp, double atk, double speed) {
+		return PathAwareEntity.createMobAttributes()
+			.add(EntityAttributes.MAX_HEALTH, hp).add(EntityAttributes.ATTACK_DAMAGE, atk)
+			.add(EntityAttributes.MOVEMENT_SPEED, speed).add(EntityAttributes.FOLLOW_RANGE, 24.0);
 	}
 
 	/** All roster types, ordered light -> heavy (used by the wave composer). */

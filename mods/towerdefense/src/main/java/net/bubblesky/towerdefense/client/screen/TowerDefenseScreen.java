@@ -34,11 +34,12 @@ public class TowerDefenseScreen extends Screen {
 
 	@Override
 	protected void init() {
-		int colW = 150;
+		int colW = 145;
 		int cx = this.width / 2;
-		// Two columns of controls, centred, starting below the title + status line.
-		int leftX = cx - colW - GAP;
-		int rightX = cx + GAP;
+		// Three columns: match controls, defenses, and hired infantry.
+		int leftX = cx - colW * 3 / 2 - GAP;
+		int middleX = cx - colW / 2;
+		int rightX = cx + colW / 2 + GAP;
 		int y = 56;
 
 		// ---- left column: game controls -----------------------------------
@@ -63,22 +64,30 @@ public class TowerDefenseScreen extends Screen {
 
 		// ---- right column: shop (real catalogue) + placement --------------
 		int ry = y;
-		addButton(rightX, ry, colW, Text.literal("Shop (list towers)"),
+		addButton(middleX, ry, colW, Text.literal("Defense Shop"),
 			b -> run("td shop", false));
 		ry += BUTTON_H + GAP;
 		for (TdCommand.ShopEntry entry : TdCommand.catalogue()) {
 			String label = "Buy " + prettify(entry.id()) + " (" + entry.price() + ")";
 			// Buying places at the crosshair, so close the menu first to let the
 			// player aim; the /td buy command then targets the block they face.
-			addButton(rightX, ry, colW, Text.literal(label),
+			addButton(middleX, ry, colW, Text.literal(label),
 				b -> run("td buy " + entry.id(), true));
 			ry += BUTTON_H + GAP;
 		}
-		addButton(rightX, ry, colW, Text.literal("Upgrade (aim at tower)"),
+		addButton(middleX, ry, colW, Text.literal("Upgrade (aim at tower)"),
 			b -> run("td upgrade", true));
 
+		int hy = y;
+		for (TdCommand.ShopEntry entry : TdCommand.hireCatalogue()) {
+			String label = "Hire " + prettify(entry.id()) + " (" + entry.price() + ")";
+			addButton(rightX, hy, colW, Text.literal(label),
+				b -> run("td hire " + entry.id(), true));
+			hy += BUTTON_H + GAP;
+		}
+
 		// ---- close --------------------------------------------------------
-		int bottom = Math.max(ly, ry) + BUTTON_H + GAP + 6;
+		int bottom = Math.max(Math.max(ly, ry), hy) + BUTTON_H + GAP + 6;
 		bottom = Math.min(bottom, this.height - BUTTON_H - 6);
 		addButton(cx - 50, bottom, 100, Text.literal("Close"), b -> this.close());
 	}
