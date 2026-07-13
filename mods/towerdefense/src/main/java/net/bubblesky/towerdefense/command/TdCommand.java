@@ -23,6 +23,7 @@ import net.minecraft.block.Block;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnReason;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -620,7 +621,12 @@ public final class TdCommand {
 		return countCoins(player);
 	}
 
-	private static void removeCoins(ServerPlayerEntity player, int amount) {
+	/**
+	 * Deduct {@code amount} COIN from a <em>single</em> player's inventory. This is the
+	 * raw, per-player removal primitive; callers that want the shared-gold behavior should
+	 * use {@link #removeCoins} (which mirrors across everyone) rather than this directly.
+	 */
+	private static void removeCoinsFromOne(ServerPlayerEntity player, int amount) {
 		int remaining = amount;
 		var stacks = player.getInventory().getMainStacks();
 		for (int i = 0; i < stacks.size() && remaining > 0; i++) {
@@ -633,8 +639,63 @@ public final class TdCommand {
 		}
 	}
 
+	/**
+	 * Shared-gold spend: deduct {@code amount} COIN from <em>every</em> online player so
+	 * co-op teammates always hold the same balance. Because all spending routes through
+	 * here (buy tower, {@code /td upgrade}, {@code /td hire}, colony recruit, panel
+	 * upgrade/sell), a single deduction never lets one player's coin count drift from the
+	 * rest of the team. The per-player HUD, which reads the caller's own inventory, then
+	 * shows the same number for everyone.
+	 *
+	 * <p>Falls back to a single-player deduction if the server (and thus the player list)
+	 * is somehow unavailable — which should not happen for a real online player.
+	 */
+	private static void removeCoins(ServerPlayerEntity player, int amount) {
+		if (amount <= 0) {
+			return;
+		}
+		MinecraftServer server = player.getServer();
+		if (server == null) {
+			removeCoinsFromOne(player, amount);
+			return;
+		}
+		for (ServerPlayerEntity online : server.getPlayerManager().getPlayerList()) {
+			removeCoinsFromOne(online, amount);
+		}
+	}
+
 	public static void removeCoinsPublic(ServerPlayerEntity player, int amount) {
 		removeCoins(player, amount);
+	}
+
+	/**
+	 * Grant {@code amount} COIN to a <em>single</em> player, inserting into their inventory
+	 * and dropping at their feet if it is full. Raw per-player primitive; income paths that
+	 * want shared gold should use {@link #grantCoinsToAll}.
+	 */
+	private static void grantCoinsToOne(ServerPlayerEntity player, int amount) {
+		if (amount <= 0) {
+			return;
+		}
+		ItemStack coins = new ItemStack(ModItems.COIN, amount);
+		if (!player.getInventory().insertStack(coins)) {
+			player.dropItem(coins, false);
+		}
+	}
+
+	/**
+	 * Shared-gold grant: give {@code amount} COIN to <em>every</em> online player so a coin
+	 * grant to one teammate (e.g. a tower-sell refund) keeps the whole team in lockstep.
+	 * Income that is delivered as world drops (wave rewards, kill bounties) is mirrored at
+	 * the drop site instead; this helper covers direct inventory grants.
+	 */
+	public static void grantCoinsToAll(MinecraftServer server, int amount) {
+		if (server == null || amount <= 0) {
+			return;
+		}
+		for (ServerPlayerEntity online : server.getPlayerManager().getPlayerList()) {
+			grantCoinsToOne(online, amount);
+		}
 	}
 
 	// ---- arena setup / status ----------------------------------------------

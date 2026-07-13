@@ -1,10 +1,8 @@
 package net.bubblesky.towerdefense.command;
 
 import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
-import net.bubblesky.towerdefense.registry.ModItems;
 import net.bubblesky.towerdefense.state.TdArenaState;
 import net.bubblesky.towerdefense.tower.TowerStructure;
-import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
@@ -64,10 +62,9 @@ public final class TowerService {
 		TowerStructure.clear(world, pos);
 		TdArenaState.get(world.getServer()).removeTower(pos);
 		if (refund > 0) {
-			ItemStack coins = new ItemStack(ModItems.COIN, refund);
-			if (!player.getInventory().insertStack(coins)) {
-				player.dropItem(coins, false);
-			}
+			// Shared gold: the sell refund is granted to EVERY online player, not just the
+			// seller, so co-op teammates keep identical balances after a sale.
+			TdCommand.grantCoinsToAll(world.getServer(), refund);
 		}
 		return new Result(true, "Sold tower for " + refund + " coins.");
 	}

@@ -199,12 +199,25 @@ public class TowerDefenseMod implements ModInitializer {
 				return;
 			}
 			int count = COIN_DROP_MIN + world.random.nextInt(COIN_DROP_MAX - COIN_DROP_MIN + 1);
-			ItemEntity coinEntity = new ItemEntity(
-				world,
-				entity.getX(), entity.getBodyY(0.5), entity.getZ(),
-				new ItemStack(ModItems.COIN, count));
-			coinEntity.setToDefaultPickupDelay();
-			world.spawnEntity(coinEntity);
+			// Shared gold: rather than dropping the bounty once at the dead mob (only the
+			// nearest looter would grab it), drop the SAME bounty at EVERY online player's
+			// feet. Whoever landed the kill, all co-op teammates gain the identical amount
+			// and their coin counts stay in lockstep.
+			var server = world.getServer();
+			if (server == null) {
+				return;
+			}
+			for (ServerPlayerEntity online : server.getPlayerManager().getPlayerList()) {
+				if (!(online.getWorld() instanceof ServerWorld dropWorld)) {
+					continue;
+				}
+				ItemEntity coinEntity = new ItemEntity(
+					dropWorld,
+					online.getX(), online.getBodyY(0.5), online.getZ(),
+					new ItemStack(ModItems.COIN, count));
+				coinEntity.setToDefaultPickupDelay();
+				dropWorld.spawnEntity(coinEntity);
+			}
 		});
 	}
 }

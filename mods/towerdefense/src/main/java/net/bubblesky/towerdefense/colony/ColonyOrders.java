@@ -267,16 +267,12 @@ public final class ColonyOrders {
 		return total;
 	}
 
+	/**
+	 * Colony recruit spend. Routed through {@link net.bubblesky.towerdefense.command.TdCommand#removeCoinsPublic}
+	 * so it uses the shared-gold path: the recruit cost is deducted from EVERY online
+	 * player, keeping co-op teammates' balances in lockstep with tower purchases.
+	 */
 	private static void removeCoins(ServerPlayerEntity player, int amount) {
-		int remaining = amount;
-		var stacks = player.getInventory().getMainStacks();
-		for (int i = 0; i < stacks.size() && remaining > 0; i++) {
-			ItemStack stack = stacks.get(i);
-			if (stack.isOf(ModItems.COIN)) {
-				int take = Math.min(remaining, stack.getCount());
-				stack.decrement(take);
-				remaining -= take;
-			}
-		}
+		net.bubblesky.towerdefense.command.TdCommand.removeCoinsPublic(player, amount);
 	}
 }

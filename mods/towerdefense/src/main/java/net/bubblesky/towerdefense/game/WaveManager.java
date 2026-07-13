@@ -149,8 +149,6 @@ public final class WaveManager {
 	private static final double NAV_SPEED = 1.2;
 	/** Squared distance (blocks^2) at which an enemy "reaches" the base. */
 	private static final double ARRIVAL_DIST_SQ = 4.0;
-	/** Radius around the base within which players are paid the wave bounty. */
-	private static final double REWARD_RADIUS = 64.0;
 
 	private WaveManager() {
 	}
@@ -887,17 +885,19 @@ public final class WaveManager {
 	}
 
 	private static void payNearbyPlayers(ServerWorld world, TdArenaState st, int coins) {
-		double bx = st.base.getX() + 0.5;
-		double by = st.base.getY() + 0.5;
-		double bz = st.base.getZ() + 0.5;
-		double radiusSq = REWARD_RADIUS * REWARD_RADIUS;
-		for (ServerPlayerEntity player : world.getPlayers()) {
-			if (player.squaredDistanceTo(bx, by, bz) > radiusSq) {
-				continue;
+		// Shared gold: every player in the arena world receives the SAME wave payout so
+		// co-op teammates stay in lockstep. RPG Fortune is applied as a TEAM bonus — we use
+		// the BEST coin multiplier across all online players (the luckiest member's Fortune
+		// benefits the whole team) rather than each player's own, which would desync balances.
+		double bestCoinMult = 1.0;
+		MinecraftServer server = world.getServer();
+		if (server != null) {
+			for (ServerPlayerEntity online : server.getPlayerManager().getPlayerList()) {
+				bestCoinMult = Math.max(bestCoinMult, ProgressLookup.coinMult(online));
 			}
-			// RPG Fortune: scale each player's coin payout by their coin multiplier
-			// (1.0 = base, +8% per point), so a lucky player earns more from the same wave.
-			int paid = Math.max(1, (int) Math.round(coins * ProgressLookup.coinMult(player)));
+		}
+		int paid = Math.max(1, (int) Math.round(coins * bestCoinMult));
+		for (ServerPlayerEntity player : world.getPlayers()) {
 			ItemEntity drop = new ItemEntity(world, player.getX(), player.getBodyY(0.5), player.getZ(),
 				new ItemStack(ModItems.COIN, paid));
 			drop.setToDefaultPickupDelay();
