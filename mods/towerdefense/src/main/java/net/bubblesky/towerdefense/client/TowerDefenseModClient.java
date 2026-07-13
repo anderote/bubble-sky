@@ -40,6 +40,7 @@ public class TowerDefenseModClient implements ClientModInitializer {
 	private static final String KEY_CATEGORY = "key.categories.towerdefense";
 
 	private static KeyBinding openMenuKey;
+	private static KeyBinding hireKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -67,14 +68,20 @@ public class TowerDefenseModClient implements ClientModInitializer {
 			InputUtil.Type.KEYSYM,
 			GLFW.GLFW_KEY_J,
 			KEY_CATEGORY));
+		hireKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+			"key.towerdefense.open_hire",
+			InputUtil.Type.KEYSYM,
+			GLFW.GLFW_KEY_H,
+			KEY_CATEGORY));
 
-		// Open the screen on keypress (works whether or not a match is running,
-		// so players can START one from the menu).
+		// Open the control screen on J (full menu) or H (hire). Always drain the
+		// press queues; open only when in-world with no other screen up.
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
-			while (openMenuKey.wasPressed()) {
-				if (client.currentScreen == null && client.player != null) {
-					client.setScreen(new TowerDefenseScreen());
-				}
+			boolean open = false;
+			while (openMenuKey.wasPressed()) open = true;
+			while (hireKey.wasPressed()) open = true;
+			if (open && client.currentScreen == null && client.player != null) {
+				client.setScreen(new TowerDefenseScreen());
 			}
 		});
 
