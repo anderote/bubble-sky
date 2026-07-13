@@ -85,6 +85,9 @@ public final class ModItems {
 	// becomes a single-block mini arrow turret (no stick-structure).
 	public static final Item BALL_TOWER_ARROW = register("ball_tower_arrow",
 		s -> new TowerArrowItem(s, TowerKind.BALL), new Item.Settings());
+	// Long-range, slow-firing precision tower: targets the toughest enemy in range.
+	public static final Item SHARPSHOOTER_TOWER_ARROW = register("sharpshooter_tower_arrow",
+		s -> new TowerArrowItem(s, TowerKind.SHARPSHOOTER), new Item.Settings());
 
 	public static Item register(String name, Function<Item.Settings, Item> factory, Item.Settings settings) {
 		RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(TowerDefenseMod.MOD_ID, name));

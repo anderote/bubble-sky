@@ -15,6 +15,7 @@
 	"item.towerdefense.lightning_tower_arrow": "Lightning Tower Arrow",
 	"item.towerdefense.flame_tower_arrow": "Flamethrower Tower Arrow",
 	"item.towerdefense.ball_tower_arrow": "Tower Ball Arrow",
+	"item.towerdefense.sharpshooter_tower_arrow": "Sharpshooter Tower Arrow",
 
 	"entity.towerdefense.flag_arrow": "Flag Arrow",
 	"entity.towerdefense.tower_arrow": "Tower Arrow",
@@ -26,6 +27,7 @@
 	"block.towerdefense.lightning_tower": "Lightning Tower",
 	"block.towerdefense.flame_tower": "Flamethrower",
 	"block.towerdefense.ball_tower": "Tower Ball",
+	"block.towerdefense.sharpshooter_tower": "Sharpshooter Tower",
 
 	"entity.towerdefense.goblin_skirmisher": "Goblin Skirmisher",
 	"entity.towerdefense.footman": "Footman",

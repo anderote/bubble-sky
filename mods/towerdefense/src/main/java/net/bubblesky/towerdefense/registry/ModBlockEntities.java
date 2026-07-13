@@ -52,6 +52,11 @@ public final class ModBlockEntities {
 			Identifier.of(TowerDefenseMod.MOD_ID, "ball_tower"),
 			FabricBlockEntityTypeBuilder.create(BallTowerBlockEntity::new, ModBlocks.BALL_TOWER).build());
 
+	public static final BlockEntityType<SharpshooterTowerBlockEntity> SHARPSHOOTER_TOWER =
+		Registry.register(Registries.BLOCK_ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, "sharpshooter_tower"),
+			FabricBlockEntityTypeBuilder.create(SharpshooterTowerBlockEntity::new, ModBlocks.SHARPSHOOTER_TOWER).build());
+
 	/** Forces class load so the static registration above runs. */
 	public static void initialize() {
 	}

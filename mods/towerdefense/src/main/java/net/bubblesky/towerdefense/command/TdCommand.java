@@ -64,6 +64,7 @@ public final class TdCommand {
 		TOWERS.put("frost_tower", new TowerDef(ModBlocks.FROST_TOWER, 100));
 		TOWERS.put("lightning_tower", new TowerDef(ModBlocks.LIGHTNING_TOWER, 200));
 		TOWERS.put("flame_tower", new TowerDef(ModBlocks.FLAME_TOWER, 150));
+		TOWERS.put("sharpshooter_tower", new TowerDef(ModBlocks.SHARPSHOOTER_TOWER, 250));
 	}
 
 	/** Public, immutable view of a buyable tower (id + coin price) for client UIs. */
