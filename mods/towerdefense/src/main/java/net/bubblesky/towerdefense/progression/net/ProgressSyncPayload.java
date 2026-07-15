@@ -16,7 +16,8 @@ import net.minecraft.util.Identifier;
  *
  * <p>{@code xp} is progress within the CURRENT global level; the client derives the level
  * threshold locally via {@code PlayerProgress.xpForLevel(level)} (a pure function), so the
- * wire stays compact. {@code gold} is the player's gold-bank balance.
+ * wire stays compact. {@code gold} is the player's gold-bank balance and {@code essence} the
+ * premium loot-currency balance (both plain int banks, not inventory items).
  *
  * <p>The trailing fields carry the CLASS layer: current {@code mana}/{@code maxMana}, the
  * active class id ({@code ""} when unpicked), and — for the active class — its own
@@ -28,7 +29,7 @@ import net.minecraft.util.Identifier;
  * id → rank), so the Character screen's Skills tab can render each row's current rank without a
  * second round-trip. Empty when unclassed; appended last, so the codec stays additive.
  */
-public record ProgressSyncPayload(int xp, int level, int unspentPoints, int gold, int[] allocations,
+public record ProgressSyncPayload(int xp, int level, int unspentPoints, int gold, int essence, int[] allocations,
 		int mana, int maxMana, String activeClass, int classLevel, int classXp, int classPoints,
 		Map<String, Integer> classAllocations)
 		implements CustomPayload {
@@ -45,6 +46,7 @@ public record ProgressSyncPayload(int xp, int level, int unspentPoints, int gold
 		buf.writeVarInt(level);
 		buf.writeVarInt(unspentPoints);
 		buf.writeVarInt(gold);
+		buf.writeVarInt(essence);
 		buf.writeVarInt(allocations.length);
 		for (int a : allocations) {
 			buf.writeVarInt(a);
@@ -70,6 +72,7 @@ public record ProgressSyncPayload(int xp, int level, int unspentPoints, int gold
 		int level = buf.readVarInt();
 		int points = buf.readVarInt();
 		int gold = buf.readVarInt();
+		int essence = buf.readVarInt();
 		int n = buf.readVarInt();
 		int[] alloc = new int[n];
 		for (int i = 0; i < n; i++) {
@@ -88,7 +91,7 @@ public record ProgressSyncPayload(int xp, int level, int unspentPoints, int gold
 			int rank = buf.readVarInt();
 			classAllocations.put(key, rank);
 		}
-		return new ProgressSyncPayload(xp, level, points, gold, alloc,
+		return new ProgressSyncPayload(xp, level, points, gold, essence, alloc,
 			mana, maxMana, activeClass, classLevel, classXp, classPoints, classAllocations);
 	}
 

@@ -55,6 +55,16 @@ public final class TdCommand {
 	/** Default block distance from the base to the auto-placed spawn gates. */
 	private static final int DEFAULT_ARENA_DISTANCE = 20;
 
+	// ---- essence sinks -----------------------------------------------------
+	/** Essence charged per class point being refunded on {@code /td respec}. */
+	private static final int RESPEC_ESSENCE_PER_POINT = 5;
+	/** Floor on the {@code /td respec} essence cost, even for a single-point refund. */
+	private static final int RESPEC_ESSENCE_MIN = 5;
+	/** Fixed essence cost of the {@code /td essence buff} consumable. */
+	private static final int ESSENCE_BUFF_COST = 15;
+	/** Duration (ticks) of the {@code /td essence buff} status effects — ~60 seconds. */
+	private static final int ESSENCE_BUFF_TICKS = 1200;
+
 	/** A buyable tower: its block plus the coin price to build it. */
 	private record TowerDef(Block block, int price) {
 	}
@@ -178,6 +188,10 @@ public final class TdCommand {
 				.then(CommandManager.argument("name", StringArgumentType.word())
 					.executes(ctx -> classSelect(ctx, StringArgumentType.getString(ctx, "name")))))
 				.then(CommandManager.literal("respec").executes(TdCommand::respec))
+			.then(CommandManager.literal("essence")
+				// No arg: report the balance + what it's for. "buff": spend it on a consumable buff.
+				.executes(TdCommand::essenceInfo)
+				.then(CommandManager.literal("buff").executes(TdCommand::essenceBuff)))
 			.then(CommandManager.literal("restart").executes(TdCommand::restart))
 			.then(CommandManager.literal("status").executes(TdCommand::status))
 			.then(CommandManager.literal("reset").executes(TdCommand::reset))
@@ -224,7 +238,9 @@ public final class TdCommand {
 		line(src, "/td buy <type>", "spend coins for a placeable tower block — place it to raise the tower");
 		line(src, "/td upgrade", "spend coins to raise the tier of the tower you're aiming at");
 		line(src, "/td class [name]", "pick a class for this life (mage/ranger/engineer/necromancer); no arg lists them");
-		line(src, "/td respec", "refund all your active class's skill points (free for now)");
+		line(src, "/td respec", "refund all your active class's skill points (costs essence)");
+		line(src, "/td essence", "show your essence balance and what to spend it on");
+		line(src, "/td essence buff", "spend " + ESSENCE_BUFF_COST + " essence for a 60s power surge");
 		line(src, "/td hire <type>", "spend coins to summon an allied soldier (footman/archer/knight)");
 		line(src, "/td command <order> [flag]", "order your allies: hold/attack/follow/move (flag = anchor)");
 		line(src, "/td status", "show wave/Idol info (and the tower you're looking at)");
@@ -267,6 +283,8 @@ public final class TdCommand {
 		body(src, "Kill enemies to drop coins; walk over them to pick them up. Spend");
 		body(src, "coins with /td buy and /td upgrade. Tower kills also pay whoever");
 		body(src, "placed (or last upgraded) that tower.");
+		body(src, "Enemies also drop ESSENCE (premium; bosses drop more) — spend it on");
+		body(src, "/td respec and /td essence buff. Check it with /td essence.");
 
 		header(src, "Enemies & bosses");
 		body(src, "An escalating army — goblins, footmen, archers, knights, undead —");
@@ -862,7 +880,12 @@ public final class TdCommand {
 	 * {@code /td respec}: refund ALL of the ACTIVE class's spent skill points back into its
 	 * unspent pool (empties the allocation map, banking the total spent + current). Re-applies
 	 * {@link StatModifiers} (so passives like Fleet Foot / Arcane Mind drop off) and resyncs.
-	 * FREE for now — TODO: charge essence once the essence economy lands.
+	 *
+	 * <p>Costs ESSENCE, scaling with how many points are being refunded:
+	 * {@code max(RESPEC_ESSENCE_MIN, RESPEC_ESSENCE_PER_POINT * pointsSpent)}. The cost is
+	 * checked (and the balance debited) BEFORE the refund; if the player can't afford it the
+	 * respec is rejected outright with an action-bar note stating the price. A respec with no
+	 * points allocated is a no-op (nothing to refund, nothing charged).
 	 */
 	private static int respec(CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
 		ServerCommandSource src = ctx.getSource();
@@ -876,6 +899,26 @@ public final class TdCommand {
 			return 0;
 		}
 		ClassProgress track = progress.classProgress(active);
+		// Points currently sunk into the tree = exactly what a respec would refund. Priced up-front
+		// so we can reject an unaffordable respec without mutating anything.
+		int pointsSpent = 0;
+		for (int v : track.allocations().values()) {
+			pointsSpent += v;
+		}
+		if (pointsSpent <= 0) {
+			src.sendError(Text.literal("No " + active.displayName()
+				+ " skill points allocated — nothing to respec."));
+			return 0;
+		}
+		int cost = Math.max(RESPEC_ESSENCE_MIN, RESPEC_ESSENCE_PER_POINT * pointsSpent);
+		if (progress.getEssence() < cost) {
+			player.sendMessage(Text.literal("Respec costs " + cost + " essence (refunding " + pointsSpent
+					+ " point" + (pointsSpent == 1 ? "" : "s") + ") — you have "
+					+ progress.getEssence() + ". Slay enemies to loot more.")
+				.formatted(Formatting.RED), true);
+			return 0;
+		}
+		progress.spendEssence(cost);
 		int refunded = track.respec();
 		state.markDirty();
 		// Passives are attribute-backed / read live from allocations, so re-apply to drop them.
@@ -883,9 +926,72 @@ public final class TdCommand {
 		ProgressEvents.sync(player, progress);
 		final int pts = track.getUnspentPoints();
 		src.sendFeedback(() -> Text.literal("Respec complete — refunded " + refunded + " "
-				+ active.displayName() + " skill point" + (refunded == 1 ? "" : "s") + " (" + pts
-				+ " available). Reallocate them in the P menu's Skills tab.")
+				+ active.displayName() + " skill point" + (refunded == 1 ? "" : "s") + " for " + cost
+				+ " essence (" + pts + " available). Reallocate them in the P menu's Skills tab.")
 			.formatted(Formatting.GREEN), false);
+		return 1;
+	}
+
+	/**
+	 * {@code /td essence}: print the player's current essence balance and a short note on
+	 * what the premium currency is for (respec + the consumable buff sink). Read-only.
+	 */
+	private static int essenceInfo(CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		PlayerProgress progress = progressOf(player);
+		int essence = progress == null ? 0 : progress.getEssence();
+		src.sendFeedback(() -> Text.literal("Essence: ").formatted(Formatting.GRAY)
+			.append(Text.literal(Integer.toString(essence)).formatted(Formatting.LIGHT_PURPLE)), false);
+		src.sendFeedback(() -> Text.literal("  Premium loot currency — enemies drop a little on death "
+			+ "(bosses a chunk).").formatted(Formatting.GRAY), false);
+		src.sendFeedback(() -> Text.literal("  Spend it on: /td respec (" + RESPEC_ESSENCE_PER_POINT
+				+ "/point, min " + RESPEC_ESSENCE_MIN + ") · /td essence buff (" + ESSENCE_BUFF_COST
+				+ " for a 60s power surge).")
+			.formatted(Formatting.GRAY), false);
+		return 1;
+	}
+
+	/**
+	 * {@code /td essence buff}: spend {@link #ESSENCE_BUFF_COST} essence on a short, powerful
+	 * consumable surge — Strength II + Speed I + Regeneration I for {@link #ESSENCE_BUFF_TICKS}
+	 * ticks. A pure essence SINK (no permanent power creep): rejected with an action-bar note
+	 * when the player can't afford it. Fires particles + a sound on success.
+	 */
+	private static int essenceBuff(CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		MinecraftServer server = src.getServer();
+		ProgressState state = ProgressState.get(server);
+		PlayerProgress progress = state.forPlayer(player.getUuid());
+		if (progress.getEssence() < ESSENCE_BUFF_COST) {
+			player.sendMessage(Text.literal("The essence surge costs " + ESSENCE_BUFF_COST
+					+ " essence — you have " + progress.getEssence() + ".")
+				.formatted(Formatting.RED), true);
+			return 0;
+		}
+		progress.spendEssence(ESSENCE_BUFF_COST);
+		state.markDirty();
+		ProgressEvents.sync(player, progress);
+
+		// A brief, potent surge — deliberately temporary so it never creeps permanent power.
+		player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
+			net.minecraft.entity.effect.StatusEffects.STRENGTH, ESSENCE_BUFF_TICKS, 1));
+		player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
+			net.minecraft.entity.effect.StatusEffects.SPEED, ESSENCE_BUFF_TICKS, 0));
+		player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
+			net.minecraft.entity.effect.StatusEffects.REGENERATION, ESSENCE_BUFF_TICKS, 0));
+
+		if (player.getWorld() instanceof ServerWorld world) {
+			world.spawnParticles(net.minecraft.particle.ParticleTypes.WITCH,
+				player.getX(), player.getY() + 1.0, player.getZ(), 40, 0.4, 0.8, 0.4, 0.1);
+			world.playSound(null, player.getX(), player.getY(), player.getZ(),
+				net.minecraft.sound.SoundEvents.BLOCK_BEACON_POWER_SELECT,
+				net.minecraft.sound.SoundCategory.PLAYERS, 0.8f, 1.4f);
+		}
+		src.sendFeedback(() -> Text.literal("Essence surge! Strength II, Speed I & Regeneration for 60s "
+				+ "(spent " + ESSENCE_BUFF_COST + " essence).")
+			.formatted(Formatting.LIGHT_PURPLE), false);
 		return 1;
 	}
 

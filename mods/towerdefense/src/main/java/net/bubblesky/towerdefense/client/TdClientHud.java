@@ -46,9 +46,14 @@ public final class TdClientHud {
 		// The player's current coins, shown at ALL times (not just during a match),
 		// mirroring the server sidebar. Drawn top-left so it sits clear of the
 		// wave/idol bossbar at the top-centre.
+		// Essence (the premium loot currency) rides on the same line in purple, so the two
+		// spendable balances read together at a glance.
 		int gold = TdClientStatus.coins();
+		int essence = TdClientStatus.essence();
 		Text goldLine = Text.literal("Gold: ").formatted(Formatting.GRAY)
-			.append(Text.literal(Integer.toString(gold)).formatted(Formatting.GOLD));
+			.append(Text.literal(Integer.toString(gold)).formatted(Formatting.GOLD))
+			.append(Text.literal("   Essence: ").formatted(Formatting.GRAY))
+			.append(Text.literal(Integer.toString(essence)).formatted(Formatting.LIGHT_PURPLE));
 		context.drawTextWithShadow(mc.textRenderer, goldLine, 6, 6, 0xFFFFFF);
 
 		// ---- always-on RPG level + XP bar --------------------------------------

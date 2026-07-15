@@ -45,6 +45,11 @@ public final class TdClientStatus {
 		return ClientProgress.gold();
 	}
 
+	/** The client player's premium essence balance, from the synced {@link ClientProgress} snapshot. */
+	public static int essence() {
+		return ClientProgress.essence();
+	}
+
 	/** The client player's current mana, from the synced {@link ClientProgress} snapshot. */
 	public static int mana() {
 		return ClientProgress.mana();

@@ -82,6 +82,8 @@ public final class StatModifiers {
 	private static final double FLEET_FOOT_SPEED_PER_RANK = 0.03;
 	/** Engineer Salvage: +10% coin (gold) payout per rank. */
 	private static final double SALVAGE_COIN_PER_RANK = 0.10;
+	/** Engineer Salvage: +10% ESSENCE looted per rank (the premium-currency half of Salvage). */
+	private static final double SALVAGE_ESSENCE_PER_RANK = 0.10;
 	/** Mage Arcane Mind: +3 max mana per rank. */
 	private static final int ARCANE_MIND_MANA_PER_RANK = 3;
 	/** Mage Arcane Mind: +1 mana/second of regen per rank. */
@@ -208,6 +210,18 @@ public final class StatModifiers {
 	public static double coinMult(PlayerProgress progress) {
 		return 1.0 + effectivePoints(progress, Stat.FORTUNE) * COIN_PER_POINT
 			+ passiveRank(progress, "salvage") * SALVAGE_COIN_PER_RANK;
+	}
+
+	/**
+	 * Essence-loot multiplier: {@code 1.0} plus the Engineer {@code salvage} passive
+	 * (+10% per rank). This is the ESSENCE half of Salvage — the parallel to
+	 * {@link #coinMult}'s gold half — now that enemy deaths actually award essence
+	 * (see {@code ProgressEvents}). Unlike the coin multiplier it is deliberately NOT
+	 * lifted by any stat: essence is a premium currency, so only the Engineer's
+	 * class investment increases the drip, and an unclassed player reads exactly 1.0.
+	 */
+	public static double essenceMult(PlayerProgress progress) {
+		return 1.0 + passiveRank(progress, "salvage") * SALVAGE_ESSENCE_PER_RANK;
 	}
 
 	/** XP-gain multiplier (1.0 at zero points; +8% per Intelligence point). */

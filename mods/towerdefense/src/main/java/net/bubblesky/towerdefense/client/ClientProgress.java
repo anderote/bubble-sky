@@ -20,6 +20,8 @@ public final class ClientProgress {
 	private static volatile int level = 1;
 	private static volatile int unspentPoints = 0;
 	private static volatile int gold = 0;
+	/** The premium essence-currency balance (mirrors the appended payload field). */
+	private static volatile int essence = 0;
 	private static volatile int[] allocations = new int[Stat.values().length];
 	// ---- class layer (mirrors the appended ProgressSyncPayload fields) ----
 	private static volatile int mana = 0;
@@ -37,6 +39,7 @@ public final class ClientProgress {
 		level = payload.level();
 		unspentPoints = payload.unspentPoints();
 		gold = payload.gold();
+		essence = payload.essence();
 		int[] incoming = payload.allocations();
 		int[] copy = new int[Stat.values().length];
 		System.arraycopy(incoming, 0, copy, 0, Math.min(incoming.length, copy.length));
@@ -58,6 +61,11 @@ public final class ClientProgress {
 	/** The synced gold-bank balance shown on the HUD. */
 	public static int gold() {
 		return gold;
+	}
+
+	/** The synced premium essence-currency balance shown on the HUD. */
+	public static int essence() {
+		return essence;
 	}
 
 	public static int level() {

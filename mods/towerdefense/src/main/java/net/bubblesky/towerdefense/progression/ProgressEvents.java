@@ -55,6 +55,19 @@ public final class ProgressEvents {
 	private static final double XP_PER_MAX_HEALTH = 0.2;
 	/** Boss ({@code td_boss}) kills grant this multiple of the base XP. */
 	private static final double BOSS_XP_MULT = 5.0;
+
+	// ---- ESSENCE tuning ----------------------------------------------------
+	// Essence is the PREMIUM loot currency, so it accrues far slower than XP/gold: a base
+	// kill yields ~1 essence and a boss a modest chunk. Base essence = ceil(maxHealth /
+	// ESSENCE_HEALTH_DIVISOR): with a divisor of 25 a typical 10-25 HP enemy drops 1, a
+	// beefy 50 HP elite drops 2, and a boss is further multiplied. The killer banks the
+	// full amount (scaled by their own Engineer Salvage essenceMult); nearby players share
+	// only the ROUNDED fraction, so normal kills give bystanders nothing and only bosses
+	// spread essence around — keeping the drip deliberately thin.
+	/** Base essence per kill = ceil(enemy max health / this), floored to a minimum of 1. */
+	private static final double ESSENCE_HEALTH_DIVISOR = 25.0;
+	/** Boss ({@code td_boss}) kills grant this multiple of the base essence. */
+	private static final double BOSS_ESSENCE_MULT = 5.0;
 	/** Nearby (non-killer) players each earn this fraction of the base XP. */
 	private static final double SHARE_FRACTION = 0.25;
 	/** Radius (blocks) around the slain enemy within which nearby players share XP. */
@@ -167,14 +180,24 @@ public final class ProgressEvents {
 			baseXp = (int) Math.round(baseXp * BOSS_XP_MULT);
 		}
 
+		// ESSENCE mirrors the XP award (killer full, nearby a rounded share) but at a much
+		// smaller, ceil-of-a-divisor rate so it stays premium. Boss kills drop a chunk.
+		int baseEssence = Math.max(1, (int) Math.ceil(entity.getMaxHealth() / ESSENCE_HEALTH_DIVISOR));
+		if (boss) {
+			baseEssence = (int) Math.round(baseEssence * BOSS_ESSENCE_MULT);
+		}
+
 		ProgressState state = ProgressState.get(world.getServer());
 		ServerPlayerEntity killer = source.getAttacker() instanceof ServerPlayerEntity sp ? sp : null;
 		if (killer != null) {
-			award(state, killer, baseXp);
+			award(state, killer, baseXp, baseEssence);
 		}
 
-		// Nearby (non-killer) players share a fraction of the kill's XP.
+		// Nearby (non-killer) players share a fraction of the kill's XP + essence. XP shares
+		// floor to a minimum of 1; essence shares are NOT floored (round only), so bystanders
+		// earn essence only when the base amount is large enough — chiefly on boss kills.
 		int shareXp = Math.max(1, (int) Math.round(baseXp * SHARE_FRACTION));
+		int shareEssence = (int) Math.round(baseEssence * SHARE_FRACTION);
 		double radiusSq = SHARE_RADIUS * SHARE_RADIUS;
 		for (ServerPlayerEntity player : world.getPlayers()) {
 			if (player == killer) {
@@ -183,19 +206,27 @@ public final class ProgressEvents {
 			if (player.squaredDistanceTo(entity.getX(), entity.getY(), entity.getZ()) > radiusSq) {
 				continue;
 			}
-			award(state, player, shareXp);
+			award(state, player, shareXp, shareEssence);
 		}
 	}
 
 	/**
-	 * Bank XP for one player, fire a level-up message on any level gained, then resync.
-	 * The raw kill/share amount is scaled by the recipient's OWN {@link Stat#INTELLIGENCE}
-	 * multiplier before being banked, so each player's XP gain reflects their own points.
+	 * Bank XP (and any essence) for one player, fire a level-up message on any level gained,
+	 * then resync. The raw XP is scaled by the recipient's OWN {@link Stat#INTELLIGENCE}
+	 * multiplier and the raw essence by their OWN Engineer Salvage
+	 * ({@link StatModifiers#essenceMult}) before banking, so each reward reflects that
+	 * player's own investment. A single {@link #sync} at the end pushes both.
+	 *
+	 * @param essence raw essence to bank before the per-player multiplier (0 to bank none)
 	 */
-	private static void award(ProgressState state, ServerPlayerEntity player, int xp) {
+	private static void award(ProgressState state, ServerPlayerEntity player, int xp, int essence) {
 		PlayerProgress progress = state.forPlayer(player.getUuid());
 		int scaledXp = Math.max(1, (int) Math.round(xp * ProgressLookup.xpMult(player)));
 		int gained = progress.addXp(scaledXp);
+		if (essence > 0) {
+			int scaledEssence = Math.max(1, (int) Math.round(essence * StatModifiers.essenceMult(progress)));
+			progress.addEssence(scaledEssence);
+		}
 		state.markDirty();
 		if (gained > 0) {
 			int pts = progress.getUnspentPoints();
@@ -293,7 +324,7 @@ public final class ProgressEvents {
 		}
 		ServerPlayNetworking.send(player,
 			new ProgressSyncPayload(progress.getXp(), progress.getLevel(), progress.getUnspentPoints(),
-				progress.getGold(), alloc,
+				progress.getGold(), progress.getEssence(), alloc,
 				progress.getMana(), progress.getMaxMana(), classId, classLevel, classXp, classPoints,
 				classAllocations));
 	}

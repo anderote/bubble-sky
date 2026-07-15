@@ -174,6 +174,13 @@ public class CharacterScreen extends Screen {
 		context.drawCenteredTextWithShadow(this.textRenderer,
 			Text.literal("Character").formatted(Formatting.GOLD, Formatting.BOLD), cx, 14, 0xFFFFFFFF);
 
+		// Premium essence balance in the header (purple), legible on both tabs — it funds
+		// respec and the /td essence buff sink.
+		context.drawCenteredTextWithShadow(this.textRenderer,
+			Text.literal("Essence: ").formatted(Formatting.GRAY)
+				.append(Text.literal(Integer.toString(ClientProgress.essence())).formatted(Formatting.LIGHT_PURPLE)),
+			cx, 28, 0xFFFFFFFF);
+
 		if (tab == 0) {
 			renderStatsTab(context, cx);
 		} else {
