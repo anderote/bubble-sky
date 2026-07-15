@@ -161,6 +161,12 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 	public boolean damageAndCredit(ServerWorld world, net.minecraft.entity.LivingEntity mob,
 			net.minecraft.entity.damage.DamageSource source, float amount) {
 		boolean wasAlive = mob.isAlive();
+		// Stamp the enemy so the WarlordDirector telemetry can attribute a kill this same tick
+		// to a tower (see TdEnemyEntity#lastTowerHitAge). Set BEFORE the damage call so a lethal
+		// hit's synchronous AFTER_DEATH sees the fresh stamp.
+		if (mob instanceof net.bubblesky.towerdefense.entity.TdEnemyEntity te) {
+			te.lastTowerHitAge = te.age;
+		}
 		boolean applied = mob.damage(world, source, amount);
 		if (wasAlive && !mob.isAlive()) {
 			creditKill(world);

@@ -100,6 +100,11 @@ public class TowerBoltEntity extends PersistentProjectileEntity {
 		// Let the vanilla arrow logic apply the owner-credited damage (arrow damage
 		// source with our owner as attacker), so a tower kill still credits coins.
 		boolean wasAlive = entityHitResult.getEntity() instanceof LivingEntity le && le.isAlive();
+		// Stamp the enemy so the WarlordDirector telemetry attributes a bolt kill to a tower
+		// (see TdEnemyEntity#lastTowerHitAge); set before super applies the (lethal) hit.
+		if (entityHitResult.getEntity() instanceof TdEnemyEntity te) {
+			te.lastTowerHitAge = te.age;
+		}
 		super.onEntityHit(entityHitResult);
 		// If our bolt just killed the target, credit the firing tower's veterancy.
 		if (wasAlive && towerPos != null

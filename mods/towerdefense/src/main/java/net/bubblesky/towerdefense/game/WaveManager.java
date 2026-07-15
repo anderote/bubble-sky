@@ -1,6 +1,9 @@
 package net.bubblesky.towerdefense.game;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -137,6 +140,18 @@ public final class WaveManager {
 	 *  every enemy bashing one wall block contributes to the same pool. Cleared when a
 	 *  wave ends / the game is lost / the arena is released so it can't grow unbounded. */
 	private static final Map<Long, Integer> WALL_DAMAGE = new HashMap<>();
+
+	// ---- Warlord director (#17a) -------------------------------------------
+	/** The non-boss spawn supply for the CURRENT wave when an Enemy AI Warlord plan is
+	 *  active: a pre-expanded, shuffled queue of enemy types drawn from the plan's
+	 *  composition. Empty whenever no plan governs the wave — in which case spawning falls
+	 *  back to the unchanged random-roster path and the wave is byte-for-byte as before.
+	 *  Server-thread-only (like {@link #WALL_DAMAGE}). */
+	private static final Deque<EntityType<? extends TdEnemyEntity>> PLANNED_QUEUE = new ArrayDeque<>();
+	/** The active plan's spawn emphasis for the CURRENT wave (biases WHICH gate a spawn
+	 *  emerges from), or {@code null} when no plan governs the wave (uniform gate choice —
+	 *  identical to the default path). Server-thread-only. */
+	private static WarlordDirector.SpawnEmphasis activeEmphasis = null;
 
 	// ---- horde / drip-spawn ------------------------------------------------
 	/** Concurrent live-enemy cap: deep waves can queue 150+ enemies, so spawning pauses
@@ -296,7 +311,7 @@ public final class WaveManager {
 	 * then a growing squad: wave 25 ≈ 3, wave 50 ≈ 6, wave 100 ≈ 12. Each still gets
 	 * the {@link #BOSS_TAG}, big HP, scale, and death bounty.
 	 */
-	private static int bossCount(int wave) {
+	static int bossCount(int wave) {
 		return (int) Math.max(1L, Math.round((wave - 5) / 8.0));
 	}
 
@@ -378,15 +393,19 @@ public final class WaveManager {
 		// normal roster, so a milestone feels like an army, not a lone boss. The bosses
 		// are drawn first (bossesRemaining), then the horde, all against one quota.
 		int bosses = boss ? bossCount(st.currentWave) : 0;
-		st.bossesRemaining = bosses;
-		st.enemiesRemaining = enemyCount(st.currentWave) + bosses;
+		// Enemy AI Warlord (#17a): if an EXTERNAL agent submitted a validated plan for this
+		// wave, build the wave from its composition + spawn emphasis (within the clamped
+		// budget); otherwise take the unchanged default path. Boss-wave squads are preserved
+		// (a plan may only ADD bosses on top of the default milestone squad, never remove them).
+		applyWarlordPlan(st, boss, bosses);
 		st.spawnCooldown = 0;
 		st.intermissionCooldown = 0;
 		st.spawnFailures = 0;
 		st.markDirty();
 		if (boss) {
+			int bossShown = st.bossesRemaining;
 			broadcast(server, Text.literal("BOSS WAVE " + st.currentWave + " — "
-				+ bosses + (bosses == 1 ? " Warlord marches" : " Warlords march")
+				+ bossShown + (bossShown == 1 ? " Warlord marches" : " Warlords march")
 				+ " on the Idol with an army at their backs!")
 				.formatted(Formatting.DARK_PURPLE, Formatting.BOLD));
 		} else {
@@ -399,11 +418,66 @@ public final class WaveManager {
 			// always spawn (heightmap/chunk available) and keep ticking/pathing even if
 			// every player walks off. Idempotent, so re-forcing each wave is harmless.
 			setArenaForced(world, st, true);
+			// Begin Warlord telemetry for this wave (spawned/leaked/killed-by/duration).
+			WarlordDirector.get().onWaveStart(st.currentWave, world.getTime());
 			if (!boss) {
 				// Boss-wave feedback fires from spawnBoss (so it lands at the gate).
 				TdFeedback.waveStart(world, st);
 			}
+		} else {
+			WarlordDirector.get().onWaveStart(st.currentWave, 0L);
 		}
+	}
+
+	/**
+	 * Consume any validated {@link WarlordDirector.WavePlan} for the wave being started and
+	 * apply it — populating the non-boss {@link #PLANNED_QUEUE}, arming the
+	 * {@link #activeEmphasis}, and setting {@code bossesRemaining}/{@code enemiesRemaining}.
+	 * With NO plan present this is a pure passthrough that reproduces the exact default
+	 * counts, so the wave plays byte-for-byte as before (graceful fallback).
+	 *
+	 * @param defaultBosses the boss squad the wave would field by default (0 on a normal wave)
+	 */
+	private static void applyWarlordPlan(TdArenaState st, boolean boss, int defaultBosses) {
+		PLANNED_QUEUE.clear();
+		activeEmphasis = null;
+		WarlordDirector.WavePlan plan = WarlordDirector.get().takePlan(st.currentWave);
+		if (plan == null) {
+			// Default path — unchanged.
+			st.bossesRemaining = defaultBosses;
+			st.enemiesRemaining = enemyCount(st.currentWave) + defaultBosses;
+			return;
+		}
+		activeEmphasis = plan.emphasis();
+		// Expand the composition (minus the special "boss" entry) into a shuffled supply
+		// queue; the shuffle uses its OWN Random so it never perturbs the world RNG stream.
+		List<EntityType<? extends TdEnemyEntity>> expanded = new ArrayList<>();
+		for (Map.Entry<String, Integer> e : plan.composition().entrySet()) {
+			if (WarlordDirector.BOSS_ID.equals(e.getKey())) {
+				continue;
+			}
+			EntityType<? extends TdEnemyEntity> type = WarlordDirector.typeFor(e.getKey());
+			if (type == null) {
+				continue;
+			}
+			for (int i = 0; i < e.getValue(); i++) {
+				expanded.add(type);
+			}
+		}
+		// The plan may ADD bosses on top of the default milestone squad, never remove them.
+		int bosses = Math.max(defaultBosses, WarlordDirector.plannedBosses(plan));
+		// Anti-trivialize guard: a plan that clamps to NO units at all (e.g. all-unknown ids)
+		// falls back to the default wave rather than fielding an empty (free) wave.
+		if (expanded.isEmpty() && bosses == 0) {
+			activeEmphasis = null;
+			st.bossesRemaining = defaultBosses;
+			st.enemiesRemaining = enemyCount(st.currentWave) + defaultBosses;
+			return;
+		}
+		Collections.shuffle(expanded);
+		PLANNED_QUEUE.addAll(expanded);
+		st.bossesRemaining = bosses;
+		st.enemiesRemaining = expanded.size() + bosses;
 	}
 
 	// ---- tick driver -------------------------------------------------------
@@ -458,6 +532,10 @@ public final class WaveManager {
 					TowerDefenseMod.LOGGER.warn(
 						"[towerdefense] wave {} spawn failed {} times; skipping one enemy",
 						st.currentWave, st.spawnFailures);
+					// Keep the planned supply in step with the quota when we skip a bad enemy.
+					if (!PLANNED_QUEUE.isEmpty()) {
+						PLANNED_QUEUE.pollFirst();
+					}
 					st.enemiesRemaining--;
 					st.spawnFailures = 0;
 					st.spawnCooldown = spawnInterval(st.currentWave);
@@ -479,6 +557,10 @@ public final class WaveManager {
 			// Wave cleared. Reset the shared wall-damage pool so it can't grow unbounded
 			// across a long run (any part-broken walls "heal" between waves).
 			WALL_DAMAGE.clear();
+			// Finalise Warlord telemetry for the cleared wave and drop any spent plan state.
+			WarlordDirector.get().finalizeWave(st.currentWave, world.getTime());
+			PLANNED_QUEUE.clear();
+			activeEmphasis = null;
 			st.wavesSurvived = st.currentWave;
 			int reward = waveReward(st.currentWave);
 			payNearbyPlayers(world, st, reward);
@@ -514,11 +596,23 @@ public final class WaveManager {
 			}
 			return ok;
 		}
-		BlockPos sp = spreadSpawn(world, st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size())), st.currentWave);
-		List<EntityType<? extends TdEnemyEntity>> pool = rosterFor(st.currentWave);
-		EntityType<? extends TdEnemyEntity> type = pool.get(world.random.nextInt(pool.size()));
+		BlockPos sp = spreadSpawn(world, pickSpawnGate(world, st), st.currentWave);
+		// Draw the type from the Warlord plan's supply queue if one governs this wave; else
+		// fall back to the unchanged random-roster draw (byte-for-byte the default behaviour).
+		boolean planned = !PLANNED_QUEUE.isEmpty();
+		EntityType<? extends TdEnemyEntity> type;
+		if (planned) {
+			type = PLANNED_QUEUE.pollFirst();
+		} else {
+			List<EntityType<? extends TdEnemyEntity>> pool = rosterFor(st.currentWave);
+			type = pool.get(world.random.nextInt(pool.size()));
+		}
 		TdEnemyEntity mob = type.spawn(world, sp, SpawnReason.EVENT);
 		if (mob == null) {
+			// Return the drawn type to the queue so a failed spawn retries it, not drops it.
+			if (planned) {
+				PLANNED_QUEUE.addFirst(type);
+			}
 			return false;
 		}
 		mob.addCommandTag(ENEMY_TAG);
@@ -560,7 +654,21 @@ public final class WaveManager {
 
 		markEnemyVisible(world, mob);
 		steerToBase(mob, st);
+		WarlordDirector.get().recordSpawn();
 		return true;
+	}
+
+	/**
+	 * Pick the spawn gate for one spawn. With an active Warlord {@link #activeEmphasis} the
+	 * choice is WEIGHTED toward the emphasised flank; with none it is a uniform random gate —
+	 * consuming the exact same single {@code random} draw as the original inline selection,
+	 * so the default (no-plan) spawn stream is unchanged.
+	 */
+	private static BlockPos pickSpawnGate(ServerWorld world, TdArenaState st) {
+		if (activeEmphasis == null) {
+			return st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size()));
+		}
+		return WarlordDirector.weightedGate(world, st, activeEmphasis);
 	}
 
 	/**
@@ -571,7 +679,7 @@ public final class WaveManager {
 	 * FIRST Warlord of the wave (so a large squad doesn't spam the title/roar).
 	 */
 	private static boolean spawnBoss(ServerWorld world, TdArenaState st) {
-		BlockPos sp = spreadSpawn(world, st.spawnPoints.get(world.random.nextInt(st.spawnPoints.size())), st.currentWave);
+		BlockPos sp = spreadSpawn(world, pickSpawnGate(world, st), st.currentWave);
 		TdEnemyEntity boss = ModEntities.HEAVY_KNIGHT.spawn(world, sp, SpawnReason.EVENT);
 		if (boss == null) {
 			return false;
@@ -604,6 +712,7 @@ public final class WaveManager {
 
 		markEnemyVisible(world, boss);
 		steerToBase(boss, st);
+		WarlordDirector.get().recordSpawn();
 		// Only the first Warlord of the squad triggers the roar + title fanfare.
 		if (st.bossesRemaining == bossCount(wave)) {
 			TdFeedback.bossSpawn(world, st, sp, wave);
@@ -670,6 +779,8 @@ public final class WaveManager {
 	/** Release the arena's force-loaded chunks (call before clearing arena state). */
 	public static void releaseArenaChunks(MinecraftServer server, TdArenaState st) {
 		WALL_DAMAGE.clear();
+		PLANNED_QUEUE.clear();
+		activeEmphasis = null;
 		ServerWorld world = st.getArenaWorld(server);
 		if (world != null) {
 			setArenaForced(world, st, false);
@@ -698,6 +809,8 @@ public final class WaveManager {
 				st.baseHp -= (int) Math.ceil(atk * scale);
 				st.markDirty();
 				TdFeedback.baseHit(world, st);
+				// Telemetry: this enemy leaked to the idol (it is discarded, not killed).
+				WarlordDirector.get().recordLeak();
 				e.discard();
 			} else if (e instanceof MobEntity mob) {
 				// Stuck-enemy cleanup: cull an enemy that makes NO progress toward the Idol
@@ -1001,6 +1114,8 @@ public final class WaveManager {
 		st.baseHp = 0;
 		// Drop the shared wall-damage pool so it can't leak across matches.
 		WALL_DAMAGE.clear();
+		PLANNED_QUEUE.clear();
+		activeEmphasis = null;
 		// Clean up any enemies still on the field.
 		for (Entity e : enemies(world, st)) {
 			e.discard();

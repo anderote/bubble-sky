@@ -38,6 +38,12 @@ public abstract class TdEnemyEntity extends HostileEntity {
 	/** Ticks with no progress toward the Idol; the wave manager culls an enemy that stays
 	 *  stuck too long (lost underground / wedged in terrain) so the wave can finish. */
 	public int stuckTicks = 0;
+	/** The entity {@link #age} at which a TOWER last dealt damage to this enemy. The
+	 *  {@code WarlordDirector} death hook reads this to attribute the killing blow: because a
+	 *  tower stamps this the instant before applying its (possibly lethal) hit and
+	 *  {@code AFTER_DEATH} fires synchronously within that same damage call, a stamp equal to
+	 *  the current age means a tower landed the kill (vs a player / ally / environment). */
+	public int lastTowerHitAge = Integer.MIN_VALUE;
 
 	/** Squared distance (blocks^2) within which an enemy engages an ally/player that gets
 	 *  "in the way". Kept short even though FOLLOW_RANGE is set large (so the enemy can

@@ -12,7 +12,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import net.bubblesky.towerdefense.bridge.AgentBridge.BridgeException;
+import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
+import net.bubblesky.towerdefense.game.WarlordDirector;
 import net.bubblesky.towerdefense.layout.LayoutStore;
+import net.bubblesky.towerdefense.progression.PlayerClass;
+import net.bubblesky.towerdefense.progression.PlayerProgress;
+import net.bubblesky.towerdefense.progression.ProgressState;
+import net.bubblesky.towerdefense.state.TdArenaState;
 import net.minecraft.block.BlockState;
 import net.minecraft.command.argument.BlockArgumentParser;
 import net.minecraft.entity.Entity;
@@ -84,6 +90,196 @@ final class BridgeHandlers {
 		// layout planning: shared flag/region store (wand + agents + chat = one store)
 		http.createContext("/flags", bridge.secure(this::flags));
 		http.createContext("/regions", bridge.secure(this::regions));
+		// Enemy AI Warlord (#17a): battlefield snapshot + wave-plan submission + taunt.
+		http.createContext("/td/battlefield", bridge.secure(this::tdBattlefield));
+		http.createContext("/td/waveplan", bridge.secure(this::tdWavePlan));
+		http.createContext("/td/taunt", bridge.secure(this::tdTaunt));
+	}
+
+	// ---------- Enemy AI Warlord (#17a) endpoints ----------
+
+	/**
+	 * {@code GET /td/battlefield} — a full snapshot the external Warlord agent reads each
+	 * intermission to plan the next wave. Shape:
+	 * <pre>{ok, wave, waveInProgress, intermission{active,ticksLeft},
+	 *      idol{x,y,z,hp,max}|null, towers[{type,x,y,z,tier}], budget,
+	 *      players[{name,class,x,y,z,level}], lastWave{...}|null,
+	 *      enemyTypes[{id,threatCost}]}</pre>
+	 * All world/state reads run on the server thread; the budget + enemyTypes + lastWave
+	 * come from the (thread-safe) {@link WarlordDirector}.
+	 */
+	private Object tdBattlefield(HttpExchange exchange, JsonBody body) {
+		return bridge.runOnServer(() -> {
+			MinecraftServer server = bridge.server();
+			TdArenaState st = TdArenaState.get(server);
+			WarlordDirector director = WarlordDirector.get();
+			int nextWave = st.currentWave + 1;
+
+			Map<String, Object> out = new LinkedHashMap<>();
+			out.put("ok", true);
+			out.put("wave", st.currentWave);
+			out.put("waveInProgress",
+				st.phase == TdArenaState.Phase.SPAWNING || st.phase == TdArenaState.Phase.ACTIVE);
+			Map<String, Object> inter = new LinkedHashMap<>();
+			inter.put("active", st.phase == TdArenaState.Phase.INTERMISSION);
+			inter.put("ticksLeft", st.intermissionCooldown);
+			out.put("intermission", inter);
+			out.put("gameOver", st.gameOver);
+
+			// Idol (base) — position + health, or null if unset.
+			if (st.base != null) {
+				Map<String, Object> idol = new LinkedHashMap<>();
+				idol.put("x", st.base.getX());
+				idol.put("y", st.base.getY());
+				idol.put("z", st.base.getZ());
+				idol.put("hp", st.baseHp);
+				idol.put("max", st.baseMaxHp);
+				out.put("idol", idol);
+			} else {
+				out.put("idol", null);
+			}
+
+			// Towers — type + position + tier, read live from each core's block entity.
+			ServerWorld world = st.getArenaWorld(server);
+			List<Map<String, Object>> towers = new ArrayList<>();
+			if (world != null) {
+				for (BlockPos pos : st.towers) {
+					if (world.getBlockEntity(pos) instanceof AbstractTowerBlockEntity tower) {
+						Map<String, Object> t = new LinkedHashMap<>();
+						t.put("type", tower.kind().id());
+						t.put("x", pos.getX());
+						t.put("y", pos.getY());
+						t.put("z", pos.getZ());
+						t.put("tier", tower.getTier());
+						towers.add(t);
+					}
+				}
+			}
+			out.put("towers", towers);
+
+			// Players — name + active class + position + character level.
+			ProgressState progressState = ProgressState.get(server);
+			List<Map<String, Object>> players = new ArrayList<>();
+			for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
+				PlayerProgress progress = progressState.forPlayer(p.getUuid());
+				PlayerClass active = progress.getActiveClass();
+				Map<String, Object> m = new LinkedHashMap<>();
+				m.put("name", p.getName().getString());
+				m.put("class", active == null ? null : active.id());
+				m.put("x", round(p.getX()));
+				m.put("y", round(p.getY()));
+				m.put("z", round(p.getZ()));
+				m.put("level", progress.getLevel());
+				players.add(m);
+			}
+			out.put("players", players);
+
+			// Threat budget for the wave the Warlord would plan next + the last wave's outcome.
+			out.put("budget", WarlordDirector.budgetFor(nextWave));
+			out.put("nextWave", nextWave);
+			WarlordDirector.WaveTelemetry last = director.lastWave();
+			out.put("lastWave", last == null ? null : last.toJson());
+			out.put("enemyTypes", WarlordDirector.enemyTypeInfos());
+			return out;
+		});
+	}
+
+	/**
+	 * {@code POST /td/waveplan {wave, composition{id:count}, spawnEmphasis, tactic, taunt}} —
+	 * validate + clamp the plan against the wave's threat budget, store it as the pending plan
+	 * for that wave, and echo back the CLAMPED plan (so the caller sees exactly what was
+	 * accepted). If a {@code taunt} is present it is broadcast as a Warlord chat line.
+	 */
+	private Object tdWavePlan(HttpExchange exchange, JsonBody body) {
+		int wave = body.requireInt("wave");
+		Map<String, Integer> composition = parseComposition(body);
+		WarlordDirector.SpawnEmphasis emphasis = parseEmphasis(body);
+		String tactic = body.getString("tactic", "");
+		String taunt = body.getString("taunt", "");
+		WarlordDirector.WavePlan plan = WarlordDirector.get()
+			.submitPlan(wave, composition, emphasis, tactic, taunt);
+		if (!taunt.isBlank()) {
+			broadcastTaunt(taunt);
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("ok", true);
+		out.put("accepted", plan.toJson());
+		out.put("budget", WarlordDirector.budgetFor(wave));
+		return out;
+	}
+
+	/** {@code POST /td/taunt {text}} — broadcast a Warlord-persona chat line. */
+	private Object tdTaunt(HttpExchange exchange, JsonBody body) {
+		String text = body.requireString("text");
+		broadcastTaunt(text);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("ok", true);
+		out.put("text", text);
+		return out;
+	}
+
+	/** Broadcast a styled Warlord taunt to every player (server thread). */
+	private void broadcastTaunt(String text) {
+		bridge.runOnServer(() -> {
+			Text line = Text.literal("☠ Warlord: ")
+				.formatted(net.minecraft.util.Formatting.DARK_RED, net.minecraft.util.Formatting.BOLD)
+				.append(Text.literal(text)
+					.formatted(net.minecraft.util.Formatting.DARK_RED, net.minecraft.util.Formatting.ITALIC));
+			bridge.server().getPlayerManager().broadcast(line, false);
+			return null;
+		});
+		BridgeState.recordChat("Warlord", text);
+	}
+
+	/** Parse the {@code composition} object ({@code {id:count}}) from a wave-plan body. */
+	private Map<String, Integer> parseComposition(JsonBody body) {
+		Map<String, Integer> out = new LinkedHashMap<>();
+		if (!body.has("composition") || !body.raw().get("composition").isJsonObject()) {
+			return out;
+		}
+		JsonObject comp = body.raw().getAsJsonObject("composition");
+		for (Map.Entry<String, JsonElement> e : comp.entrySet()) {
+			try {
+				out.put(e.getKey(), e.getValue().getAsInt());
+			} catch (Exception ignored) {
+				// skip any non-integer count
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Parse a {@code spawnEmphasis} object into a {@link WarlordDirector.SpawnEmphasis}: an
+	 * object carrying {@code x}+{@code z} is a focus point; otherwise its keys are treated as
+	 * per-direction weights ({@code n/s/e/w/…}). Missing/invalid → {@code null} (uniform).
+	 */
+	private WarlordDirector.SpawnEmphasis parseEmphasis(JsonBody body) {
+		if (!body.has("spawnEmphasis") || !body.raw().get("spawnEmphasis").isJsonObject()) {
+			return null;
+		}
+		JsonObject se = body.raw().getAsJsonObject("spawnEmphasis");
+		// Nested {focus:{x,z}} or {weights:{...}} forms are also accepted.
+		JsonObject focus = se.has("focus") && se.get("focus").isJsonObject()
+			? se.getAsJsonObject("focus") : se;
+		if (focus.has("x") && focus.has("z")) {
+			try {
+				return new WarlordDirector.SpawnEmphasis(
+					focus.get("x").getAsInt(), focus.get("z").getAsInt(), null);
+			} catch (Exception ignored) {
+				return null;
+			}
+		}
+		JsonObject weightsObj = se.has("weights") && se.get("weights").isJsonObject()
+			? se.getAsJsonObject("weights") : se;
+		Map<String, Double> weights = new LinkedHashMap<>();
+		for (Map.Entry<String, JsonElement> e : weightsObj.entrySet()) {
+			try {
+				weights.put(e.getKey().toLowerCase(), e.getValue().getAsDouble());
+			} catch (Exception ignored) {
+				// skip non-numeric weight
+			}
+		}
+		return weights.isEmpty() ? null : new WarlordDirector.SpawnEmphasis(null, null, weights);
 	}
 
 	// ---------- /flags : GET (list) | POST {name?,x,y,z,dim?} | DELETE ?name= ----------
