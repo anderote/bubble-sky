@@ -531,9 +531,9 @@ public enum SpellType {
 	/**
 	 * Deploy Turret: +10s (200 ticks) of turret lifetime per allocated rank, on top of
 	 * {@link SpellManager#TEMP_TURRET_BASE_TICKS}. At rank 5 the deployable lasts
-	 * {@code 400 + 5×200 = 1400} ticks (~70s).
+	 * {@code 2400 + 5×3120 = 18000} ticks (15 min); rank 0 = 2400 ticks (2 min).
 	 */
-	private static final int DEPLOY_TURRET_TICKS_PER_RANK = 200;
+	private static final int DEPLOY_TURRET_TICKS_PER_RANK = 3120;
 	/** Summon Skeletons: +10% skeleton-archer damage per Summon Skeletons rank. */
 	private static final double SQUAD_RANK_DAMAGE_BONUS = 0.10;
 	/** Necromancer Amplify passive: +10% Bone Spear (and spell) damage per rank. */

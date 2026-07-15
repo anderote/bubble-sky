@@ -94,7 +94,7 @@ public final class SpellManager {
 	 * it self-dismantles — 20 seconds at rank 0. {@code DEPLOY_TURRET} extends this per allocated
 	 * rank, so the deployable is a strong but fleeting resource rather than a free permanent tower.
 	 */
-	public static final int TEMP_TURRET_BASE_TICKS = 400;
+	public static final int TEMP_TURRET_BASE_TICKS = 2400;
 
 	// ---- state -------------------------------------------------------------
 	/** Monotonic tick counter, advanced once per server tick; deadlines are measured against it. */
