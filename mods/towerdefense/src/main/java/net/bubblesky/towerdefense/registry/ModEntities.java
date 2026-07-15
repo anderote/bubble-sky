@@ -13,6 +13,7 @@ import net.bubblesky.towerdefense.entity.TdBarbarianSapper;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
 import net.bubblesky.towerdefense.entity.TdFootman;
 import net.bubblesky.towerdefense.entity.TdMeleeEnemy;
+import net.bubblesky.towerdefense.entity.TdSkeletonArcher;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnGroup;
@@ -77,6 +78,13 @@ public final class ModEntities {
 		registerAllyArcher("ally_archer", 0.6f, 1.95f);
 	public static final EntityType<TdFootman> ALLY_KNIGHT =
 		registerFootman("ally_knight", 0.7f, 2.0f);
+	/**
+	 * The Warlord's summoned SKELETON ARCHER — a beefy, temporary undead bowman (see
+	 * {@link TdSkeletonArcher}). Rendered with the vanilla skeleton skin client-side,
+	 * but mechanically a friendly {@link TdAllyEntity} so our own towers never target it.
+	 */
+	public static final EntityType<TdSkeletonArcher> ALLY_SKELETON =
+		registerSkeletonArcher("ally_skeleton", 0.6f, 1.99f);
 
 	// ---- colony COLONIST --------------------------------------------------
 	/** A named humanoid worker the player recruits into a colony (mine/chop/hunt/forage/haul). */
@@ -194,6 +202,17 @@ public final class ModEntities {
 		return Registry.register(Registries.ENTITY_TYPE, key, type);
 	}
 
+	private static EntityType<TdSkeletonArcher> registerSkeletonArcher(String name, float width, float height) {
+		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, name));
+		EntityType<TdSkeletonArcher> type = EntityType.Builder
+			.create(TdSkeletonArcher::new, SpawnGroup.CREATURE)
+			.dimensions(width, height)
+			.maxTrackingRange(48)
+			.build(key);
+		return Registry.register(Registries.ENTITY_TYPE, key, type);
+	}
+
 	private static EntityType<ColonistEntity> registerColonist(String name, float width, float height) {
 		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
 			Identifier.of(TowerDefenseMod.MOD_ID, name));
@@ -239,6 +258,9 @@ public final class ModEntities {
 		FabricDefaultAttributeRegistry.register(ALLY_FOOTMAN, allyAttrs(28.0, 5.0, 0.28));
 		FabricDefaultAttributeRegistry.register(ALLY_ARCHER, allyAttrs(20.0, 5.0, 0.26));
 		FabricDefaultAttributeRegistry.register(ALLY_KNIGHT, allyAttrs(60.0, 8.0, 0.24));
+		// Summoned skeleton archer: pretty strong (34 hp, 7 atk → hard-hitting arrows),
+		// a touch nimbler and longer-sighted than the base ally archer.
+		FabricDefaultAttributeRegistry.register(ALLY_SKELETON, allyAttrs(34.0, 7.0, 0.28));
 
 		// Colonist: a sturdy worker — enough hp to survive stray mobs, a light melee hit
 		// (used when hunting), and a brisk work pace.

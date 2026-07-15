@@ -313,32 +313,28 @@ public enum SpellType {
 	},
 
 	/**
-	 * Rally a temporary SQUAD of {@link #SQUAD_FOOTMEN} allied footmen and
-	 * {@link #SQUAD_ARCHERS} allied archer, ordered to ATTACK and owned by the caster. They
-	 * are registered with {@link SpellManager} and disband after
-	 * {@link SpellManager#SUMMON_LIFETIME_TICKS} ticks.
+	 * Raise a squad of {@link #SKELETON_ARCHER_COUNT} beefy SKELETON ARCHERS
+	 * ({@link ModEntities#ALLY_SKELETON}) at the caster's feet, ordered to ATTACK and
+	 * owned by the caster. Unlike the fleeting wolf summons, these undead bowmen are
+	 * built to hold a line: they are registered with {@link SpellManager} for a full
+	 * {@link SpellManager#SKELETON_SUMMON_LIFETIME_TICKS} ticks (5 minutes) before they
+	 * crumble to dust. Each is a friendly {@link TdAllyEntity} under the hood — only its
+	 * skin is skeletal — so the caster's own towers never mistake it for a wave enemy.
 	 */
-	SUMMON_SQUAD("summon_squad", "Summon Squad", 22, 220) {
+	SUMMON_SQUAD("summon_squad", "Summon Skeletons", 22, 220) {
 		@Override
 		public void cast(ServerWorld world, ServerPlayerEntity caster, Vec3d aim) {
-			for (int i = 0; i < SQUAD_FOOTMEN; i++) {
-				spawnAlly(world, caster, ModEntities.ALLY_FOOTMAN);
+			for (int i = 0; i < SKELETON_ARCHER_COUNT; i++) {
+				TdAllyEntity ally = ModEntities.ALLY_SKELETON.spawn(world, caster.getBlockPos(), SpawnReason.EVENT);
+				if (ally == null) {
+					continue;
+				}
+				ally.addCommandTag(TdAllyEntity.ALLY_TAG);
+				ally.setPersistent();
+				ally.setOrder(TdAllyEntity.Order.ATTACK, null, caster.getUuid());
+				SpellManager.addSummon(ally, SpellManager.SKELETON_SUMMON_LIFETIME_TICKS);
 			}
-			for (int i = 0; i < SQUAD_ARCHERS; i++) {
-				spawnAlly(world, caster, ModEntities.ALLY_ARCHER);
-			}
-			castSound(world, caster, SoundEvents.ENTITY_RAVAGER_ROAR, 0.8f);
-		}
-
-		private void spawnAlly(ServerWorld world, ServerPlayerEntity caster, EntityType<? extends TdAllyEntity> type) {
-			TdAllyEntity ally = type.spawn(world, caster.getBlockPos(), SpawnReason.EVENT);
-			if (ally == null) {
-				return;
-			}
-			ally.addCommandTag(TdAllyEntity.ALLY_TAG);
-			ally.setPersistent();
-			ally.setOrder(TdAllyEntity.Order.ATTACK, null, caster.getUuid());
-			SpellManager.addSummon(ally);
+			castSound(world, caster, SoundEvents.ENTITY_SKELETON_AMBIENT, 1.0f);
 		}
 	},
 
@@ -396,8 +392,8 @@ public enum SpellType {
 	private static final double WARCRY_RADIUS = 10.0;
 	private static final int WARCRY_DURATION_TICKS = 160;
 
-	private static final int SQUAD_FOOTMEN = 2;
-	private static final int SQUAD_ARCHERS = 1;
+	/** How many skeleton archers the Warlord's Summon Skeletons spell raises. */
+	private static final int SKELETON_ARCHER_COUNT = 3;
 
 	private static final double CHARGE_SPEED = 1.6;
 	private static final double CHARGE_RADIUS = 3.5;

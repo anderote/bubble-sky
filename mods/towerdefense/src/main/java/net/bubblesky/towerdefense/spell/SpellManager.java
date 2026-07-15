@@ -47,6 +47,12 @@ public final class SpellManager {
 	// ---- tuning ------------------------------------------------------------
 	/** How long a summoned wolf/ally lives before it is dismissed (ticks; 20/sec). */
 	public static final int SUMMON_LIFETIME_TICKS = 400;
+	/**
+	 * Lifetime for the Warlord's summoned SKELETON squad: 5 minutes (300s × 20t/s). These
+	 * raised bowmen are meant to hold a line for a whole wave, so they far outlast the
+	 * fleeting 20-second wolf/footman summons.
+	 */
+	public static final int SKELETON_SUMMON_LIFETIME_TICKS = 6000;
 	/** How long an unsprung trap persists before it expires (ticks). */
 	public static final int TRAP_LIFETIME_TICKS = 600;
 	/** How close an enemy must come to a trap to trigger it (blocks). */
@@ -82,7 +88,17 @@ public final class SpellManager {
 	// ---- summons -----------------------------------------------------------
 	/** Register {@code entity} to be dismissed after {@link #SUMMON_LIFETIME_TICKS} ticks. */
 	public static void addSummon(Entity entity) {
-		SUMMONS.add(new TimedSummon(entity, tick + SUMMON_LIFETIME_TICKS));
+		addSummon(entity, SUMMON_LIFETIME_TICKS);
+	}
+
+	/**
+	 * Register {@code entity} to be dismissed after a caller-chosen {@code lifetimeTicks}.
+	 * Lets longer-lived summons (e.g. the Warlord's 5-minute skeleton squad via
+	 * {@link #SKELETON_SUMMON_LIFETIME_TICKS}) coexist with the default short-lived ones
+	 * without touching the shared {@link #SUMMON_LIFETIME_TICKS} deadline.
+	 */
+	public static void addSummon(Entity entity, int lifetimeTicks) {
+		SUMMONS.add(new TimedSummon(entity, tick + lifetimeTicks));
 	}
 
 	private static void sweepSummons() {
