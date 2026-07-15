@@ -96,6 +96,17 @@ public class ColonistEntity extends PathAwareEntity {
 	/** Rotating index so successive recruits in a session draw distinct names. */
 	private static int nameCursor = 0;
 
+	/**
+	 * Handle to the single {@link ColonyWorkGoal} this colonist runs, captured when it is wired
+	 * into the goalSelector in {@link #initGoals()}. This is NOT the execution path for normal
+	 * gameplay — the goalSelector still owns the real per-tick invocation of the goal exactly as
+	 * before; this field is only a re-entry point for the DEBUG force-tick bridge
+	 * ({@link #debugRunWork(net.minecraft.server.world.ServerWorld)}), which the headless server
+	 * needs because it does not tick entities when no player is online. Purely additive.
+	 */
+	@Nullable
+	private ColonyWorkGoal workGoal;
+
 	/** The colonist's current work (drives the name tag + the work goal). */
 	private Job job = Job.IDLE;
 	/** Priority ordering over work types — the colonist runs the highest available. */
@@ -128,10 +139,38 @@ public class ColonistEntity extends PathAwareEntity {
 	@Override
 	protected void initGoals() {
 		this.goalSelector.add(0, new SwimGoal(this));
-		// The single rule-based work brain — mirrors the ally's order goal.
-		this.goalSelector.add(2, new ColonyWorkGoal(this));
+		// The single rule-based work brain — mirrors the ally's order goal. We keep a handle to the
+		// SAME instance we hand the goalSelector so the debug bridge can re-invoke it off the natural
+		// entity-tick loop; the goalSelector remains the sole owner of the normal per-tick execution.
+		this.workGoal = new ColonyWorkGoal(this);
+		this.goalSelector.add(2, this.workGoal);
 		this.goalSelector.add(7, new LookAtEntityGoal(this, PlayerEntity.class, 8.0f));
 		this.goalSelector.add(8, new LookAroundGoal(this));
+	}
+
+	// ---- DEBUG: headless force-tick hook -----------------------------------
+	/**
+	 * DEBUG / TEST-ONLY. Force one invocation of this colonist's {@link ColonyWorkGoal#tick()} on
+	 * the caller's (server) thread, bypassing the natural entity-tick loop.
+	 *
+	 * <p>WHY THIS EXISTS: the headless server does not tick entities while no player is online, so
+	 * a colonist's work behaviour (notably the BUILD/wall job) never advances and cannot be verified
+	 * from the console. The bridge's {@code POST /td/debug/tickcolony} endpoint calls this in a loop
+	 * to force-advance the work goal — placing wall blocks via {@code stepBuild}, etc. — entirely on
+	 * the server thread.
+	 *
+	 * <p>This does NOT change normal gameplay: the goalSelector still owns and drives the very same
+	 * {@link ColonyWorkGoal} instance every real tick; {@link #workGoal} is merely a handle for this
+	 * extra manual re-invoke. Because {@link ColonyWorkGoal#tick()} self-guards on the colonist
+	 * living in a {@link net.minecraft.server.world.ServerWorld}, this is a no-op if it somehow isn't.
+	 * The {@code world} parameter documents that contract at the call site.
+	 *
+	 * @param world the server world the colonist is expected to live in (contract marker)
+	 */
+	public void debugRunWork(net.minecraft.server.world.ServerWorld world) {
+		if (this.workGoal != null) {
+			this.workGoal.tick();
+		}
 	}
 
 	// ---- spawn kit ---------------------------------------------------------

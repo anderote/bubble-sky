@@ -18,6 +18,7 @@ import net.bubblesky.towerdefense.bridge.AgentBridge.BridgeException;
 import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
 import net.bubblesky.towerdefense.colony.ColonistEntity;
 import net.bubblesky.towerdefense.colony.ColonyState;
+import net.bubblesky.towerdefense.colony.ColonyWorkGoal;
 import net.bubblesky.towerdefense.game.WarlordDirector;
 import net.bubblesky.towerdefense.registry.ModEntities;
 import net.bubblesky.towerdefense.layout.LayoutStore;
@@ -70,6 +71,10 @@ final class BridgeHandlers {
 	private static final long MAX_FILL_VOLUME = 262_144L; // 64^3
 	/** Max scan radius for /scan. */
 	private static final int MAX_SCAN_RADIUS = 64;
+	/** Default force-tick count for the DEBUG /td/debug/tickcolony endpoint. */
+	private static final int DEBUG_TICK_DEFAULT = 100;
+	/** Hard cap on force-ticks per DEBUG /td/debug/tickcolony call (guards server-thread time). */
+	private static final int DEBUG_TICK_CAP = 2000;
 
 	private final AgentBridge bridge;
 
@@ -105,6 +110,8 @@ final class BridgeHandlers {
 		http.createContext("/td/colony/assign", bridge.secure(this::tdColonyAssign));
 		http.createContext("/td/colony/priorities", bridge.secure(this::tdColonyPriorities));
 		http.createContext("/td/colony", bridge.secure(this::tdColony));
+		// DEBUG (test-only): force-advance colonist work goals off the natural entity-tick loop.
+		http.createContext("/td/debug/tickcolony", bridge.secure(this::tdDebugTickColony));
 	}
 
 	// ---------- Enemy AI Warlord (#17a) endpoints ----------
@@ -460,6 +467,74 @@ final class BridgeHandlers {
 			throw new BridgeException(404, (String) out.get("error"));
 		}
 		return out;
+	}
+
+	/**
+	 * {@code POST /td/debug/tickcolony {ticks?, colonist?}} — DEBUG / TEST-ONLY endpoint.
+	 *
+	 * <p>WHY: this headless server does NOT tick entities while no player is online, so a colonist's
+	 * work behaviour (notably the BUILD/wall job) never advances and cannot be verified from the
+	 * console. The server MAIN THREAD runs regardless, so this endpoint force-advances colonist work
+	 * goals ON THE SERVER THREAD — invoking each colonist's {@link ColonyWorkGoal#tick()} (via
+	 * {@link ColonistEntity#debugRunWork}) {@code ticks} times in a loop. That lets {@code stepBuild}
+	 * actually place wall blocks (and any other work step run) without natural entity ticking.
+	 *
+	 * <p>This does NOT alter normal gameplay: it is a manual force-tick reachable only over the
+	 * secured bridge. When a player is online the goalSelector drives the same goal every real tick.
+	 *
+	 * <p>{@code ticks} defaults to {@value #DEBUG_TICK_DEFAULT} and is clamped to
+	 * [1, {@value #DEBUG_TICK_CAP}]. {@code colonist} (optional) restricts the force-tick to the one
+	 * colonist matching by UUID or (case-insensitive) name; omitted → every live colonist in the
+	 * arena world. Returns the POST-RUN state so the caller can see whether a build completed (job
+	 * back to {@code idle}, {@code buildTarget} null):
+	 * <pre>{ok, ticks, colonists:[{name, uuid, job, x, y, z, buildTarget:{x,y,z,length,dir,height,block,repairOnly}|null}]}</pre>
+	 */
+	private Object tdDebugTickColony(HttpExchange exchange, JsonBody body) {
+		int requested = body.getInt("ticks", DEBUG_TICK_DEFAULT);
+		final int ticks = Math.max(1, Math.min(DEBUG_TICK_CAP, requested));
+		final String who = body.getString("colonist", "").trim();
+
+		return bridge.runOnServer(() -> {
+			MinecraftServer server = bridge.server();
+			ServerWorld world = colonyWorld(server);
+
+			// Select the target colonists: the single match if a name/uuid was given, else all live.
+			List<ColonistEntity> targets = new ArrayList<>();
+			if (!who.isEmpty()) {
+				ColonistEntity one = findColonist(server, who);
+				if (one != null) {
+					targets.add(one);
+				}
+			} else {
+				targets.addAll(world.getEntitiesByType(ModEntities.COLONIST, ColonistEntity::isAlive));
+			}
+
+			// Force-advance each selected colonist's work goal on this (server) thread.
+			for (ColonistEntity c : targets) {
+				for (int i = 0; i < ticks; i++) {
+					c.debugRunWork(world);
+				}
+			}
+
+			// Report POST-RUN state so the caller sees whether the build finished.
+			List<Map<String, Object>> colonists = new ArrayList<>();
+			for (ColonistEntity c : targets) {
+				Map<String, Object> m = new LinkedHashMap<>();
+				m.put("name", c.getColonistName());
+				m.put("uuid", c.getUuidAsString());
+				m.put("job", c.getJob().name().toLowerCase(Locale.ROOT));
+				m.put("x", round(c.getX()));
+				m.put("y", round(c.getY()));
+				m.put("z", round(c.getZ()));
+				m.put("buildTarget", buildTargetJson(c.getBuildTarget()));
+				colonists.add(m);
+			}
+			Map<String, Object> out = new LinkedHashMap<>();
+			out.put("ok", true);
+			out.put("ticks", ticks);
+			out.put("colonists", colonists);
+			return out;
+		});
 	}
 
 	/** The arena world colonists live in (from the arena state), falling back to the overworld. */
