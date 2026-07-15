@@ -1,5 +1,7 @@
 package net.bubblesky.towerdefense.registry;
 
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.function.Function;
 import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.item.AcidBucketItem;
@@ -7,6 +9,8 @@ import net.bubblesky.towerdefense.item.FlagBowItem;
 import net.bubblesky.towerdefense.item.LayoutWandItem;
 import net.bubblesky.towerdefense.item.TdBowItem;
 import net.bubblesky.towerdefense.item.TowerArrowItem;
+import net.bubblesky.towerdefense.spell.SpellItem;
+import net.bubblesky.towerdefense.spell.SpellType;
 import net.bubblesky.towerdefense.tower.TowerKind;
 import net.minecraft.item.Item;
 import net.minecraft.item.ToolMaterial;
@@ -89,6 +93,26 @@ public final class ModItems {
 	// Long-range, slow-firing precision tower: targets the toughest enemy in range.
 	public static final Item SHARPSHOOTER_TOWER_ARROW = register("sharpshooter_tower_arrow",
 		s -> new TowerArrowItem(s, TowerKind.SHARPSHOOTER), new Item.Settings());
+
+	// ---- spell items -------------------------------------------------------
+	// One registered SpellItem per SpellType, each carrying its spell (like TowerArrowItem
+	// carries a TowerKind). Registered as "spell_<id>"; the class loadout grants the three
+	// that match a class into the reserved spell hotbar slots. Kept in an EnumMap so
+	// ClassLoadout can resolve SpellType -> Item without a hand-maintained switch.
+	private static final Map<SpellType, Item> SPELL_ITEMS = new EnumMap<>(SpellType.class);
+
+	static {
+		for (SpellType spell : SpellType.values()) {
+			Item item = register("spell_" + spell.id(),
+				s -> new SpellItem(s, spell), new Item.Settings().maxCount(1));
+			SPELL_ITEMS.put(spell, item);
+		}
+	}
+
+	/** The registered {@link SpellItem} for a spell (never null — every spell is registered). */
+	public static Item spellItem(SpellType spell) {
+		return SPELL_ITEMS.get(spell);
+	}
 
 	public static Item register(String name, Function<Item.Settings, Item> factory, Item.Settings settings) {
 		RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, Identifier.of(TowerDefenseMod.MOD_ID, name));

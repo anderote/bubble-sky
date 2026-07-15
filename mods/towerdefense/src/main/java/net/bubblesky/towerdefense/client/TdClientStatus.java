@@ -45,6 +45,21 @@ public final class TdClientStatus {
 		return ClientProgress.gold();
 	}
 
+	/** The client player's current mana, from the synced {@link ClientProgress} snapshot. */
+	public static int mana() {
+		return ClientProgress.mana();
+	}
+
+	/** The client player's max mana, from the synced {@link ClientProgress} snapshot. */
+	public static int maxMana() {
+		return ClientProgress.maxMana();
+	}
+
+	/** The client player's active class id ({@code ""} when unpicked). */
+	public static String activeClass() {
+		return ClientProgress.activeClass();
+	}
+
 	/** Current wave from the synced TD sidebar, or -1 when no match is running. */
 	public static int wave() {
 		ScoreboardObjective obj = sidebar();

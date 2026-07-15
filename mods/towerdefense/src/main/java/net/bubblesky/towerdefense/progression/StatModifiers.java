@@ -64,6 +64,14 @@ public final class StatModifiers {
 	private static final double COLLECTION_BASE_RADIUS = 2.5;
 	/** Intelligence: +1.0 block of collection radius per point. */
 	private static final double COLLECTION_PER_POINT = 1.0;
+	/** Base max mana every player has at Intelligence 0. */
+	private static final int MANA_BASE_MAX = 20;
+	/** Intelligence: +5 max mana per point. */
+	private static final int MANA_PER_POINT = 5;
+	/** Base mana regenerated per SECOND at Intelligence 0. */
+	private static final int MANA_REGEN_BASE = 2;
+	/** Intelligence: +1 mana/second of regen per point. */
+	private static final int MANA_REGEN_PER_POINT = 1;
 
 	// ---- flat base-character buffs (always on, independent of skill points) --
 	/** +20 max health for every player (20 -> 40 HP / 20 hearts). */
@@ -85,16 +93,16 @@ public final class StatModifiers {
 	 */
 	public static void apply(ServerPlayerEntity player, PlayerProgress progress) {
 		applyFlat(player, EntityAttributes.MAX_HEALTH, VITALITY_ID,
-			progress.points(Stat.VITALITY) * HEALTH_PER_POINT,
+			effectivePoints(progress, Stat.VITALITY) * HEALTH_PER_POINT,
 			EntityAttributeModifier.Operation.ADD_VALUE);
 		applyFlat(player, EntityAttributes.ATTACK_DAMAGE, STRENGTH_ID,
-			progress.points(Stat.STRENGTH) * ATTACK_PER_POINT,
+			effectivePoints(progress, Stat.STRENGTH) * ATTACK_PER_POINT,
 			EntityAttributeModifier.Operation.ADD_VALUE);
 		applyFlat(player, EntityAttributes.MOVEMENT_SPEED, AGILITY_ID,
-			progress.points(Stat.AGILITY) * SPEED_PER_POINT,
+			effectivePoints(progress, Stat.AGILITY) * SPEED_PER_POINT,
 			EntityAttributeModifier.Operation.ADD_MULTIPLIED_BASE);
 		applyFlat(player, EntityAttributes.ARMOR, RESILIENCE_ID,
-			progress.points(Stat.RESILIENCE) * ARMOR_PER_POINT,
+			effectivePoints(progress, Stat.RESILIENCE) * ARMOR_PER_POINT,
 			EntityAttributeModifier.Operation.ADD_VALUE);
 
 		// Flat base-character buffs — a sturdier, stronger hero by default, on top of
@@ -109,6 +117,24 @@ public final class StatModifiers {
 		if (player.getHealth() > player.getMaxHealth()) {
 			player.setHealth(player.getMaxHealth());
 		}
+
+		// Keep the mana pool's cap in step with Intelligence (+ any active-class bias).
+		// Done here so it refreshes on the exact same join/respawn/allocate/class-change
+		// events that (re)apply attributes, never stacking (it's a recompute, not an add).
+		progress.refreshMaxMana();
+	}
+
+	/**
+	 * A stat's EFFECTIVE point count: the player's real allocation plus any per-life bias
+	 * from the {@linkplain PlayerProgress#getActiveClass() active class}. Every effect —
+	 * attributes and use-time multipliers alike — reads through here, so a class's favored
+	 * stat is buffed everywhere with no per-site special-casing. With no active class this
+	 * is exactly the raw allocation, so the global track is unchanged when unclassed.
+	 */
+	private static int effectivePoints(PlayerProgress progress, Stat stat) {
+		int base = progress.points(stat);
+		PlayerClass active = progress.getActiveClass();
+		return active == null ? base : base + active.statBias(stat);
 	}
 
 	/** Remove-then-add one modifier by its stable id (skips a zero-value modifier entirely). */
@@ -125,19 +151,43 @@ public final class StatModifiers {
 	}
 
 	// ---- use-time multipliers ----------------------------------------------
+	// All read EFFECTIVE points (allocation + active-class bias) so a class's favored stat
+	// buffs its multiplier too — e.g. Ranger's Marksmanship bias raises bow damage.
 	/** Fired-arrow damage multiplier (1.0 at zero points; +10% per Marksmanship point). */
 	public static double bowMult(PlayerProgress progress) {
-		return 1.0 + progress.points(Stat.MARKSMANSHIP) * BOW_PER_POINT;
+		return 1.0 + effectivePoints(progress, Stat.MARKSMANSHIP) * BOW_PER_POINT;
 	}
 
 	/** Coin-payout multiplier (1.0 at zero points; +12% per Fortune point). */
 	public static double coinMult(PlayerProgress progress) {
-		return 1.0 + progress.points(Stat.FORTUNE) * COIN_PER_POINT;
+		return 1.0 + effectivePoints(progress, Stat.FORTUNE) * COIN_PER_POINT;
 	}
 
 	/** XP-gain multiplier (1.0 at zero points; +8% per Intelligence point). */
 	public static double xpMult(PlayerProgress progress) {
-		return 1.0 + progress.points(Stat.INTELLIGENCE) * XP_PER_POINT;
+		return 1.0 + effectivePoints(progress, Stat.INTELLIGENCE) * XP_PER_POINT;
+	}
+
+	/**
+	 * Maximum mana for a record: {@code MANA_BASE_MAX + Intelligence * MANA_PER_POINT}
+	 * ({@value #MANA_BASE_MAX} at 0 points, +{@value #MANA_PER_POINT} per Intelligence
+	 * point), using EFFECTIVE points so a Mage's Intelligence bias also lifts the pool.
+	 * This is the single home for the mana formula; {@link PlayerProgress#refreshMaxMana()}
+	 * calls it. Spending / regen arrive in Phase 2.
+	 */
+	public static int maxMana(PlayerProgress progress) {
+		return MANA_BASE_MAX + effectivePoints(progress, Stat.INTELLIGENCE) * MANA_PER_POINT;
+	}
+
+	/**
+	 * Mana regenerated PER SECOND for a record:
+	 * {@code MANA_REGEN_BASE + Intelligence * MANA_REGEN_PER_POINT} ({@value #MANA_REGEN_BASE}
+	 * at 0 points, +{@value #MANA_REGEN_PER_POINT} per Intelligence point), using EFFECTIVE
+	 * points so a Mage's Intelligence bias also speeds regen. Ticked once per second by
+	 * {@code ProgressEvents} and clamped to {@link #maxMana}.
+	 */
+	public static int manaRegenPerSecond(PlayerProgress progress) {
+		return MANA_REGEN_BASE + effectivePoints(progress, Stat.INTELLIGENCE) * MANA_REGEN_PER_POINT;
 	}
 
 	/**
@@ -148,7 +198,7 @@ public final class StatModifiers {
 	 * effect: a smarter hero sweeps dropped coins into their bank from farther away.
 	 */
 	public static double collectionRadius(PlayerProgress progress) {
-		return COLLECTION_BASE_RADIUS + progress.points(Stat.INTELLIGENCE) * COLLECTION_PER_POINT;
+		return COLLECTION_BASE_RADIUS + effectivePoints(progress, Stat.INTELLIGENCE) * COLLECTION_PER_POINT;
 	}
 
 	/** The base collection radius (blocks) used when no progression record is available. */

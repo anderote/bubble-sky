@@ -100,6 +100,11 @@ public class TowerDefenseMod implements ModInitializer {
 		// payloads, and the join/respawn/world-change stat (re)application. See progression/.
 		ProgressEvents.register();
 
+		// Spellcasting: the once-per-tick engine that expires temporary summons (Ranger
+		// wolves / Warlord squads) and springs Ranger snare traps. Spell casting itself is
+		// item-driven (see spell/SpellItem); this only drives the effects that outlive a cast.
+		net.bubblesky.towerdefense.spell.SpellManager.register();
+
 		// My Towers panel: per-player roster + upgrade/sell networking (key K).
 		net.bubblesky.towerdefense.towerui.TowerUiEvents.register();
 

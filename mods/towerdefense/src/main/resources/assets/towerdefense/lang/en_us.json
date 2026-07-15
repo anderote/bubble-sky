@@ -17,6 +17,19 @@
 	"item.towerdefense.ball_tower_arrow": "Tower Ball Arrow",
 	"item.towerdefense.sharpshooter_tower_arrow": "Sharpshooter Tower Arrow",
 
+	"item.towerdefense.spell_fireball": "Fireball",
+	"item.towerdefense.spell_frost_nova": "Frost Nova",
+	"item.towerdefense.spell_chain_lightning": "Chain Lightning",
+	"item.towerdefense.spell_multishot": "Multishot",
+	"item.towerdefense.spell_trap": "Snare Trap",
+	"item.towerdefense.spell_summon_wolf": "Summon Wolves",
+	"item.towerdefense.spell_deploy_turret": "Deploy Turret",
+	"item.towerdefense.spell_repair_pulse": "Repair Pulse",
+	"item.towerdefense.spell_wall_of_acid": "Wall of Acid",
+	"item.towerdefense.spell_war_cry": "War Cry",
+	"item.towerdefense.spell_summon_squad": "Summon Squad",
+	"item.towerdefense.spell_charge": "Charge",
+
 	"entity.towerdefense.flag_arrow": "Flag Arrow",
 	"entity.towerdefense.tower_arrow": "Tower Arrow",
 

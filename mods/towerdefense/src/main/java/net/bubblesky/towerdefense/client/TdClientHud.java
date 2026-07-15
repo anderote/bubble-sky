@@ -75,6 +75,29 @@ public final class TdClientHud {
 			context.fill(barX, barY, barX + filled, barY + barH, 0xFF39C339);
 		}
 
+		// ---- always-on MANA bar (blue) + active class ----------------------------
+		// A slim blue pool beneath the XP bar, reading the synced mana/maxMana. Spells
+		// spend it (SpellItem) and it regenerates server-side; the bar creeps live. When a
+		// class is active, its name + class-level ride alongside so the loadout is legible.
+		int maxMana = ClientProgress.maxMana();
+		if (maxMana > 0) {
+			int manaY = barY + barH + 4; // just below the XP bar
+			Text manaLabel = Text.literal("Mana ").formatted(Formatting.GRAY)
+				.append(Text.literal(ClientProgress.mana() + "/" + maxMana).formatted(Formatting.AQUA));
+			if (ClientProgress.hasClass()) {
+				manaLabel = manaLabel.copy().append(Text.literal("   " + classDisplay()
+						+ " L" + ClientProgress.classLevel()).formatted(Formatting.LIGHT_PURPLE));
+			}
+			context.drawTextWithShadow(mc.textRenderer, manaLabel, 6, manaY, 0xFFFFFF);
+			int manaBarY = manaY + 11;
+			context.fill(barX - 1, manaBarY - 1, barX + barW + 1, manaBarY + barH + 1, 0xFF000000);
+			context.fill(barX, manaBarY, barX + barW, manaBarY + barH, 0xFF202030);
+			int manaFilled = (int) (barW * ClientProgress.manaFraction());
+			if (manaFilled > 0) {
+				context.fill(barX, manaBarY, barX + manaFilled, manaBarY + barH, 0xFF3B7BE0);
+			}
+		}
+
 		String keyName = openKey != null ? openKey.getBoundKeyLocalizedText().getString() : "?";
 		Text line;
 		if (TdClientStatus.active()) {
@@ -102,5 +125,14 @@ public final class TdClientHud {
 		// Sit just above the hotbar (hotbar occupies ~bottom 22px).
 		int y = height - 34;
 		context.drawTextWithShadow(mc.textRenderer, line, x, y, 0xFFFFFF);
+	}
+
+	/** The active class id capitalized for the HUD (e.g. {@code "mage"} → {@code "Mage"}). */
+	private static String classDisplay() {
+		String id = ClientProgress.activeClass();
+		if (id == null || id.isEmpty()) {
+			return "";
+		}
+		return Character.toUpperCase(id.charAt(0)) + id.substring(1);
 	}
 }

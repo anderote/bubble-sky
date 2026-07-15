@@ -1,6 +1,7 @@
 package net.bubblesky.towerdefense.progression;
 
 import java.util.EnumMap;
+import java.util.Map;
 import net.minecraft.nbt.NbtCompound;
 
 /**
@@ -60,11 +61,43 @@ public class PlayerProgress {
 	 */
 	private int gold;
 
+	// ---- class / spellcasting layer (per-life + per-class) -----------------
+	// Additive on top of the permanent global track above. See PlayerClass / ClassProgress.
+	/**
+	 * The class the player is currently playing this life, or {@code null} if they have
+	 * not picked one yet. Set on selection ({@code /td class} or the SelectClass payload);
+	 * drives the loadout, the {@link StatModifiers} per-life bias, and which
+	 * {@link ClassProgress} track earns class XP.
+	 */
+	private PlayerClass activeClass;
+	/**
+	 * Independent progression track per class, created lazily via
+	 * {@link #classProgress(PlayerClass)}. Switching classes preserves each track.
+	 */
+	private final EnumMap<PlayerClass, ClassProgress> classProgress = new EnumMap<>(PlayerClass.class);
+	/** Current mana pool (spell fuel). Clamped to {@code [0, maxMana]}. Phase 2 spends it. */
+	private int mana;
+	/**
+	 * Maximum mana. DERIVED from Intelligence (+ active-class bias) via
+	 * {@link StatModifiers#maxMana(PlayerProgress)} and refreshed by
+	 * {@link #refreshMaxMana()} whenever stats/class change; stored so it can be synced.
+	 */
+	private int maxMana;
+	/**
+	 * Per-player ESSENCE currency (a per-life loot resource, distinct from the gold bank).
+	 * Phase 3 wires the drops + spend sinks; Phase 1 just carries the balance.
+	 */
+	private int essence;
+
 	public PlayerProgress() {
 		this.xp = 0;
 		this.level = 1;
 		this.unspentPoints = 0;
 		this.gold = 0;
+		this.activeClass = null;
+		this.mana = 0;
+		this.maxMana = 0;
+		this.essence = 0;
 	}
 
 	// ---- curve -------------------------------------------------------------
@@ -168,6 +201,108 @@ public class PlayerProgress {
 		return allocations.getOrDefault(stat, 0);
 	}
 
+	// ---- class layer -------------------------------------------------------
+	/** The class the player is playing this life, or {@code null} if unpicked. */
+	public PlayerClass getActiveClass() {
+		return activeClass;
+	}
+
+	/**
+	 * Set (or clear, with {@code null}) the active class. This is a plain field write —
+	 * granting the loadout, applying the per-life bias, and resyncing are the caller's job
+	 * (see {@code ClassLoadout.select} / the {@code /td class} command path), so this POJO
+	 * stays free of any {@code ServerPlayerEntity} dependency.
+	 */
+	public void setActiveClass(PlayerClass cls) {
+		this.activeClass = cls;
+	}
+
+	/**
+	 * Get-or-create this player's independent progression track for {@code cls}. A brand
+	 * new track starts at level 1 with zero XP; the returned instance is live (mutating it
+	 * mutates the stored track), so callers must {@code markDirty()} their store after
+	 * changing it.
+	 */
+	public ClassProgress classProgress(PlayerClass cls) {
+		return classProgress.computeIfAbsent(cls, k -> new ClassProgress());
+	}
+
+	// ---- mana pool ---------------------------------------------------------
+	/** Current mana (spell fuel), always within {@code [0, maxMana]}. */
+	public int getMana() {
+		return mana;
+	}
+
+	/** Overwrite the current mana, clamped to {@code [0, maxMana]}. */
+	public void setMana(int amount) {
+		this.mana = Math.max(0, Math.min(amount, maxMana));
+	}
+
+	/** Add {@code amount} mana (may be negative to spend), clamped to {@code [0, maxMana]}. */
+	public void addMana(int amount) {
+		setMana(this.mana + amount);
+	}
+
+	/** Maximum mana (derived from Intelligence; see {@link #refreshMaxMana()}). */
+	public int getMaxMana() {
+		return maxMana;
+	}
+
+	/** Overwrite the max-mana cap directly (clamped at 0); also re-clamps current mana. */
+	public void setMaxMana(int amount) {
+		this.maxMana = Math.max(0, amount);
+		if (mana > maxMana) {
+			mana = maxMana;
+		}
+	}
+
+	/**
+	 * Recompute {@link #maxMana} from Intelligence (+ active-class bias) via
+	 * {@link StatModifiers#maxMana(PlayerProgress)}, re-clamping current mana to the new
+	 * cap. Called from {@link StatModifiers#apply} so the pool tracks stat/class changes.
+	 * For Phase 1 (no regen yet) an empty pool is topped up to full so the HUD shows a
+	 * meaningful bar; Phase 2's server-side regen supersedes this behavior.
+	 */
+	public void refreshMaxMana() {
+		this.maxMana = StatModifiers.maxMana(this);
+		if (mana > maxMana) {
+			mana = maxMana;
+		}
+		if (mana <= 0) {
+			mana = maxMana;
+		}
+	}
+
+	// ---- essence currency --------------------------------------------------
+	/** Current essence balance (never negative). */
+	public int getEssence() {
+		return essence;
+	}
+
+	/** Credit {@code amount} essence (non-positive amounts ignored). */
+	public void addEssence(int amount) {
+		if (amount > 0) {
+			essence += amount;
+		}
+	}
+
+	/**
+	 * Spend {@code amount} essence, deducting only what is present (never below 0).
+	 *
+	 * @return {@code true} if the whole {@code amount} cleared, {@code false} otherwise
+	 */
+	public boolean spendEssence(int amount) {
+		if (amount <= 0) {
+			return true;
+		}
+		if (essence < amount) {
+			essence = 0;
+			return false;
+		}
+		essence -= amount;
+		return true;
+	}
+
 	// ---- serialization -----------------------------------------------------
 	/** Serialize this record to a fresh compound (xp/level/points + a per-stat sub-tag). */
 	public NbtCompound writeNbt() {
@@ -181,6 +316,19 @@ public class PlayerProgress {
 			alloc.putInt(stat.name(), points(stat));
 		}
 		nbt.put("alloc", alloc);
+
+		// ---- class / spellcasting layer (additive; older saves simply omit these) ----
+		// Active class stored by stable id string ("" = unpicked) so enum reorders are safe.
+		nbt.putString("activeClass", activeClass == null ? "" : activeClass.id());
+		nbt.putInt("mana", mana);
+		nbt.putInt("maxMana", maxMana);
+		nbt.putInt("essence", essence);
+		// One sub-tag per class that has ANY progress, keyed by the class id.
+		NbtCompound classes = new NbtCompound();
+		for (Map.Entry<PlayerClass, ClassProgress> e : classProgress.entrySet()) {
+			classes.put(e.getKey().id(), e.getValue().writeNbt());
+		}
+		nbt.put("classProgress", classes);
 		return nbt;
 	}
 
@@ -196,6 +344,19 @@ public class PlayerProgress {
 			int v = Math.max(0, alloc.getInt(stat.name(), 0));
 			if (v > 0) {
 				p.allocations.put(stat, v);
+			}
+		}
+
+		// ---- class / spellcasting layer (robust to missing keys on older saves) ----
+		p.activeClass = PlayerClass.fromId(nbt.getString("activeClass", "")); // null if "" / unknown
+		p.mana = Math.max(0, nbt.getInt("mana", 0));
+		p.maxMana = Math.max(0, nbt.getInt("maxMana", 0));
+		p.essence = Math.max(0, nbt.getInt("essence", 0));
+		NbtCompound classes = nbt.getCompoundOrEmpty("classProgress");
+		for (String key : classes.getKeys()) {
+			PlayerClass cls = PlayerClass.fromId(key);
+			if (cls != null) {
+				p.classProgress.put(cls, ClassProgress.readNbt(classes.getCompoundOrEmpty(key)));
 			}
 		}
 		return p;

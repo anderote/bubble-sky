@@ -5,6 +5,7 @@ import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.progression.PlayerProgress.Stat;
 import net.bubblesky.towerdefense.progression.net.AllocatePointPayload;
 import net.bubblesky.towerdefense.progression.net.ProgressSyncPayload;
+import net.bubblesky.towerdefense.progression.net.SelectClassPayload;
 import net.bubblesky.towerdefense.registry.ModItems;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -59,6 +60,7 @@ public final class ProgressEvents {
 	public static void register() {
 		// Networking types (registered here on BOTH sides — mod init runs on client + server).
 		PayloadTypeRegistry.playC2S().register(AllocatePointPayload.ID, AllocatePointPayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(SelectClassPayload.ID, SelectClassPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(ProgressSyncPayload.ID, ProgressSyncPayload.CODEC);
 
 		// Server receiver: validate + allocate + re-apply + save + resync.
@@ -73,11 +75,28 @@ public final class ProgressEvents {
 			}
 		});
 
+		// Server receiver: pick a class from the (future) class-pick screen — same effect
+		// as /td class <name> (validate id, set active, grant loadout, re-apply, resync).
+		ServerPlayNetworking.registerGlobalReceiver(SelectClassPayload.ID, (payload, context) -> {
+			ServerPlayerEntity player = context.player();
+			PlayerClass cls = PlayerClass.fromId(payload.classId());
+			if (cls == null) {
+				return; // ignore an unknown class id rather than throw
+			}
+			ClassLoadout.select(player, cls);
+			player.sendMessage(Text.literal("Class set to " + cls.displayName() + ".")
+				.formatted(Formatting.GREEN), false);
+		});
+
 		// XP award on TD-enemy death (own listener, separate from WaveManager's boss bounty).
 		ServerLivingEntityEvents.AFTER_DEATH.register(ProgressEvents::onEntityDeath);
 
 		// Gold-coin auto-collect: every few ticks, vacuum nearby COIN drops into the banks.
 		ServerTickEvents.END_SERVER_TICK.register(ProgressEvents::onCollectTick);
+
+		// Mana regeneration: once per second, refill every player's pool toward its cap at an
+		// Intelligence-scaled rate, resyncing only when a pool actually changed.
+		ServerTickEvents.END_SERVER_TICK.register(ProgressEvents::onManaRegenTick);
 
 		// (Re)apply stats + push a fresh sync whenever the player (re)enters the world.
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> refresh(handler.player));
@@ -137,11 +156,31 @@ public final class ProgressEvents {
 					+ " to spend (press P).")
 				.formatted(Formatting.AQUA, Formatting.BOLD), false);
 		}
+		// XP SPLIT: the SAME activity also feeds the player's ACTIVE class track (if any).
+		// Class XP equals the (Intelligence-scaled) global award, so a class levels at the
+		// same pace as the character while it's the one being played. No active class →
+		// global XP only (unchanged behavior).
+		PlayerClass active = progress.getActiveClass();
+		if (active != null) {
+			ClassProgress classTrack = progress.classProgress(active);
+			int classGained = classTrack.addXp(scaledXp);
+			if (classGained > 0) {
+				int cpts = classTrack.getUnspentPoints();
+				player.sendMessage(Text.literal(active.displayName() + " level up! Now "
+						+ active.displayName() + " level " + classTrack.getLevel() + " — " + cpts
+						+ " class point" + (cpts == 1 ? "" : "s") + " banked.")
+					.formatted(Formatting.LIGHT_PURPLE, Formatting.BOLD), false);
+			}
+		}
 		sync(player, progress);
 	}
 
 	// ---- lifecycle sync ----------------------------------------------------
-	/** Re-apply attribute modifiers and push a fresh snapshot to one player. */
+	/**
+	 * Re-apply attribute modifiers and push a fresh snapshot to one player, then handle the
+	 * per-life class step: prompt an unclassed player to pick, or RE-GRANT the active class's
+	 * loadout so it survives death/respawn/world-change. Fired on join/respawn/world-change.
+	 */
 	public static void refresh(ServerPlayerEntity player) {
 		MinecraftServer server = player.getServer();
 		if (server == null) {
@@ -150,18 +189,62 @@ public final class ProgressEvents {
 		ProgressState state = ProgressState.get(server);
 		PlayerProgress progress = state.forPlayer(player.getUuid());
 		StatModifiers.apply(player, progress);
+		handleClassOnSpawn(player, progress);
 		sync(player, progress);
 	}
 
-	/** Send the current progression snapshot (including the gold bank) to a player's client. */
+	/**
+	 * The respawn / first-spawn class hook: if the player has NO active class, nudge them to
+	 * pick one; otherwise re-grant that class's loadout (gear + placeholder spells) so a
+	 * fresh life is armed. Called from {@link #refresh}.
+	 */
+	private static void handleClassOnSpawn(ServerPlayerEntity player, PlayerProgress progress) {
+		PlayerClass active = progress.getActiveClass();
+		if (active == null) {
+			promptClassPick(player);
+		} else {
+			ClassLoadout.grant(player, active);
+		}
+	}
+
+	/** Chat prompt listing the classes and the {@code /td class <name>} pick command. */
+	private static void promptClassPick(ServerPlayerEntity player) {
+		player.sendMessage(Text.literal("Choose your class! Run ")
+				.formatted(Formatting.GOLD)
+				.append(Text.literal("/td class <mage|ranger|engineer|warlord>").formatted(Formatting.YELLOW))
+				.append(Text.literal(" to pick a loadout for this life.").formatted(Formatting.GOLD)),
+			false);
+		player.sendMessage(Text.literal("  mage = spellpower · ranger = archery · engineer = builder · "
+				+ "warlord = melee. (Bare /td class lists them.)")
+			.formatted(Formatting.GRAY), false);
+	}
+
+	/**
+	 * Send the current progression snapshot to a player's client: the global track (xp /
+	 * level / points / gold / allocations) plus the class layer (mana / maxMana / active
+	 * class id + that class's own level / within-level xp / unspent points). Class fields
+	 * are zero/empty when unclassed.
+	 */
 	public static void sync(ServerPlayerEntity player, PlayerProgress progress) {
 		int[] alloc = new int[Stat.values().length];
 		for (Stat stat : Stat.values()) {
 			alloc[stat.ordinal()] = progress.points(stat);
 		}
+		PlayerClass active = progress.getActiveClass();
+		String classId = active == null ? "" : active.id();
+		int classLevel = 0;
+		int classXp = 0;
+		int classPoints = 0;
+		if (active != null) {
+			ClassProgress track = progress.classProgress(active);
+			classLevel = track.getLevel();
+			classXp = track.getXp();
+			classPoints = track.getUnspentPoints();
+		}
 		ServerPlayNetworking.send(player,
 			new ProgressSyncPayload(progress.getXp(), progress.getLevel(), progress.getUnspentPoints(),
-				progress.getGold(), alloc));
+				progress.getGold(), alloc,
+				progress.getMana(), progress.getMaxMana(), classId, classLevel, classXp, classPoints));
 	}
 
 	// ---- gold-coin auto-collect (vacuum) -----------------------------------
@@ -208,6 +291,38 @@ public final class ProgressEvents {
 		if (collected > 0) {
 			// Equal shared income: each collected coin credits EVERY online player's bank.
 			TdCommand.grantCoinsToAll(server, collected);
+		}
+	}
+
+	// ---- mana regeneration -------------------------------------------------
+	/** How often (server ticks) mana regen ticks — once per second. */
+	private static final int MANA_REGEN_INTERVAL = 20;
+	/** Tick accumulator for the once-per-second mana regen sweep. */
+	private static int manaTicker = 0;
+
+	/**
+	 * Once per second, credit each online player's mana pool at their Intelligence-scaled
+	 * rate ({@link StatModifiers#manaRegenPerSecond}), clamped to their max. A pool that
+	 * actually changed (i.e. was below full) is resynced so the HUD bar creeps up live; a
+	 * full pool costs nothing and sends nothing, so the payload is never spammed.
+	 */
+	private static void onManaRegenTick(MinecraftServer server) {
+		if (++manaTicker < MANA_REGEN_INTERVAL) {
+			return;
+		}
+		manaTicker = 0;
+		ProgressState state = ProgressState.get(server);
+		for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+			PlayerProgress progress = state.forPlayer(player.getUuid());
+			int before = progress.getMana();
+			if (before >= progress.getMaxMana()) {
+				continue; // already full — nothing to regen, nothing to sync
+			}
+			progress.addMana(StatModifiers.manaRegenPerSecond(progress));
+			if (progress.getMana() != before) {
+				state.markDirty();
+				sync(player, progress);
+			}
 		}
 	}
 }

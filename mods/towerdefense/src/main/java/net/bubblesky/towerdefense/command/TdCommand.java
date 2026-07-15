@@ -13,6 +13,9 @@ import net.bubblesky.towerdefense.game.TdMarkers;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.item.TowerBlockItem;
 import net.bubblesky.towerdefense.layout.LayoutStore;
+import net.bubblesky.towerdefense.progression.ClassLoadout;
+import net.bubblesky.towerdefense.progression.ClassProgress;
+import net.bubblesky.towerdefense.progression.PlayerClass;
 import net.bubblesky.towerdefense.progression.PlayerProgress;
 import net.bubblesky.towerdefense.progression.ProgressEvents;
 import net.bubblesky.towerdefense.progression.ProgressState;
@@ -169,6 +172,11 @@ public final class TdCommand {
 				.executes(ctx -> arena(ctx, DEFAULT_ARENA_DISTANCE))
 				.then(CommandManager.argument("distance", IntegerArgumentType.integer(4, 128))
 					.executes(ctx -> arena(ctx, IntegerArgumentType.getInteger(ctx, "distance")))))
+			.then(CommandManager.literal("class")
+				// No arg: list the classes + your current pick. With a name: select it.
+				.executes(TdCommand::classInfo)
+				.then(CommandManager.argument("name", StringArgumentType.word())
+					.executes(ctx -> classSelect(ctx, StringArgumentType.getString(ctx, "name")))))
 			.then(CommandManager.literal("restart").executes(TdCommand::restart))
 			.then(CommandManager.literal("status").executes(TdCommand::status))
 			.then(CommandManager.literal("reset").executes(TdCommand::reset))
@@ -214,6 +222,7 @@ public final class TdCommand {
 		line(src, "/td shop", "list buyable towers and their coin prices");
 		line(src, "/td buy <type>", "spend coins for a placeable tower block — place it to raise the tower");
 		line(src, "/td upgrade", "spend coins to raise the tier of the tower you're aiming at");
+		line(src, "/td class [name]", "pick a class for this life (mage/ranger/engineer/warlord); no arg lists them");
 		line(src, "/td hire <type>", "spend coins to summon an allied soldier (footman/archer/knight)");
 		line(src, "/td command <order> [flag]", "order your allies: hold/attack/follow/move (flag = anchor)");
 		line(src, "/td status", "show wave/Idol info (and the tower you're looking at)");
@@ -794,6 +803,57 @@ public final class TdCommand {
 		ctx.getSource().sendFeedback(() -> Text.literal("Arena restarted — good luck! (/td wave to start)")
 			.formatted(Formatting.GOLD), true);
 		return result;
+	}
+
+	// ---- classes -----------------------------------------------------------
+	/**
+	 * {@code /td class} with no argument: list the four classes (with the player's own
+	 * level in each) and show which one is currently active, plus the how-to-pick line.
+	 */
+	private static int classInfo(CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		PlayerProgress progress = progressOf(player);
+		PlayerClass active = progress == null ? null : progress.getActiveClass();
+
+		src.sendFeedback(() -> Text.literal("Classes").formatted(Formatting.GOLD), false);
+		for (PlayerClass cls : PlayerClass.values()) {
+			int lvl = progress == null ? 1 : progress.classProgress(cls).getLevel();
+			boolean isActive = cls == active;
+			line(src, cls.id(), "level " + lvl + " (favors " + cls.favoredStat().name().toLowerCase(java.util.Locale.ROOT)
+				+ ")" + (isActive ? "  <- active" : ""));
+		}
+		src.sendFeedback(() -> Text.literal("  Current: "
+				+ (active == null ? "none — pick one!" : active.displayName()))
+			.formatted(Formatting.AQUA), false);
+		src.sendFeedback(() -> Text.literal("  Pick with /td class <mage|ranger|engineer|warlord>.")
+			.formatted(Formatting.GRAY), false);
+		return 1;
+	}
+
+	/**
+	 * {@code /td class <name>}: adopt that class for this life. Validates the id, then routes
+	 * through {@link ClassLoadout#select} (sets active class, grants the loadout into the
+	 * reserved hotbar slots, applies the per-life stat bias + max-mana, and resyncs the HUD).
+	 */
+	private static int classSelect(CommandContext<ServerCommandSource> ctx, String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		PlayerClass cls = PlayerClass.fromId(name);
+		if (cls == null) {
+			src.sendError(Text.literal("Unknown class '" + name
+				+ "'. Choose mage, ranger, engineer or warlord."));
+			return 0;
+		}
+		ClassLoadout.select(player, cls);
+		ClassProgress track = ProgressState.get(src.getServer())
+			.forPlayer(player.getUuid()).classProgress(cls);
+		final int lvl = track.getLevel();
+		src.sendFeedback(() -> Text.literal("You are now a " + cls.displayName()
+				+ " (class level " + lvl + "). Loadout granted to your hotbar — spell items are "
+				+ "placeholders for now.")
+			.formatted(Formatting.GREEN), false);
+		return 1;
 	}
 
 	/** Snap a gate position to the terrain surface at its (x,z) so it isn't buried. */
