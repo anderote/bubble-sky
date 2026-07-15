@@ -1,11 +1,14 @@
 package net.bubblesky.towerdefense.colony;
 
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.command.argument.BlockArgumentParser;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.HopperBlockEntity;
 import net.minecraft.entity.ItemEntity;
@@ -26,6 +29,7 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Direction;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -72,6 +76,11 @@ public class ColonyWorkGoal extends Goal {
 	private static final int FX_STRIDE = 6;
 	/** Ticks between melee swings while hunting. */
 	private static final int ATTACK_COOLDOWN = 12;
+	/** Ticks of "laying" between each placed wall block, so a segment rises visibly over time. */
+	private static final int BUILD_INTERVAL = 12;
+	/** Reach to place a wall cell (a touch longer than mining REACH so a colonist standing at the
+	 *  base can top out a full-height column without having to climb the wall it is raising). */
+	private static final double BUILD_REACH_SQ = 5.5 * 5.5;
 	/** Ticks between job re-evaluations (targets persist between cycles). */
 	private static final int DECIDE_INTERVAL = 12;
 	/** Ticks between navigation re-paths so we don't spam the navigator. */
@@ -98,6 +107,8 @@ public class ColonyWorkGoal extends Goal {
 	private int ignoreClearTimer;
 	private int breakProgress;
 	private int lastBreakStage = -1;
+	/** Countdown between wall-block placements while executing a BUILD target. */
+	private int buildTimer;
 
 	/** The block currently being dug (ore for MINE, log for CHOP), or null. */
 	@Nullable
@@ -143,6 +154,14 @@ public class ColonyWorkGoal extends Goal {
 		if (++ignoreClearTimer >= IGNORE_CLEAR_INTERVAL) {
 			ignoreClearTimer = 0;
 			ignored.clear();
+		}
+		// An assigned defensive-wall task OVERRIDES the rule-based brain: while a build target
+		// is present we skip decide() entirely and raise the segment; stepBuild clears the
+		// target (→ IDLE → decide) the moment the wall is complete, restoring normal work.
+		ColonistEntity.BuildTarget build = colonist.getBuildTarget();
+		if (build != null) {
+			stepBuild(world, build);
+			return;
 		}
 		if (--decisionTimer <= 0) {
 			decisionTimer = DECIDE_INTERVAL;
@@ -219,6 +238,9 @@ public class ColonyWorkGoal extends Goal {
 				targetAnimal = findNearestAnimal(world);
 				yield targetAnimal != null;
 			}
+			// BUILD is never auto-picked by decide() (it is not in the priority rotation); it
+			// only "has work" when a foreman/command has handed the colonist a target.
+			case BUILD -> colonist.getBuildTarget() != null;
 			default -> false;
 		};
 	}
@@ -312,6 +334,103 @@ public class ColonyWorkGoal extends Goal {
 		targetBlock = null;
 		breakProgress = 0;
 		lastBreakStage = -1;
+	}
+
+	// ---- BUILD -------------------------------------------------------------
+	/**
+	 * Raise (or, in {@code repairOnly} mode, patch) the assigned wall segment — the defensive
+	 * mirror of the Warlord. The segment is a line of {@link ColonistEntity.BuildTarget#length()}
+	 * columns stepping one block per column along {@link ColonistEntity.BuildTarget#dir()} from
+	 * the origin, each column filled from {@code origin.y} up for {@code height} blocks.
+	 *
+	 * <p>Each tick we pick the LOWEST cell still needing fill (column by column, bottom-up), path
+	 * to it if out of reach, and — paced by {@link #BUILD_INTERVAL} so the wall rises visibly —
+	 * free-place one block there (no inventory cost: the colony is a helper). "Needs fill" is air
+	 * or a replaceable block (grass, water); {@code repairOnly} restricts it to air only, so a
+	 * repair never overwrites standing blocks. Existing solid/wall blocks are always skipped, so a
+	 * build never griefs terrain. When no cell remains the segment is done → clear the target,
+	 * dropping the colonist back to rule-based work.
+	 */
+	private void stepBuild(ServerWorld world, ColonistEntity.BuildTarget target) {
+		BlockPos cell = nextBuildCell(world, target);
+		if (cell == null) {
+			// Segment complete — release the colonist and let decide() run immediately.
+			colonist.clearBuildTarget();
+			clearTargets(world);
+			decisionTimer = 0;
+			buildTimer = 0;
+			return;
+		}
+		double d2 = colonist.squaredDistanceTo(cell.getX() + 0.5, cell.getY() + 0.5, cell.getZ() + 0.5);
+		boolean reachable = d2 <= BUILD_REACH_SQ;
+		if (!reachable && stuckTimer < STUCK_LIMIT) {
+			// Walk to the base of the segment (its origin) — a stable stand-point from which the
+			// whole column tops out within BUILD_REACH — re-pathing until we arrive or time out.
+			BlockPos origin = target.origin();
+			travelTo(origin.getX() + 0.5, origin.getY(), origin.getZ() + 0.5);
+			stuckTimer++;
+			return;
+		}
+		// In reach (or we gave up walking): stop, face the cell, and lay one block per interval.
+		stuckTimer = 0;
+		colonist.getNavigation().stop();
+		colonist.getLookControl().lookAt(cell.getX() + 0.5, cell.getY() + 0.5, cell.getZ() + 0.5);
+		colonist.swingHand(Hand.MAIN_HAND);
+		if (buildTimer > 0) {
+			buildTimer--;
+			return;
+		}
+		buildTimer = BUILD_INTERVAL;
+		placeWallBlock(world, cell, resolveBuildBlock(target.blockId()));
+	}
+
+	/**
+	 * The next cell in the segment that still needs a block, scanning columns in order and each
+	 * column bottom-up, or {@code null} when the whole segment is filled.
+	 */
+	@Nullable
+	private BlockPos nextBuildCell(ServerWorld world, ColonistEntity.BuildTarget target) {
+		BlockPos origin = target.origin();
+		Direction dir = target.dir();
+		BlockPos.Mutable cursor = new BlockPos.Mutable();
+		for (int i = 0; i < target.length(); i++) {
+			for (int h = 0; h < target.height(); h++) {
+				cursor.set(origin.getX() + dir.getOffsetX() * i, origin.getY() + h,
+					origin.getZ() + dir.getOffsetZ() * i);
+				if (needsFill(world.getBlockState(cursor), target.repairOnly())) {
+					return cursor.toImmutable();
+				}
+			}
+		}
+		return null;
+	}
+
+	/** True if a cell should be (re)filled: air always; a replaceable block only for a fresh raise. */
+	private static boolean needsFill(BlockState state, boolean repairOnly) {
+		if (state.isAir()) {
+			return true;
+		}
+		return !repairOnly && state.isReplaceable();
+	}
+
+	/** Free-place a wall block with a light placement thud + block-dust puff for feedback. */
+	private void placeWallBlock(ServerWorld world, BlockPos pos, BlockState state) {
+		if (!world.setBlockState(pos, state)) {
+			return;
+		}
+		world.playSound(null, pos, state.getSoundGroup().getPlaceSound(),
+			SoundCategory.BLOCKS, 0.7f, 1.0f);
+		world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, state),
+			pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, 6, 0.3, 0.3, 0.3, 0.0);
+	}
+
+	/** Resolve a build block id to a state, falling back to cobblestone on any invalid/unknown id. */
+	private static BlockState resolveBuildBlock(String blockId) {
+		try {
+			return BlockArgumentParser.block(Registries.BLOCK, blockId, false).blockState();
+		} catch (CommandSyntaxException e) {
+			return Blocks.COBBLESTONE.getDefaultState();
+		}
 	}
 
 	// ---- HAUL --------------------------------------------------------------

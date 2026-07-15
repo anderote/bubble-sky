@@ -1,5 +1,6 @@
 package net.bubblesky.towerdefense.bridge;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -10,10 +11,15 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import net.bubblesky.towerdefense.bridge.AgentBridge.BridgeException;
 import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
+import net.bubblesky.towerdefense.colony.ColonistEntity;
+import net.bubblesky.towerdefense.colony.ColonyState;
 import net.bubblesky.towerdefense.game.WarlordDirector;
+import net.bubblesky.towerdefense.registry.ModEntities;
 import net.bubblesky.towerdefense.layout.LayoutStore;
 import net.bubblesky.towerdefense.progression.PlayerClass;
 import net.bubblesky.towerdefense.progression.PlayerProgress;
@@ -34,6 +40,7 @@ import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 
 /**
  * The bridge's HTTP endpoints. All world access happens inside
@@ -94,6 +101,10 @@ final class BridgeHandlers {
 		http.createContext("/td/battlefield", bridge.secure(this::tdBattlefield));
 		http.createContext("/td/waveplan", bridge.secure(this::tdWavePlan));
 		http.createContext("/td/taunt", bridge.secure(this::tdTaunt));
+		// LLM colonists (#18a): colony snapshot + colonist job/build assignment + priorities.
+		http.createContext("/td/colony/assign", bridge.secure(this::tdColonyAssign));
+		http.createContext("/td/colony/priorities", bridge.secure(this::tdColonyPriorities));
+		http.createContext("/td/colony", bridge.secure(this::tdColony));
 	}
 
 	// ---------- Enemy AI Warlord (#17a) endpoints ----------
@@ -280,6 +291,252 @@ final class BridgeHandlers {
 			}
 		}
 		return weights.isEmpty() ? null : new WarlordDirector.SpawnEmphasis(null, null, weights);
+	}
+
+	// ---------- LLM colonists (#18a) endpoints ----------
+
+	/**
+	 * {@code GET /td/colony} — the snapshot the external foreman agent reads to steer the colony.
+	 * Shape:
+	 * <pre>{ok, flags[{name,x,y,z,dim}],
+	 *      colonists[{name, uuid, x, y, z, job, priorities[], owner, invCount,
+	 *                 target:{x,y,z,length,dir,height,block,repairOnly}|null}]}</pre>
+	 * {@code job}/{@code priorities} use the STABLE lowercase job strings
+	 * ({@code mine/chop/hunt/forage/haul/idle/build}) that map 1:1 to {@link ColonistEntity.Job}.
+	 * Every live colonist in the arena world (found by {@link ModEntities#COLONIST} type) is
+	 * listed; {@code owner} is the recruiter's name when online, else their UUID string.
+	 */
+	private Object tdColony(HttpExchange exchange, JsonBody body) {
+		return bridge.runOnServer(() -> {
+			MinecraftServer server = bridge.server();
+			ServerWorld world = colonyWorld(server);
+
+			Map<String, Object> out = new LinkedHashMap<>();
+			out.put("ok", true);
+
+			// Colony home flags (the anchors colonists bind to).
+			List<Map<String, Object>> flags = new ArrayList<>();
+			for (ColonyState.Flag f : ColonyState.get(server).flags) {
+				Map<String, Object> m = new LinkedHashMap<>();
+				m.put("name", f.name());
+				m.put("x", f.pos().getX());
+				m.put("y", f.pos().getY());
+				m.put("z", f.pos().getZ());
+				m.put("dim", f.dim());
+				flags.add(m);
+			}
+			out.put("flags", flags);
+
+			// Every live colonist in the arena world.
+			List<Map<String, Object>> colonists = new ArrayList<>();
+			for (ColonistEntity c : world.getEntitiesByType(ModEntities.COLONIST, ColonistEntity::isAlive)) {
+				colonists.add(colonistJson(server, c));
+			}
+			out.put("colonists", colonists);
+			return out;
+		});
+	}
+
+	/**
+	 * {@code POST /td/colony/assign {colonist, job, target?{x,y,z}, length?, dir?, height?, block?,
+	 * repairOnly?}} — resolve the colonist by UUID or (case-insensitive) name, validate the job,
+	 * and apply it on the server thread. {@code job=build} REQUIRES a {@code target} and installs a
+	 * clamped build task (length ≤ 16, height ≤ 6, block defaulted to cobblestone) that overrides
+	 * the rule-based brain until the segment is finished; any other job clears an existing build
+	 * task and sets the job directly. Echoes {@code {ok, colonist, job, target?}}.
+	 */
+	private Object tdColonyAssign(HttpExchange exchange, JsonBody body) {
+		String who = body.requireString("colonist");
+		String jobStr = body.requireString("job").trim();
+		ColonistEntity.Job job;
+		try {
+			job = ColonistEntity.Job.valueOf(jobStr.toUpperCase(Locale.ROOT));
+		} catch (IllegalArgumentException e) {
+			throw new BridgeException(400, "unknown job '" + jobStr
+				+ "' (use mine, chop, hunt, forage, haul, idle or build)");
+		}
+
+		// For BUILD, parse + validate the target struct up front (proper 400s off the server thread).
+		final ColonistEntity.BuildTarget buildTarget;
+		if (job == ColonistEntity.Job.BUILD) {
+			if (!body.has("target") || !body.raw().get("target").isJsonObject()) {
+				throw new BridgeException(400, "job 'build' requires a target {x,y,z}");
+			}
+			JsonObject t = body.raw().getAsJsonObject("target");
+			if (!t.has("x") || !t.has("y") || !t.has("z")) {
+				throw new BridgeException(400, "build target must be {x,y,z}");
+			}
+			BlockPos origin = new BlockPos(t.get("x").getAsInt(), t.get("y").getAsInt(), t.get("z").getAsInt());
+			int length = body.getInt("length", 4);
+			int height = body.getInt("height", 3);
+			Direction dir = ColonistEntity.parseDirection(body.getString("dir", "east"));
+			// Validate the block string (400 on a bad id) and store its canonical id.
+			BlockState blockState = parseBlock(body.getString("block", ColonistEntity.DEFAULT_BUILD_BLOCK));
+			String blockId = Registries.BLOCK.getId(blockState.getBlock()).toString();
+			boolean repairOnly = body.has("repairOnly") && body.raw().get("repairOnly").getAsBoolean();
+			buildTarget = new ColonistEntity.BuildTarget(origin, length, dir, height, blockId, repairOnly);
+		} else {
+			buildTarget = null;
+		}
+
+		Map<String, Object> out = bridge.runOnServer(() -> {
+			ColonistEntity c = findColonist(bridge.server(), who);
+			if (c == null) {
+				Map<String, Object> miss = new LinkedHashMap<>();
+				miss.put("ok", false);
+				miss.put("error", "no colonist matched '" + who + "' (by uuid or name)");
+				return miss;
+			}
+			if (job == ColonistEntity.Job.BUILD) {
+				c.setBuildTarget(buildTarget); // clamps + switches the colonist to BUILD
+			} else {
+				c.clearBuildTarget(); // drop any pending wall task…
+				c.setJob(job);          // …and take the plain job
+			}
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("ok", true);
+			m.put("colonist", c.getColonistName());
+			m.put("uuid", c.getUuidAsString());
+			m.put("job", c.getJob().name().toLowerCase(Locale.ROOT));
+			m.put("target", buildTargetJson(c.getBuildTarget()));
+			return m;
+		});
+		if (Boolean.FALSE.equals(out.get("ok"))) {
+			throw new BridgeException(404, (String) out.get("error"));
+		}
+		return out;
+	}
+
+	/**
+	 * {@code POST /td/colony/priorities {colonist, priorities:[job,...]}} — validate every entry
+	 * against {@link ColonistEntity.Job} and set the colonist's priority ordering (gather types
+	 * missing from the list are appended so the rule-based brain still has a full rotation). Echoes
+	 * {@code {ok, colonist, priorities[]}}.
+	 */
+	private Object tdColonyPriorities(HttpExchange exchange, JsonBody body) {
+		String who = body.requireString("colonist");
+		JsonArray arr = body.getArray("priorities");
+		List<ColonistEntity.Job> order = new ArrayList<>();
+		for (JsonElement el : arr) {
+			String s = el.getAsString().trim();
+			try {
+				ColonistEntity.Job j = ColonistEntity.Job.valueOf(s.toUpperCase(Locale.ROOT));
+				if (!order.contains(j)) {
+					order.add(j);
+				}
+			} catch (IllegalArgumentException e) {
+				throw new BridgeException(400, "unknown job in priorities: '" + s + "'");
+			}
+		}
+		// Guarantee every gather type is present so decide() always has a full rotation.
+		for (ColonistEntity.Job j : List.of(ColonistEntity.Job.HAUL, ColonistEntity.Job.MINE,
+				ColonistEntity.Job.CHOP, ColonistEntity.Job.FORAGE, ColonistEntity.Job.HUNT)) {
+			if (!order.contains(j)) {
+				order.add(j);
+			}
+		}
+
+		Map<String, Object> out = bridge.runOnServer(() -> {
+			ColonistEntity c = findColonist(bridge.server(), who);
+			if (c == null) {
+				Map<String, Object> miss = new LinkedHashMap<>();
+				miss.put("ok", false);
+				miss.put("error", "no colonist matched '" + who + "' (by uuid or name)");
+				return miss;
+			}
+			c.getPriorities().clear();
+			c.getPriorities().addAll(order);
+			List<String> echo = new ArrayList<>();
+			for (ColonistEntity.Job j : c.getPriorities()) {
+				echo.add(j.name().toLowerCase(Locale.ROOT));
+			}
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("ok", true);
+			m.put("colonist", c.getColonistName());
+			m.put("priorities", echo);
+			return m;
+		});
+		if (Boolean.FALSE.equals(out.get("ok"))) {
+			throw new BridgeException(404, (String) out.get("error"));
+		}
+		return out;
+	}
+
+	/** The arena world colonists live in (from the arena state), falling back to the overworld. */
+	private ServerWorld colonyWorld(MinecraftServer server) {
+		ServerWorld world = TdArenaState.get(server).getArenaWorld(server);
+		return world != null ? world : server.getOverworld();
+	}
+
+	/** Resolve a colonist across the arena world by UUID string first, else case-insensitive name. */
+	private ColonistEntity findColonist(MinecraftServer server, String who) {
+		UUID uuid = null;
+		try {
+			uuid = UUID.fromString(who);
+		} catch (IllegalArgumentException ignored) {
+			// not a UUID — fall through to name matching
+		}
+		ColonistEntity byName = null;
+		for (ColonistEntity c : colonyWorld(server)
+				.getEntitiesByType(ModEntities.COLONIST, ColonistEntity::isAlive)) {
+			if (uuid != null && c.getUuid().equals(uuid)) {
+				return c;
+			}
+			if (byName == null && c.getColonistName().equalsIgnoreCase(who)) {
+				byName = c;
+			}
+		}
+		return byName;
+	}
+
+	/** Serialize a colonist to the {@code /td/colony} JSON shape (server thread). */
+	private Map<String, Object> colonistJson(MinecraftServer server, ColonistEntity c) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("name", c.getColonistName());
+		m.put("uuid", c.getUuidAsString());
+		m.put("x", round(c.getX()));
+		m.put("y", round(c.getY()));
+		m.put("z", round(c.getZ()));
+		m.put("job", c.getJob().name().toLowerCase(Locale.ROOT));
+		List<String> prio = new ArrayList<>();
+		for (ColonistEntity.Job j : c.getPriorities()) {
+			prio.add(j.name().toLowerCase(Locale.ROOT));
+		}
+		m.put("priorities", prio);
+		m.put("owner", ownerLabel(server, c.getOwner()));
+		int invCount = 0;
+		for (int i = 0; i < c.getInventory().size(); i++) {
+			invCount += c.getInventory().getStack(i).getCount();
+		}
+		m.put("invCount", invCount);
+		m.put("target", buildTargetJson(c.getBuildTarget()));
+		return m;
+	}
+
+	/** A build target as {@code {x,y,z,length,dir,height,block,repairOnly}}, or {@code null}. */
+	private Map<String, Object> buildTargetJson(ColonistEntity.BuildTarget t) {
+		if (t == null) {
+			return null;
+		}
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("x", t.origin().getX());
+		m.put("y", t.origin().getY());
+		m.put("z", t.origin().getZ());
+		m.put("length", t.length());
+		m.put("dir", t.dir().asString());
+		m.put("height", t.height());
+		m.put("block", t.blockId());
+		m.put("repairOnly", t.repairOnly());
+		return m;
+	}
+
+	/** The owner's online name if resolvable, else the raw UUID string (or {@code null} if none). */
+	private String ownerLabel(MinecraftServer server, UUID owner) {
+		if (owner == null) {
+			return null;
+		}
+		ServerPlayerEntity p = server.getPlayerManager().getPlayer(owner);
+		return p != null ? p.getName().getString() : owner.toString();
 	}
 
 	// ---------- /flags : GET (list) | POST {name?,x,y,z,dim?} | DELETE ?name= ----------

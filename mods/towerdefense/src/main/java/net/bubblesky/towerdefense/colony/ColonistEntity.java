@@ -21,6 +21,7 @@ import net.minecraft.storage.WriteView;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.world.LocalDifficulty;
 import net.minecraft.world.ServerWorldAccess;
 import net.minecraft.world.World;
@@ -53,8 +54,38 @@ public class ColonistEntity extends PathAwareEntity {
 	/** Number of carry slots in a colonist's backpack. */
 	public static final int INVENTORY_SIZE = 9;
 
-	/** The work types a colonist can be assigned. IDLE is the "nothing to do" fallback. */
-	public enum Job { MINE, CHOP, HUNT, FORAGE, HAUL, IDLE }
+	/**
+	 * The work types a colonist can be assigned. IDLE is the "nothing to do" fallback.
+	 *
+	 * <p>{@code BUILD} is the defensive job introduced by the LLM-foreman layer (#18): it is
+	 * NOT part of the rule-based {@link #priorities} rotation — a colonist only enters BUILD
+	 * when an external foreman (or a command) hands it a {@link BuildTarget}, and it drops back
+	 * to rule-based work the moment that target is cleared. The lowercase of each constant is the
+	 * STABLE wire string the bridge JSON uses ({@code mine/chop/hunt/forage/haul/idle/build}).
+	 */
+	public enum Job { MINE, CHOP, HUNT, FORAGE, HAUL, IDLE, BUILD }
+
+	/** Hard cap on the length (cells along {@code dir}) of an assigned build segment. */
+	public static final int MAX_BUILD_LENGTH = 16;
+	/** Hard cap on the height (cells raised per column) of an assigned build segment. */
+	public static final int MAX_BUILD_HEIGHT = 6;
+	/** Fallback wall material when a build target names no (or an invalid) block. */
+	public static final String DEFAULT_BUILD_BLOCK = "minecraft:cobblestone";
+
+	/**
+	 * An assigned defensive-wall task: raise (or, when {@code repairOnly}, patch) a straight
+	 * wall segment. The segment is a line of {@code length} columns starting at {@code origin}
+	 * and stepping one block per column along {@code dir}; each column is filled from
+	 * {@code origin.y} upward for {@code height} blocks with {@code blockId}. When every cell is
+	 * present the task is complete and the colonist releases back to rule-based work.
+	 *
+	 * <p>The bounds are clamped to {@link #MAX_BUILD_LENGTH}/{@link #MAX_BUILD_HEIGHT} and the
+	 * block string defaulted to {@link #DEFAULT_BUILD_BLOCK} by {@link #setBuildTarget} so no
+	 * caller (bridge, command, reload) can drive an unbounded or invalid task.
+	 */
+	public record BuildTarget(BlockPos origin, int length, Direction dir, int height,
+			String blockId, boolean repairOnly) {
+	}
 
 	/** The auto-name pool — colonists are christened from here on spawn (round-robin-ish). */
 	private static final String[] NAME_POOL = {
@@ -79,6 +110,9 @@ public class ColonistEntity extends PathAwareEntity {
 	/** Ore keyword the MINE job seeks (e.g. {@code "iron"}); {@code null} = the default valuable set. */
 	@Nullable
 	private String oreFilter;
+	/** The assigned defensive-wall task (from the LLM foreman / command); {@code null} = none. */
+	@Nullable
+	private BuildTarget buildTarget;
 	/** The colonist's carry backpack — filled by gather jobs, emptied by HAUL. */
 	private final SimpleInventory inventory = new SimpleInventory(INVENTORY_SIZE);
 	/** One-shot latch so the "no chest to haul to" warning is only announced once. */
@@ -198,6 +232,40 @@ public class ColonistEntity extends PathAwareEntity {
 		this.oreFilter = oreFilter;
 	}
 
+	/** The colonist's assigned defensive-wall task, or {@code null} when none is set. */
+	@Nullable
+	public BuildTarget getBuildTarget() {
+		return buildTarget;
+	}
+
+	/**
+	 * Assign (or, with {@code null}, clear) a defensive-wall task. A non-null target is
+	 * defensively CLAMPED to the length/height caps and defaulted to cobblestone if it names
+	 * no block, then the colonist is switched to {@link Job#BUILD} so the work goal takes it
+	 * over. Passing {@code null} delegates to {@link #clearBuildTarget()} — the colonist drops
+	 * back to rule-based work. This is the only steer-from-outside entry point for BUILD.
+	 */
+	public void setBuildTarget(@Nullable BuildTarget target) {
+		if (target == null) {
+			clearBuildTarget();
+			return;
+		}
+		int len = Math.max(1, Math.min(MAX_BUILD_LENGTH, target.length()));
+		int height = Math.max(1, Math.min(MAX_BUILD_HEIGHT, target.height()));
+		Direction dir = target.dir() != null ? target.dir() : Direction.EAST;
+		String blockId = (target.blockId() == null || target.blockId().isBlank())
+			? DEFAULT_BUILD_BLOCK : target.blockId();
+		this.buildTarget = new BuildTarget(
+			target.origin().toImmutable(), len, dir, height, blockId, target.repairOnly());
+		setJob(Job.BUILD);
+	}
+
+	/** Clear any assigned wall task and return the colonist to rule-based work (IDLE → decide). */
+	public void clearBuildTarget() {
+		this.buildTarget = null;
+		setJob(Job.IDLE);
+	}
+
 	public SimpleInventory getInventory() {
 		return inventory;
 	}
@@ -257,6 +325,7 @@ public class ColonistEntity extends PathAwareEntity {
 			case HUNT -> { glyph = "🏹"; task = "hunting"; }
 			case FORAGE -> { glyph = "🧺"; task = "foraging"; }
 			case HAUL -> { glyph = "📦"; task = "hauling"; }
+			case BUILD -> { glyph = "🧱"; task = "building"; }
 			default -> { glyph = "💤"; task = "idle"; }
 		}
 		this.setCustomName(Text.literal(glyph + " " + name)
@@ -288,6 +357,17 @@ public class ColonistEntity extends PathAwareEntity {
 		}
 		if (oreFilter != null) {
 			view.putString("OreFilter", oreFilter);
+		}
+		// The assigned defensive-wall task, so an in-progress build survives a reload.
+		if (buildTarget != null) {
+			view.putInt("BuildX", buildTarget.origin().getX());
+			view.putInt("BuildY", buildTarget.origin().getY());
+			view.putInt("BuildZ", buildTarget.origin().getZ());
+			view.putInt("BuildLength", buildTarget.length());
+			view.putString("BuildDir", buildTarget.dir().asString());
+			view.putInt("BuildHeight", buildTarget.height());
+			view.putString("BuildBlock", buildTarget.blockId());
+			view.putBoolean("BuildRepairOnly", buildTarget.repairOnly());
 		}
 		// The carried backpack — round-tripped via the vanilla inventory codec.
 		Inventories.writeData(view.get("Backpack"), inventory.getHeldStacks());
@@ -327,6 +407,17 @@ public class ColonistEntity extends PathAwareEntity {
 			}
 		});
 		this.oreFilter = view.getOptionalString("OreFilter").orElse(null);
+		// Restore any in-progress defensive-wall task (already clamped when it was assigned).
+		if (view.getOptionalInt("BuildX").isPresent()) {
+			Direction dir = parseDirection(view.getString("BuildDir", "east"));
+			this.buildTarget = new BuildTarget(
+				new BlockPos(view.getInt("BuildX", 0), view.getInt("BuildY", 0), view.getInt("BuildZ", 0)),
+				view.getInt("BuildLength", 4), dir, view.getInt("BuildHeight", 3),
+				view.getString("BuildBlock", DEFAULT_BUILD_BLOCK),
+				view.getBoolean("BuildRepairOnly", false));
+		} else {
+			this.buildTarget = null;
+		}
 		view.getOptionalReadView("Backpack").ifPresent(
 			backpack -> Inventories.readData(backpack, inventory.getHeldStacks()));
 		refreshNameTag();
@@ -339,6 +430,24 @@ public class ColonistEntity extends PathAwareEntity {
 		} catch (IllegalArgumentException e) {
 			return fallback;
 		}
+	}
+
+	/**
+	 * Parse a horizontal wall direction from a lenient token — cardinal name / initial / axis
+	 * alias (e.g. {@code east}/{@code e}/{@code +x}/{@code x} → EAST). Anything unrecognised
+	 * (including a vertical direction) falls back to {@link Direction#EAST}. Shared by NBT
+	 * reload and the bridge's assign endpoint so both interpret {@code dir} identically.
+	 */
+	public static Direction parseDirection(@Nullable String token) {
+		if (token == null) {
+			return Direction.EAST;
+		}
+		return switch (token.trim().toLowerCase(java.util.Locale.ROOT)) {
+			case "north", "n", "-z" -> Direction.NORTH;
+			case "south", "s", "+z", "z" -> Direction.SOUTH;
+			case "west", "w", "-x" -> Direction.WEST;
+			default -> Direction.EAST; // east / e / +x / x / unknown
+		};
 	}
 
 	/** Drop the backpack contents into the world on death so gathered goods aren't lost. */
