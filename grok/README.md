@@ -69,6 +69,42 @@ Uses the live bridge endpoints `GET /td/battlefield`, `POST /td/waveplan`, `POST
 via `lib/bridge`, and `lib/llm` (Anthropic) for the single per-wave planning call. Rate-limited
 to at most one LLM call per wave; occasional rare mid-wave taunts on notable events.
 
+## Foreman (LLM colony director)
+
+`foreman.js` is a **separate** standalone agent — the COLONY FOREMAN brain for the
+Tower-Defense mod (design block #18b), and the **mirror of the Warlord**: same flank
+intel, opposite intent. It reads the live colony + battlefield over the mod bridge,
+finds the **weakest flank** (the side the Warlord is about to hit) from the tower
+distribution, and sends 1–3 builders to **fortify that flank** — raising a cobble wall a
+few blocks out from the Idol, spanning across the approach — while keeping the rest of the
+crew gathering (mine/chop/forage/haul). If the last wave leaked a lot, it commits more
+builders. It's **additive + graceful**: with no orders the colony runs on its rule-based
+work brain, and it falls back to that brain if the Foreman is offline or errors. Speaks in
+a gruff foreman voice via `/say`.
+
+```sh
+cd grok
+node foreman.js                 # main loop: poll /td/colony + /td/battlefield, direct each wave
+node foreman.js --once          # one direction cycle then exit
+node foreman.js --dry           # PRINT the orders instead of POSTing them (safe test)
+node foreman.js --once --dry    # both
+# or via the launcher (fills the bridge token from the server config):
+scripts/run-foreman.sh --once --dry
+```
+
+**Env** (loaded from `grok/.env` like `assistant.js`):
+- `ANTHROPIC_API_KEY` — required for the LLM call (provider `anthropic`).
+- `FOREMAN_MODEL` — Anthropic model (default `claude-opus-4-8`).
+- `BUBBLESKY_BRIDGE_URL` — bridge base URL (default `http://127.0.0.1:25580`).
+- `BUBBLESKY_BRIDGE_TOKEN` — `X-Bridge-Token`; if unset, read from
+  `../server/config/bubblesky-bridge.json`.
+- `FOREMAN_POLL_MS` — colony poll interval (default `5000`).
+
+Uses the live bridge endpoints `GET /td/colony`, `GET /td/battlefield`,
+`POST /td/colony/assign`, and `POST /say` via `lib/bridge`, and `lib/llm` (Anthropic) for
+the single per-wave direction call. Rate-limited to at most one LLM call per wave (also
+re-directs when the crew roster changes materially); with 0 colonists it logs and idles.
+
 ## Roadmap (making it smarter)
 
 1. **Agentic loop** — plan → act → observe result → act again (multi-step tasks like
