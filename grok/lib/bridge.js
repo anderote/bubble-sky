@@ -73,6 +73,9 @@ function makeBridge(opts = {}) {
     baseUrl: base,
     cleanBlock,
 
+    // ---- generic escape hatch (call any endpoint, incl. the /td/* director API) ----
+    request,
+
     // ---- observation ----
     health() { return request('GET', '/health') },
     getBlock(x, y, z) { return request('GET', '/block' + qs({ x: r(x), y: r(y), z: r(z) })) },

@@ -37,6 +37,38 @@ API call with a fixed action list → Grok returns `{reply, action, args}` → e
 speak. Block edits use server commands (`/fill`, `/setblock`, `/tp`) via the opped bot, so they're
 instant and reliable (no slow block-by-block digging).
 
+## Warlord (enemy AI wave director)
+
+`warlord.js` is a **separate** standalone agent — the ENEMY AI WARLORD brain for the
+Tower-Defense mod (design block #17b). It is a cunning necromancer-general: each upcoming
+wave it reads the live battlefield over the mod bridge, probes the **weakest flank** from
+the tower distribution, composes an enemy army within the mod's threat **budget**, picks a
+tactic, and snarls one in-character taunt — then submits the plan. It's **additive +
+graceful**: the mod keeps its procedural scaling and falls back to default waves if the
+Warlord is offline or errors, and it **clamps** any over-budget host.
+
+```sh
+cd grok
+node warlord.js                 # main loop: poll /td/battlefield, plan each new wave
+node warlord.js --once          # one plan cycle then exit
+node warlord.js --dry           # PRINT the plan instead of POSTing it (safe test)
+node warlord.js --once --dry    # both
+# or via the launcher (fills the bridge token from the server config):
+scripts/run-warlord.sh --once --dry
+```
+
+**Env** (loaded from `grok/.env` like `assistant.js`):
+- `ANTHROPIC_API_KEY` — required for the LLM call (provider `anthropic`).
+- `WARLORD_MODEL` — Anthropic model (default `claude-opus-4-8`).
+- `BUBBLESKY_BRIDGE_URL` — bridge base URL (default `http://127.0.0.1:25580`).
+- `BUBBLESKY_BRIDGE_TOKEN` — `X-Bridge-Token`; if unset, read from
+  `../server/config/bubblesky-bridge.json`.
+- `WARLORD_POLL_MS` — battlefield poll interval (default `4000`).
+
+Uses the live bridge endpoints `GET /td/battlefield`, `POST /td/waveplan`, `POST /td/taunt`
+via `lib/bridge`, and `lib/llm` (Anthropic) for the single per-wave planning call. Rate-limited
+to at most one LLM call per wave; occasional rare mid-wave taunts on notable events.
+
 ## Roadmap (making it smarter)
 
 1. **Agentic loop** — plan → act → observe result → act again (multi-step tasks like
