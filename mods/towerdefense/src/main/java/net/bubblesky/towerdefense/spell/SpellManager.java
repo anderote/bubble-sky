@@ -5,6 +5,9 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
+import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
+import net.bubblesky.towerdefense.state.TdArenaState;
+import net.bubblesky.towerdefense.tower.TowerStructure;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.effect.StatusEffectInstance;
@@ -21,12 +24,13 @@ import net.minecraft.util.math.Vec3d;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 
 /**
- * The lightweight server-tick engine behind the two SPELL effects that outlive their cast:
- * temporary SUMMONS (Ranger wolves, Warlord squads) and Ranger SNARE traps. Both are
- * transient by design — a life-of-the-fight resource, not a persisted structure — so this
- * holds them in plain in-memory lists and sweeps them once per server tick. A restart
- * simply forgets them (summons revert to ordinary despawnable mobs; traps vanish), which is
- * the intended, cost-free behavior for ephemeral spell state.
+ * The lightweight server-tick engine behind the SPELL effects that outlive their cast:
+ * temporary SUMMONS (Ranger wolves, Warlord squads), Ranger SNARE traps, and the Engineer's
+ * temporary DEPLOYED TURRETS. All are transient by design — a life-of-the-fight resource, not
+ * a persisted structure — so this holds them in plain in-memory lists and sweeps them once per
+ * server tick. A restart simply forgets them (summons revert to ordinary despawnable mobs;
+ * traps vanish; a leftover turret block is simply orphaned and can be sold like any tower),
+ * which is the intended, cost-free behavior for ephemeral spell state.
  *
  * <h2>Summons</h2>
  * A summoned entity is registered via {@link #addSummon} with a fixed lifetime
@@ -47,6 +51,16 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
  * swept away when it expires. The Necromancer's {@code RAISE_DEAD} spell reanimates the
  * nearest un-consumed corpses via {@link #consumeCorpses}, which returns their positions
  * and removes them so no corpse is ever raised twice.
+ *
+ * <h2>Deployed turrets (Engineer)</h2>
+ * The Engineer's {@code DEPLOY_TURRET} spell places a real, caster-owned tower block, then
+ * registers it via {@link #addTempTurret} with a rank-scaled lifetime. When the deadline
+ * passes the turret is torn down exactly as if it had been sold — {@link TowerStructure#clear}
+ * removes the block and {@link TdArenaState#removeTower} de-registers it — with a poof of
+ * particles. This is what keeps the deployable a strong-but-fleeting resource instead of a
+ * free permanent tower that would bypass the gold economy. Teardown is defensive: if the
+ * turret was already sold or destroyed (no tower block-entity remains at the recorded cell)
+ * the record is simply dropped, so expiry can never clear an unrelated block.
  */
 public final class SpellManager {
 
@@ -75,6 +89,12 @@ public final class SpellManager {
 	 * Necromancer's {@code RAISE_DEAD} before it rots away — roughly 10 seconds.
 	 */
 	public static final int CORPSE_LIFETIME_TICKS = 200;
+	/**
+	 * Baseline lifetime (ticks; 20/sec) of an Engineer's {@code DEPLOY_TURRET} deployable before
+	 * it self-dismantles — 20 seconds at rank 0. {@code DEPLOY_TURRET} extends this per allocated
+	 * rank, so the deployable is a strong but fleeting resource rather than a free permanent tower.
+	 */
+	public static final int TEMP_TURRET_BASE_TICKS = 400;
 
 	// ---- state -------------------------------------------------------------
 	/** Monotonic tick counter, advanced once per server tick; deadlines are measured against it. */
@@ -82,6 +102,7 @@ public final class SpellManager {
 	private static final List<TimedSummon> SUMMONS = new ArrayList<>();
 	private static final List<Trap> TRAPS = new ArrayList<>();
 	private static final List<Corpse> CORPSES = new ArrayList<>();
+	private static final List<TempTurret> TEMP_TURRETS = new ArrayList<>();
 
 	/** A summoned entity plus the tick at which it should be dismissed. */
 	private record TimedSummon(Entity entity, long deadline) {
@@ -103,6 +124,14 @@ public final class SpellManager {
 	private record Corpse(ServerWorld world, Vec3d pos, long deadline) {
 	}
 
+	/**
+	 * A temporary Engineer turret: the tower block-entity's cell, its world, and the tick at
+	 * which it should self-dismantle. Holds no owner/tier — the placed tower block already
+	 * carries all of that; this record only schedules its teardown.
+	 */
+	private record TempTurret(ServerWorld world, BlockPos pos, long deadline) {
+	}
+
 	/** Register the once-per-tick sweep. Call once from mod init. */
 	public static void register() {
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -110,6 +139,7 @@ public final class SpellManager {
 			sweepSummons();
 			sweepTraps();
 			sweepCorpses();
+			sweepTempTurrets();
 		});
 	}
 
@@ -237,6 +267,51 @@ public final class SpellManager {
 			CORPSES.remove(c);
 		}
 		return raised;
+	}
+
+	// ---- deployed turrets --------------------------------------------------
+	/**
+	 * Schedule the already-placed tower block at {@code pos} in {@code world} to self-dismantle
+	 * after {@code lifetimeTicks}. The caller ({@code DEPLOY_TURRET}) builds and configures the
+	 * turret (owner, tier) via {@link TowerStructure#build}; this only registers its teardown so
+	 * the deployable expires instead of standing forever. A non-positive lifetime is clamped to a
+	 * single tick so a mis-tuned caller can never register a turret that never expires.
+	 */
+	public static void addTempTurret(ServerWorld world, BlockPos pos, int lifetimeTicks) {
+		TEMP_TURRETS.add(new TempTurret(world, pos.toImmutable(), tick + Math.max(1, lifetimeTicks)));
+	}
+
+	/**
+	 * Tear down every deployed turret whose deadline has passed (mirrors {@link #sweepSummons}).
+	 * On expiry the turret is removed exactly as a manual sell would remove it — the block is
+	 * cleared via {@link TowerStructure#clear} and de-registered via {@link TdArenaState#removeTower}
+	 * — leaving no ghost block-entity or stale arena entry. The teardown is defensive: if the
+	 * recorded cell no longer holds a tower block-entity (the turret was sold or destroyed first),
+	 * the record is dropped without touching the world, so expiry can never clear an unrelated block.
+	 */
+	private static void sweepTempTurrets() {
+		Iterator<TempTurret> it = TEMP_TURRETS.iterator();
+		while (it.hasNext()) {
+			TempTurret t = it.next();
+			ServerWorld world = t.world();
+			if (world == null) {
+				it.remove();
+				continue;
+			}
+			if (tick < t.deadline()) {
+				continue;
+			}
+			it.remove();
+			// Already sold/destroyed? No tower block-entity left — just forget the record.
+			if (!(world.getBlockEntity(t.pos()) instanceof AbstractTowerBlockEntity)) {
+				continue;
+			}
+			TowerStructure.clear(world, t.pos());
+			TdArenaState.get(world.getServer()).removeTower(t.pos());
+			world.spawnParticles(ParticleTypes.CLOUD, t.pos().getX() + 0.5, t.pos().getY() + 0.5, t.pos().getZ() + 0.5,
+				20, 0.3, 0.4, 0.3, 0.02);
+			world.playSound(null, t.pos(), SoundEvents.BLOCK_FIRE_EXTINGUISH, SoundCategory.PLAYERS, 0.7f, 1.2f);
+		}
 	}
 
 	/**

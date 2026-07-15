@@ -263,6 +263,15 @@ public enum SpellType {
 	 * Deploy a caster-owned Arrow tower on the surface the caster is looking at (placed in
 	 * the empty cell against the targeted face, like a player-built tower). Owner is stamped
 	 * so its kills still pay the caster; nothing else is deducted beyond the mana.
+	 *
+	 * <p>The turret is <b>TEMPORARY</b>: it is registered with
+	 * {@link SpellManager#addTempTurret} and self-dismantles after a rank-scaled lifetime
+	 * ({@link SpellManager#TEMP_TURRET_BASE_TICKS} + {@link #DEPLOY_TURRET_TICKS_PER_RANK} per
+	 * allocated {@link #rankOf rank}), so it is a strong short-lived deployable rather than a
+	 * free permanent tower that would bypass the gold economy. Higher ranks make it last longer
+	 * <em>and</em> hit harder — rank raises the placed tower's tier (+1 per 2 ranks), and the
+	 * Engineer's Overclock passive folds in as EXTRA tier (+1 per 2 ranks), both clamped to
+	 * {@link AbstractTowerBlockEntity#MAX_TIER}.
 	 */
 	DEPLOY_TURRET("deploy_turret", "Deploy Turret", 25, 200) {
 		@Override
@@ -280,9 +289,15 @@ public enum SpellType {
 			int tier = Math.min(1 + rankOf(caster) / 2 + casterPassiveRank(caster, "overclock") / 2,
 				AbstractTowerBlockEntity.MAX_TIER);
 			TowerStructure.build(world, place, TowerKind.ARROW, caster.getUuid(), tier);
+			// Make the deployable TEMPORARY: schedule its teardown after a rank-scaled lifetime so
+			// it can't be spammed as a free permanent tower. Rank extends the duration; tier (above)
+			// makes it hit harder — "higher ranks last longer and hit harder".
+			int lifetime = SpellManager.TEMP_TURRET_BASE_TICKS + rankOf(caster) * DEPLOY_TURRET_TICKS_PER_RANK;
+			SpellManager.addTempTurret(world, place, lifetime);
 			world.spawnParticles(ParticleTypes.CLOUD, place.getX() + 0.5, place.getY() + 0.5, place.getZ() + 0.5,
 				20, 0.3, 0.3, 0.3, 0.02);
 			world.playSound(null, place, SoundEvents.BLOCK_ANVIL_USE, SoundCategory.PLAYERS, 0.8f, 1.4f);
+			actionbar(caster, "Turret deployed (temporary, " + (lifetime / 20) + "s).");
 		}
 	},
 
@@ -513,6 +528,12 @@ public enum SpellType {
 	private static final double WOLF_RANK_HP_BONUS = 0.10;
 	/** Repair Pulse / Tinkerer: +1 heart (2 HP) of heal per rank. */
 	private static final float REPAIR_HEART_PER_RANK = 2.0f;
+	/**
+	 * Deploy Turret: +10s (200 ticks) of turret lifetime per allocated rank, on top of
+	 * {@link SpellManager#TEMP_TURRET_BASE_TICKS}. At rank 5 the deployable lasts
+	 * {@code 400 + 5×200 = 1400} ticks (~70s).
+	 */
+	private static final int DEPLOY_TURRET_TICKS_PER_RANK = 200;
 	/** Summon Skeletons: +10% skeleton-archer damage per Summon Skeletons rank. */
 	private static final double SQUAD_RANK_DAMAGE_BONUS = 0.10;
 	/** Necromancer Amplify passive: +10% Bone Spear (and spell) damage per rank. */

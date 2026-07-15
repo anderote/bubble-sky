@@ -88,7 +88,7 @@ public final class ClassSkillTree {
 
 		// ENGINEER — turret/repair/acid plus economy + construction passives.
 		TREES.put(PlayerClass.ENGINEER, List.of(
-			active("deploy_turret", "Deploy Turret", 1, "+1 turret tier per 2 ranks"),
+			active("deploy_turret", "Deploy Turret", 1, "TEMPORARY turret; higher ranks last longer and hit harder"),
 			passive("salvage", "Salvage", 1, "+10% gold & essence per rank"),
 			active("repair_pulse", "Repair Pulse", 2, "+1 heart heal per rank & +1 block per 2 ranks"),
 			passive("overclock", "Overclock", 2, "+1 deployed-turret tier per 2 ranks"),
