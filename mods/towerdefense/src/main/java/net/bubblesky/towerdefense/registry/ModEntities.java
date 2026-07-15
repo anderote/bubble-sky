@@ -14,6 +14,7 @@ import net.bubblesky.towerdefense.entity.TdEnemyEntity;
 import net.bubblesky.towerdefense.entity.TdFootman;
 import net.bubblesky.towerdefense.entity.TdMeleeEnemy;
 import net.bubblesky.towerdefense.entity.TdSkeletonArcher;
+import net.bubblesky.towerdefense.entity.TdSkeletonWarrior;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnGroup;
@@ -85,6 +86,14 @@ public final class ModEntities {
 	 */
 	public static final EntityType<TdSkeletonArcher> ALLY_SKELETON =
 		registerSkeletonArcher("ally_skeleton", 0.6f, 1.99f);
+	/**
+	 * The Necromancer's raised SKELETON WARRIOR — a beefy melee undead ally (see
+	 * {@link TdSkeletonWarrior}), reanimated from enemy corpses by {@code RAISE_DEAD}.
+	 * Rendered with the vanilla skeleton skin client-side (holding a sword), but
+	 * mechanically a friendly {@link TdAllyEntity} so our own towers never target it.
+	 */
+	public static final EntityType<TdSkeletonWarrior> ALLY_SKELETON_WARRIOR =
+		registerSkeletonWarrior("ally_skeleton_warrior", 0.6f, 1.99f);
 
 	// ---- colony COLONIST --------------------------------------------------
 	/** A named humanoid worker the player recruits into a colony (mine/chop/hunt/forage/haul). */
@@ -213,6 +222,17 @@ public final class ModEntities {
 		return Registry.register(Registries.ENTITY_TYPE, key, type);
 	}
 
+	private static EntityType<TdSkeletonWarrior> registerSkeletonWarrior(String name, float width, float height) {
+		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, name));
+		EntityType<TdSkeletonWarrior> type = EntityType.Builder
+			.create(TdSkeletonWarrior::new, SpawnGroup.CREATURE)
+			.dimensions(width, height)
+			.maxTrackingRange(48)
+			.build(key);
+		return Registry.register(Registries.ENTITY_TYPE, key, type);
+	}
+
 	private static EntityType<ColonistEntity> registerColonist(String name, float width, float height) {
 		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
 			Identifier.of(TowerDefenseMod.MOD_ID, name));
@@ -261,6 +281,8 @@ public final class ModEntities {
 		// Summoned skeleton archer: pretty strong (34 hp, 7 atk → hard-hitting arrows),
 		// a touch nimbler and longer-sighted than the base ally archer.
 		FabricDefaultAttributeRegistry.register(ALLY_SKELETON, allyAttrs(34.0, 7.0, 0.28));
+		// Raised skeleton warrior: a sturdy melee bruiser (30 hp, 7 atk, brisk 0.30 speed).
+		FabricDefaultAttributeRegistry.register(ALLY_SKELETON_WARRIOR, allyAttrs(30.0, 7.0, 0.30));
 
 		// Colonist: a sturdy worker — enough hp to survive stray mobs, a light melee hit
 		// (used when hunting), and a brisk work pace.

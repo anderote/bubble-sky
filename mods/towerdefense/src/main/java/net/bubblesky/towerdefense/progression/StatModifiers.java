@@ -40,6 +40,8 @@ public final class StatModifiers {
 	private static final Identifier STRENGTH_ID = id("progression_strength");
 	private static final Identifier AGILITY_ID = id("progression_agility");
 	private static final Identifier RESILIENCE_ID = id("progression_resilience");
+	/** Ranger passive Fleet Foot: an ADD_MULTIPLIED_BASE movement-speed modifier. */
+	private static final Identifier FLEET_FOOT_ID = id("passive_fleet_foot");
 	// Flat "base character" buffs every player gets (on top of vanilla + allocated stats).
 	private static final Identifier BASE_HEALTH_ID = id("base_health");
 	private static final Identifier BASE_ATTACK_ID = id("base_attack");
@@ -73,6 +75,18 @@ public final class StatModifiers {
 	/** Intelligence: +1 mana/second of regen per point. */
 	private static final int MANA_REGEN_PER_POINT = 1;
 
+	// ---- passive per-rank steps (read from the active class's skill tree) --
+	/** Ranger Precision: +8% fired-arrow / multishot damage per rank. */
+	private static final double PRECISION_BOW_PER_RANK = 0.08;
+	/** Ranger Fleet Foot: +3% movement speed per rank. */
+	private static final double FLEET_FOOT_SPEED_PER_RANK = 0.03;
+	/** Engineer Salvage: +10% coin (gold) payout per rank. */
+	private static final double SALVAGE_COIN_PER_RANK = 0.10;
+	/** Mage Arcane Mind: +3 max mana per rank. */
+	private static final int ARCANE_MIND_MANA_PER_RANK = 3;
+	/** Mage Arcane Mind: +1 mana/second of regen per rank. */
+	private static final int ARCANE_MIND_REGEN_PER_RANK = 1;
+
 	// ---- flat base-character buffs (always on, independent of skill points) --
 	/** +20 max health for every player (20 -> 40 HP / 20 hearts). */
 	private static final double BASE_HEALTH_BONUS = 20.0;
@@ -104,6 +118,12 @@ public final class StatModifiers {
 		applyFlat(player, EntityAttributes.ARMOR, RESILIENCE_ID,
 			effectivePoints(progress, Stat.RESILIENCE) * ARMOR_PER_POINT,
 			EntityAttributeModifier.Operation.ADD_VALUE);
+
+		// Ranger PASSIVE — Fleet Foot: +3% movement speed per rank while Ranger is active.
+		// Attribute-backed (idempotent, stable id) exactly like the Agility stat modifier.
+		applyFlat(player, EntityAttributes.MOVEMENT_SPEED, FLEET_FOOT_ID,
+			passiveRank(progress, "fleet_foot") * FLEET_FOOT_SPEED_PER_RANK,
+			EntityAttributeModifier.Operation.ADD_MULTIPLIED_BASE);
 
 		// Flat base-character buffs — a sturdier, stronger hero by default, on top of
 		// vanilla and any allocated points. Always applied (idempotent, stable ids).
@@ -137,6 +157,22 @@ public final class StatModifiers {
 		return active == null ? base : base + active.statBias(stat);
 	}
 
+	/**
+	 * The rank the player has in a PASSIVE skill of their ACTIVE class's tree ({@code 0} when
+	 * unclassed or unallocated). This is the single reader every passive effect goes through —
+	 * folded into the use-time multipliers below, applied as an attribute in {@link #apply}, or
+	 * read directly at a spell call-site (see
+	 * {@code net.bubblesky.towerdefense.spell.SpellType}). Because a passive id lives in exactly
+	 * one class tree, a wrong-class caster naturally reads {@code 0} with no special-casing.
+	 */
+	public static int passiveRank(PlayerProgress progress, String passiveId) {
+		PlayerClass active = progress.getActiveClass();
+		if (active == null) {
+			return 0;
+		}
+		return progress.classProgress(active).points(passiveId);
+	}
+
 	/** Remove-then-add one modifier by its stable id (skips a zero-value modifier entirely). */
 	private static void applyFlat(ServerPlayerEntity player, RegistryEntry<net.minecraft.entity.attribute.EntityAttribute> attr,
 			Identifier modifierId, double amount, EntityAttributeModifier.Operation op) {
@@ -153,14 +189,25 @@ public final class StatModifiers {
 	// ---- use-time multipliers ----------------------------------------------
 	// All read EFFECTIVE points (allocation + active-class bias) so a class's favored stat
 	// buffs its multiplier too — e.g. Ranger's Marksmanship bias raises bow damage.
-	/** Fired-arrow damage multiplier (1.0 at zero points; +10% per Marksmanship point). */
+	/**
+	 * Fired-arrow damage multiplier: {@code 1.0 + 10%} per Marksmanship point, PLUS the Ranger
+	 * {@code precision} passive (+8% per rank). Because the multiplier is read for both the bow
+	 * (see {@code TdBowItem}) and {@code MULTISHOT}'s arrows (via {@code ProgressLookup.bowMult}),
+	 * folding Precision here buffs BOTH in one place.
+	 */
 	public static double bowMult(PlayerProgress progress) {
-		return 1.0 + effectivePoints(progress, Stat.MARKSMANSHIP) * BOW_PER_POINT;
+		return 1.0 + effectivePoints(progress, Stat.MARKSMANSHIP) * BOW_PER_POINT
+			+ passiveRank(progress, "precision") * PRECISION_BOW_PER_RANK;
 	}
 
-	/** Coin-payout multiplier (1.0 at zero points; +12% per Fortune point). */
+	/**
+	 * Coin-payout multiplier: {@code 1.0 + 12%} per Fortune point, PLUS the Engineer
+	 * {@code salvage} passive (+10% per rank). (Salvage's essence half has no award site yet, so
+	 * only the gold half is live — see the class notes.)
+	 */
 	public static double coinMult(PlayerProgress progress) {
-		return 1.0 + effectivePoints(progress, Stat.FORTUNE) * COIN_PER_POINT;
+		return 1.0 + effectivePoints(progress, Stat.FORTUNE) * COIN_PER_POINT
+			+ passiveRank(progress, "salvage") * SALVAGE_COIN_PER_RANK;
 	}
 
 	/** XP-gain multiplier (1.0 at zero points; +8% per Intelligence point). */
@@ -176,7 +223,8 @@ public final class StatModifiers {
 	 * calls it. Spending / regen arrive in Phase 2.
 	 */
 	public static int maxMana(PlayerProgress progress) {
-		return MANA_BASE_MAX + effectivePoints(progress, Stat.INTELLIGENCE) * MANA_PER_POINT;
+		return MANA_BASE_MAX + effectivePoints(progress, Stat.INTELLIGENCE) * MANA_PER_POINT
+			+ passiveRank(progress, "arcane_mind") * ARCANE_MIND_MANA_PER_RANK;
 	}
 
 	/**
@@ -187,7 +235,8 @@ public final class StatModifiers {
 	 * {@code ProgressEvents} and clamped to {@link #maxMana}.
 	 */
 	public static int manaRegenPerSecond(PlayerProgress progress) {
-		return MANA_REGEN_BASE + effectivePoints(progress, Stat.INTELLIGENCE) * MANA_REGEN_PER_POINT;
+		return MANA_REGEN_BASE + effectivePoints(progress, Stat.INTELLIGENCE) * MANA_REGEN_PER_POINT
+			+ passiveRank(progress, "arcane_mind") * ARCANE_MIND_REGEN_PER_RANK;
 	}
 
 	/**

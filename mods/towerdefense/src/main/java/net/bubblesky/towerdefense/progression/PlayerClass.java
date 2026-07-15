@@ -22,7 +22,7 @@ import net.bubblesky.towerdefense.progression.PlayerProgress.Stat;
  *   <li>{@link #MAGE} → {@link Stat#INTELLIGENCE} (spellpower / mana)</li>
  *   <li>{@link #RANGER} → {@link Stat#MARKSMANSHIP} (bow damage)</li>
  *   <li>{@link #ENGINEER} → {@link Stat#FORTUNE} (payout / construction)</li>
- *   <li>{@link #WARLORD} → {@link Stat#STRENGTH} (melee might)</li>
+ *   <li>{@link #NECROMANCER} → {@link Stat#INTELLIGENCE} (summoning / mana)</li>
  * </ul>
  *
  * <p>The ordinal order is the wire/registry order — DO NOT reorder existing entries, as
@@ -33,7 +33,13 @@ public enum PlayerClass {
 	MAGE("mage", "Mage", Stat.INTELLIGENCE),
 	RANGER("ranger", "Ranger", Stat.MARKSMANSHIP),
 	ENGINEER("engineer", "Engineer", Stat.FORTUNE),
-	WARLORD("warlord", "Warlord", Stat.STRENGTH);
+	/**
+	 * The undead summoner (formerly the melee WARLORD). Favors {@link Stat#INTELLIGENCE}
+	 * because its kit — raising skeletons and hurling bone — is mana-hungry. Its stable
+	 * {@link #id()} is {@code "necromancer"}; the legacy {@code "warlord"} id is still
+	 * accepted by {@link #fromId(String)} so old saves resolve to this class.
+	 */
+	NECROMANCER("necromancer", "Necromancer", Stat.INTELLIGENCE);
 
 	/**
 	 * How many "virtual" points the active class adds to its favored stat. Kept modest
@@ -88,6 +94,11 @@ public enum PlayerClass {
 			return null;
 		}
 		String needle = id.toLowerCase(Locale.ROOT);
+		// Legacy alias: the WARLORD class was reworked into the NECROMANCER, so any old
+		// save / activeClass value written as "warlord" must resolve to the new class.
+		if (needle.equals("warlord")) {
+			return NECROMANCER;
+		}
 		for (PlayerClass c : values()) {
 			if (c.id.equals(needle)) {
 				return c;

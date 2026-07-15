@@ -2,11 +2,15 @@ package net.bubblesky.towerdefense.progression;
 
 import net.bubblesky.towerdefense.command.TdCommand;
 import net.bubblesky.towerdefense.game.WaveManager;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import net.bubblesky.towerdefense.progression.PlayerProgress.Stat;
+import net.bubblesky.towerdefense.progression.net.AllocateClassPointPayload;
 import net.bubblesky.towerdefense.progression.net.AllocatePointPayload;
 import net.bubblesky.towerdefense.progression.net.ProgressSyncPayload;
 import net.bubblesky.towerdefense.progression.net.SelectClassPayload;
 import net.bubblesky.towerdefense.registry.ModItems;
+import net.bubblesky.towerdefense.spell.SpellManager;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
@@ -60,6 +64,7 @@ public final class ProgressEvents {
 	public static void register() {
 		// Networking types (registered here on BOTH sides — mod init runs on client + server).
 		PayloadTypeRegistry.playC2S().register(AllocatePointPayload.ID, AllocatePointPayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(AllocateClassPointPayload.ID, AllocateClassPointPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(SelectClassPayload.ID, SelectClassPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(ProgressSyncPayload.ID, ProgressSyncPayload.CODEC);
 
@@ -69,6 +74,46 @@ public final class ProgressEvents {
 			ProgressState state = ProgressState.get(context.server());
 			PlayerProgress progress = state.forPlayer(player.getUuid());
 			if (progress.allocate(payload.stat())) {
+				state.markDirty();
+				StatModifiers.apply(player, progress);
+				sync(player, progress);
+			}
+		});
+
+		// Server receiver: spend one CLASS point on a skill in the active class's tree.
+		// Authoritative validation mirrors ClassSkillTree: active class present, unspent class
+		// points, the skill exists, current rank below its max, and class level meets the tier
+		// gate. On success: allocate (decrements unspent), re-apply StatModifiers (so passives
+		// like Fleet Foot / Arcane Mind refresh), save, and resync.
+		ServerPlayNetworking.registerGlobalReceiver(AllocateClassPointPayload.ID, (payload, context) -> {
+			ServerPlayerEntity player = context.player();
+			ProgressState state = ProgressState.get(context.server());
+			PlayerProgress progress = state.forPlayer(player.getUuid());
+			PlayerClass active = progress.getActiveClass();
+			if (active == null) {
+				actionbar(player, "Pick a class first with /td class.");
+				return;
+			}
+			ClassSkillTree.Skill skill = ClassSkillTree.skill(active, payload.skillId());
+			if (skill == null) {
+				return; // unknown skill id for this class — ignore
+			}
+			ClassProgress track = progress.classProgress(active);
+			if (track.getUnspentPoints() <= 0) {
+				actionbar(player, "No class points to spend.");
+				return;
+			}
+			if (track.points(skill.id()) >= skill.maxRank()) {
+				actionbar(player, skill.displayName() + " is already at max rank.");
+				return;
+			}
+			int gate = ClassSkillTree.levelGate(skill.tier());
+			if (track.getLevel() < gate) {
+				actionbar(player, skill.displayName() + " unlocks at " + active.displayName()
+					+ " level " + gate + ".");
+				return;
+			}
+			if (track.allocate(skill.id())) {
 				state.markDirty();
 				StatModifiers.apply(player, progress);
 				sync(player, progress);
@@ -113,6 +158,9 @@ public final class ProgressEvents {
 		if (!entity.getCommandTags().contains(WaveManager.ENEMY_TAG)) {
 			return;
 		}
+		// Drop a raisable corpse marker at the fallen enemy so the Necromancer's RAISE_DEAD
+		// can reanimate it (expires shortly; see SpellManager.CORPSE_LIFETIME_TICKS).
+		SpellManager.recordCorpse(world, entity.getPos());
 		boolean boss = entity.getCommandTags().contains(WaveManager.BOSS_TAG);
 		int baseXp = Math.max(1, (int) Math.round(entity.getMaxHealth() * XP_PER_MAX_HEALTH));
 		if (boss) {
@@ -211,11 +259,11 @@ public final class ProgressEvents {
 	private static void promptClassPick(ServerPlayerEntity player) {
 		player.sendMessage(Text.literal("Choose your class! Run ")
 				.formatted(Formatting.GOLD)
-				.append(Text.literal("/td class <mage|ranger|engineer|warlord>").formatted(Formatting.YELLOW))
+				.append(Text.literal("/td class <mage|ranger|engineer|necromancer>").formatted(Formatting.YELLOW))
 				.append(Text.literal(" to pick a loadout for this life.").formatted(Formatting.GOLD)),
 			false);
 		player.sendMessage(Text.literal("  mage = spellpower · ranger = archery · engineer = builder · "
-				+ "warlord = melee. (Bare /td class lists them.)")
+				+ "necromancer = summoner. (Bare /td class lists them.)")
 			.formatted(Formatting.GRAY), false);
 	}
 
@@ -235,16 +283,24 @@ public final class ProgressEvents {
 		int classLevel = 0;
 		int classXp = 0;
 		int classPoints = 0;
+		Map<String, Integer> classAllocations = new LinkedHashMap<>();
 		if (active != null) {
 			ClassProgress track = progress.classProgress(active);
 			classLevel = track.getLevel();
 			classXp = track.getXp();
 			classPoints = track.getUnspentPoints();
+			classAllocations.putAll(track.allocations());
 		}
 		ServerPlayNetworking.send(player,
 			new ProgressSyncPayload(progress.getXp(), progress.getLevel(), progress.getUnspentPoints(),
 				progress.getGold(), alloc,
-				progress.getMana(), progress.getMaxMana(), classId, classLevel, classXp, classPoints));
+				progress.getMana(), progress.getMaxMana(), classId, classLevel, classXp, classPoints,
+				classAllocations));
+	}
+
+	/** Send a red action-bar note to a player (used for Skills-tab allocation rejections). */
+	private static void actionbar(ServerPlayerEntity player, String message) {
+		player.sendMessage(Text.literal(message).formatted(Formatting.RED), true);
 	}
 
 	// ---- gold-coin auto-collect (vacuum) -----------------------------------

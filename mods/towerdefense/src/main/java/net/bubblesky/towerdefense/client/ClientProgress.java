@@ -1,5 +1,6 @@
 package net.bubblesky.towerdefense.client;
 
+import java.util.Map;
 import net.bubblesky.towerdefense.progression.PlayerProgress;
 import net.bubblesky.towerdefense.progression.PlayerProgress.Stat;
 import net.bubblesky.towerdefense.progression.net.ProgressSyncPayload;
@@ -27,6 +28,8 @@ public final class ClientProgress {
 	private static volatile int classLevel = 0;
 	private static volatile int classXp = 0;
 	private static volatile int classPoints = 0;
+	/** The active class's per-skill ranks (skill id -> rank); empty when unclassed. */
+	private static volatile Map<String, Integer> classAllocations = Map.of();
 
 	/** Replace the cached snapshot from a freshly-received sync payload. */
 	public static void update(ProgressSyncPayload payload) {
@@ -44,6 +47,8 @@ public final class ClientProgress {
 		classLevel = payload.classLevel();
 		classXp = payload.classXp();
 		classPoints = payload.classPoints();
+		Map<String, Integer> incomingAlloc = payload.classAllocations();
+		classAllocations = incomingAlloc == null ? Map.of() : Map.copyOf(incomingAlloc);
 	}
 
 	public static int xp() {
@@ -126,5 +131,10 @@ public final class ClientProgress {
 	/** The active class's unspent class points (0 when unclassed). */
 	public static int classPoints() {
 		return classPoints;
+	}
+
+	/** The active class's rank in a skill by id (0 if none / unclassed). */
+	public static int classRank(String skillId) {
+		return classAllocations.getOrDefault(skillId, 0);
 	}
 }

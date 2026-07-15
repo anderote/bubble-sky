@@ -1,5 +1,7 @@
 package net.bubblesky.towerdefense.progression.net;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
@@ -21,9 +23,14 @@ import net.minecraft.util.Identifier;
  * {@code classLevel}, {@code classXp} (within-level), and unspent {@code classPoints}. All
  * zero/empty when the player has no active class. These feed the mana bar + class readouts
  * added in later phases; appended after the original fields so the codec stays additive.
+ *
+ * <p>The final {@code classAllocations} map carries the ACTIVE class's per-skill ranks (skill
+ * id → rank), so the Character screen's Skills tab can render each row's current rank without a
+ * second round-trip. Empty when unclassed; appended last, so the codec stays additive.
  */
 public record ProgressSyncPayload(int xp, int level, int unspentPoints, int gold, int[] allocations,
-		int mana, int maxMana, String activeClass, int classLevel, int classXp, int classPoints)
+		int mana, int maxMana, String activeClass, int classLevel, int classXp, int classPoints,
+		Map<String, Integer> classAllocations)
 		implements CustomPayload {
 
 	public static final CustomPayload.Id<ProgressSyncPayload> ID =
@@ -49,6 +56,13 @@ public record ProgressSyncPayload(int xp, int level, int unspentPoints, int gold
 		buf.writeVarInt(classLevel);
 		buf.writeVarInt(classXp);
 		buf.writeVarInt(classPoints);
+		// ---- active class's per-skill ranks (id -> rank), appended last ----
+		Map<String, Integer> alloc = classAllocations == null ? Map.of() : classAllocations;
+		buf.writeVarInt(alloc.size());
+		for (Map.Entry<String, Integer> e : alloc.entrySet()) {
+			buf.writeString(e.getKey());
+			buf.writeVarInt(e.getValue());
+		}
 	}
 
 	private static ProgressSyncPayload read(RegistryByteBuf buf) {
@@ -67,8 +81,15 @@ public record ProgressSyncPayload(int xp, int level, int unspentPoints, int gold
 		int classLevel = buf.readVarInt();
 		int classXp = buf.readVarInt();
 		int classPoints = buf.readVarInt();
+		int allocN = buf.readVarInt();
+		Map<String, Integer> classAllocations = new LinkedHashMap<>();
+		for (int i = 0; i < allocN; i++) {
+			String key = buf.readString();
+			int rank = buf.readVarInt();
+			classAllocations.put(key, rank);
+		}
 		return new ProgressSyncPayload(xp, level, points, gold, alloc,
-			mana, maxMana, activeClass, classLevel, classXp, classPoints);
+			mana, maxMana, activeClass, classLevel, classXp, classPoints, classAllocations);
 	}
 
 	@Override

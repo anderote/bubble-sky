@@ -177,6 +177,7 @@ public final class TdCommand {
 				.executes(TdCommand::classInfo)
 				.then(CommandManager.argument("name", StringArgumentType.word())
 					.executes(ctx -> classSelect(ctx, StringArgumentType.getString(ctx, "name")))))
+				.then(CommandManager.literal("respec").executes(TdCommand::respec))
 			.then(CommandManager.literal("restart").executes(TdCommand::restart))
 			.then(CommandManager.literal("status").executes(TdCommand::status))
 			.then(CommandManager.literal("reset").executes(TdCommand::reset))
@@ -222,7 +223,8 @@ public final class TdCommand {
 		line(src, "/td shop", "list buyable towers and their coin prices");
 		line(src, "/td buy <type>", "spend coins for a placeable tower block — place it to raise the tower");
 		line(src, "/td upgrade", "spend coins to raise the tier of the tower you're aiming at");
-		line(src, "/td class [name]", "pick a class for this life (mage/ranger/engineer/warlord); no arg lists them");
+		line(src, "/td class [name]", "pick a class for this life (mage/ranger/engineer/necromancer); no arg lists them");
+		line(src, "/td respec", "refund all your active class's skill points (free for now)");
 		line(src, "/td hire <type>", "spend coins to summon an allied soldier (footman/archer/knight)");
 		line(src, "/td command <order> [flag]", "order your allies: hold/attack/follow/move (flag = anchor)");
 		line(src, "/td status", "show wave/Idol info (and the tower you're looking at)");
@@ -826,7 +828,7 @@ public final class TdCommand {
 		src.sendFeedback(() -> Text.literal("  Current: "
 				+ (active == null ? "none — pick one!" : active.displayName()))
 			.formatted(Formatting.AQUA), false);
-		src.sendFeedback(() -> Text.literal("  Pick with /td class <mage|ranger|engineer|warlord>.")
+		src.sendFeedback(() -> Text.literal("  Pick with /td class <mage|ranger|engineer|necromancer>.")
 			.formatted(Formatting.GRAY), false);
 		return 1;
 	}
@@ -842,7 +844,7 @@ public final class TdCommand {
 		PlayerClass cls = PlayerClass.fromId(name);
 		if (cls == null) {
 			src.sendError(Text.literal("Unknown class '" + name
-				+ "'. Choose mage, ranger, engineer or warlord."));
+				+ "'. Choose mage, ranger, engineer or necromancer."));
 			return 0;
 		}
 		ClassLoadout.select(player, cls);
@@ -852,6 +854,37 @@ public final class TdCommand {
 		src.sendFeedback(() -> Text.literal("You are now a " + cls.displayName()
 				+ " (class level " + lvl + "). Loadout granted to your hotbar — spell items are "
 				+ "placeholders for now.")
+			.formatted(Formatting.GREEN), false);
+		return 1;
+	}
+
+	/**
+	 * {@code /td respec}: refund ALL of the ACTIVE class's spent skill points back into its
+	 * unspent pool (empties the allocation map, banking the total spent + current). Re-applies
+	 * {@link StatModifiers} (so passives like Fleet Foot / Arcane Mind drop off) and resyncs.
+	 * FREE for now — TODO: charge essence once the essence economy lands.
+	 */
+	private static int respec(CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+		MinecraftServer server = src.getServer();
+		ProgressState state = ProgressState.get(server);
+		PlayerProgress progress = state.forPlayer(player.getUuid());
+		PlayerClass active = progress.getActiveClass();
+		if (active == null) {
+			src.sendError(Text.literal("No active class to respec. Pick one with /td class <name>."));
+			return 0;
+		}
+		ClassProgress track = progress.classProgress(active);
+		int refunded = track.respec();
+		state.markDirty();
+		// Passives are attribute-backed / read live from allocations, so re-apply to drop them.
+		net.bubblesky.towerdefense.progression.StatModifiers.apply(player, progress);
+		ProgressEvents.sync(player, progress);
+		final int pts = track.getUnspentPoints();
+		src.sendFeedback(() -> Text.literal("Respec complete — refunded " + refunded + " "
+				+ active.displayName() + " skill point" + (refunded == 1 ? "" : "s") + " (" + pts
+				+ " available). Reallocate them in the P menu's Skills tab.")
 			.formatted(Formatting.GREEN), false);
 		return 1;
 	}

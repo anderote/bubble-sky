@@ -62,7 +62,7 @@ public final class ClassLoadout {
 			case MAGE -> new SpellType[] {SpellType.FIREBALL, SpellType.FROST_NOVA, SpellType.CHAIN_LIGHTNING};
 			case RANGER -> new SpellType[] {SpellType.MULTISHOT, SpellType.TRAP, SpellType.SUMMON_WOLF};
 			case ENGINEER -> new SpellType[] {SpellType.DEPLOY_TURRET, SpellType.REPAIR_PULSE, SpellType.WALL_OF_ACID};
-			case WARLORD -> new SpellType[] {SpellType.WAR_CRY, SpellType.SUMMON_SQUAD, SpellType.CHARGE};
+			case NECROMANCER -> new SpellType[] {SpellType.RAISE_DEAD, SpellType.SUMMON_SQUAD, SpellType.BONE_SPEAR};
 		};
 	}
 
@@ -74,7 +74,7 @@ public final class ClassLoadout {
 			case MAGE -> { item = Items.BLAZE_ROD; name = "Mage Staff"; }
 			case RANGER -> { item = Items.BOW; name = "Ranger Bow"; }
 			case ENGINEER -> { item = Items.IRON_PICKAXE; name = "Engineer's Wrench"; }
-			case WARLORD -> { item = Items.IRON_SWORD; name = "Warlord Blade"; }
+			case NECROMANCER -> { item = Items.BONE; name = "Bone Staff"; }
 			default -> { item = Items.STICK; name = "Class Gear"; }
 		}
 		return marked(new ItemStack(item), name, Formatting.GOLD, false);

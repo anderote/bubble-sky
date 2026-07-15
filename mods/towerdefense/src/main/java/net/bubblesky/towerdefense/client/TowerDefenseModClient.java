@@ -8,6 +8,7 @@ import net.bubblesky.towerdefense.client.render.TowerBoltEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TdAllyBipedRenderer;
 import net.bubblesky.towerdefense.client.render.TdBipedEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TdSkeletonBipedRenderer;
+import net.bubblesky.towerdefense.client.render.TdSkeletonWarriorRenderer;
 import net.bubblesky.towerdefense.client.screen.CharacterScreen;
 import net.bubblesky.towerdefense.client.screen.TowerDefenseScreen;
 import net.bubblesky.towerdefense.entity.TdAllyEntity;
@@ -74,6 +75,9 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		// The Warlord's summoned skeleton archer: a friendly ally under the hood, but
 		// drawn with the vanilla skeleton model + skin (see TdSkeletonBipedRenderer).
 		EntityRendererRegistry.register(ModEntities.ALLY_SKELETON, TdSkeletonBipedRenderer::new);
+		// The Necromancer's raised skeleton WARRIOR: same vanilla skeleton model + skin, but
+		// holding a sword (a friendly ally under the hood; see TdSkeletonWarriorRenderer).
+		EntityRendererRegistry.register(ModEntities.ALLY_SKELETON_WARRIOR, TdSkeletonWarriorRenderer::new);
 
 		// Colony worker — the colonist skin on the same biped model.
 		EntityRendererRegistry.register(ModEntities.COLONIST, ctx -> new ColonistBipedRenderer(ctx,

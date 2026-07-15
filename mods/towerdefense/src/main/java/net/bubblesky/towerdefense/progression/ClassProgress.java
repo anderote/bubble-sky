@@ -91,6 +91,24 @@ public class ClassProgress {
 		return true;
 	}
 
+	/**
+	 * RESPEC this class: refund every point spent in the skill tree back into
+	 * {@link #unspentPoints} and clear the allocation map. The total banked afterward equals
+	 * what was already unspent plus everything that had been spent, so no points are lost.
+	 * (Free for now — a later phase may charge essence; see {@code /td respec}.)
+	 *
+	 * @return the number of points refunded (the previously-spent total)
+	 */
+	public int respec() {
+		int spent = 0;
+		for (int v : allocations.values()) {
+			spent += v;
+		}
+		allocations.clear();
+		unspentPoints += spent;
+		return spent;
+	}
+
 	// ---- accessors ---------------------------------------------------------
 	public int getXp() {
 		return xp;

@@ -29,6 +29,8 @@
 	"item.towerdefense.spell_war_cry": "War Cry",
 	"item.towerdefense.spell_summon_squad": "Summon Skeletons",
 	"item.towerdefense.spell_charge": "Charge",
+	"item.towerdefense.spell_raise_dead": "Raise Dead",
+	"item.towerdefense.spell_bone_spear": "Bone Spear",
 
 	"entity.towerdefense.flag_arrow": "Flag Arrow",
 	"entity.towerdefense.tower_arrow": "Tower Arrow",
@@ -54,6 +56,8 @@
 	"entity.towerdefense.ally_footman": "Allied Footman",
 	"entity.towerdefense.ally_archer": "Allied Archer",
 	"entity.towerdefense.ally_knight": "Allied Knight",
+	"entity.towerdefense.ally_skeleton": "Skeleton Archer",
+	"entity.towerdefense.ally_skeleton_warrior": "Skeleton Warrior",
 
 	"entity.towerdefense.colonist": "Colonist",
 
@@ -73,5 +77,35 @@
 	"screen.towerdefense.stat.strength": "Strength",
 	"screen.towerdefense.stat.agility": "Agility",
 	"screen.towerdefense.stat.marksmanship": "Marksmanship",
-	"screen.towerdefense.stat.fortune": "Fortune"
+	"screen.towerdefense.stat.fortune": "Fortune",
+
+	"screen.towerdefense.skills.tab_stats": "Stats",
+	"screen.towerdefense.skills.tab_skills": "Skills",
+	"screen.towerdefense.skills.active": "ACTIVE",
+	"screen.towerdefense.skills.passive": "PASSIVE",
+
+	"skill.towerdefense.pyromancy": "Pyromancy",
+	"skill.towerdefense.pyromancy.desc": "+10% Fireball damage per rank",
+	"skill.towerdefense.arcane_mind": "Arcane Mind",
+	"skill.towerdefense.arcane_mind.desc": "+3 max mana & +1 mana/sec per rank",
+	"skill.towerdefense.frostbite": "Frostbite",
+	"skill.towerdefense.frostbite.desc": "+12% Frost Nova damage & +0.5s slow per rank",
+	"skill.towerdefense.precision": "Precision",
+	"skill.towerdefense.precision.desc": "+8% arrow damage per rank",
+	"skill.towerdefense.fleet_foot": "Fleet Foot",
+	"skill.towerdefense.fleet_foot.desc": "+3% movement speed per rank",
+	"skill.towerdefense.eagle_eye": "Eagle Eye",
+	"skill.towerdefense.eagle_eye.desc": "+1 block trap/spell reach per rank",
+	"skill.towerdefense.salvage": "Salvage",
+	"skill.towerdefense.salvage.desc": "+10% gold & essence per rank",
+	"skill.towerdefense.overclock": "Overclock",
+	"skill.towerdefense.overclock.desc": "+1 deployed-turret tier per 2 ranks",
+	"skill.towerdefense.tinkerer": "Tinkerer",
+	"skill.towerdefense.tinkerer.desc": "+1 heart Repair Pulse heal & +1 Wall of Acid length per rank",
+	"skill.towerdefense.minion_mastery": "Minion Mastery",
+	"skill.towerdefense.minion_mastery.desc": "+10% minion HP & damage per rank",
+	"skill.towerdefense.unholy_vigor": "Unholy Vigor",
+	"skill.towerdefense.unholy_vigor.desc": "+30s minion lifetime per rank",
+	"skill.towerdefense.amplify": "Amplify",
+	"skill.towerdefense.amplify.desc": "+10% Bone Spear & spell damage per rank"
 }
