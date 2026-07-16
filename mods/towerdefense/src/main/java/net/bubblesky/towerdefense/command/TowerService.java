@@ -2,7 +2,9 @@ package net.bubblesky.towerdefense.command;
 
 import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
 import net.bubblesky.towerdefense.state.TdArenaState;
+import net.bubblesky.towerdefense.tower.TowerKind;
 import net.bubblesky.towerdefense.tower.TowerStructure;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
@@ -67,5 +69,47 @@ public final class TowerService {
 			TdCommand.grantCoinsPublic(player, refund);
 		}
 		return new Result(true, "Sold tower for " + refund + " coins.");
+	}
+
+	/**
+	 * Recycle a tower: owner-only teardown that returns the placeable tower ITEM (the same
+	 * block item {@code /td buy} hands out for this kind) instead of any coins. The block is
+	 * returned at base tier — any coins invested in upgrades are forfeit, mirroring how buying a
+	 * fresh tower always starts at tier 1. The item is inserted into the player's pack, or
+	 * dropped at their feet if there is no room. No coin refund is given (they get the block).
+	 */
+	public static Result recycle(ServerWorld world, ServerPlayerEntity player, BlockPos pos) {
+		if (!(world.getBlockEntity(pos) instanceof AbstractTowerBlockEntity tower)) {
+			return new Result(false, "That tower no longer exists.");
+		}
+		if (!player.getUuid().equals(tower.getPlacerUuid())) {
+			return new Result(false, "You can only recycle your own towers.");
+		}
+		// Snapshot the kind BEFORE teardown (clear() replaces the block entity with air).
+		TowerKind kind = tower.kind();
+		TowerStructure.clear(world, pos);
+		TdArenaState.get(world.getServer()).removeTower(pos);
+		ItemStack stack = new ItemStack(kind.block());
+		if (!player.getInventory().insertStack(stack)) {
+			player.dropItem(stack, false); // pack full — drop at the player's feet
+		}
+		return new Result(true, "Recycled tower — the block is back in your inventory.");
+	}
+
+	/**
+	 * Destroy a tower: owner-only teardown with NO refund and NO item returned — the tower and
+	 * everything invested in it are gone. Distinct from {@link #recycle} (which hands the block
+	 * back) and {@link #sell} (which returns coins); this is the "just remove it" option.
+	 */
+	public static Result destroy(ServerWorld world, ServerPlayerEntity player, BlockPos pos) {
+		if (!(world.getBlockEntity(pos) instanceof AbstractTowerBlockEntity tower)) {
+			return new Result(false, "That tower no longer exists.");
+		}
+		if (!player.getUuid().equals(tower.getPlacerUuid())) {
+			return new Result(false, "You can only destroy your own towers.");
+		}
+		TowerStructure.clear(world, pos);
+		TdArenaState.get(world.getServer()).removeTower(pos);
+		return new Result(true, "Destroyed tower.");
 	}
 }

@@ -16,7 +16,7 @@ import net.minecraft.util.Identifier;
  * <ul>
  *   <li>{@link Stat#VITALITY} → {@code generic.max_health} +4 HP (2 hearts) per point</li>
  *   <li>{@link Stat#STRENGTH} → {@code generic.attack_damage} +1.0 per point (melee)</li>
- *   <li>{@link Stat#AGILITY} → {@code generic.movement_speed} +3% (of base) per point</li>
+ *   <li>{@link Stat#AGILITY} → {@code generic.movement_speed} +2% (of base) per point</li>
  *   <li>{@link Stat#RESILIENCE} → {@code generic.armor} +1 per point</li>
  * </ul>
  * Each uses a STABLE per-stat modifier {@link Identifier}, and application is
@@ -50,10 +50,15 @@ public final class StatModifiers {
 	// ---- per-point steps ---------------------------------------------------
 	/** Vitality: +4 max health (two hearts) per point, flat. */
 	private static final double HEALTH_PER_POINT = 4.0;
+	/** Vitality: passive health regen per SECOND per point — starts tiny (0.06 HP/s at 1 point,
+	 *  ~1 HP / 16s) and grows as Vitality is invested (e.g. ~1.2 HP/s at 20 points). */
+	private static final float HEALTH_REGEN_PER_POINT = 0.06f;
 	/** Strength: +1.0 melee attack damage per point, flat. */
 	private static final double ATTACK_PER_POINT = 1.0;
 	/** Agility: +3% movement speed per point (fraction of the base value). */
-	private static final double SPEED_PER_POINT = 0.03;
+	// +2% of base movement speed per point (down from 3%): keeps Agility fast but tames the
+	// vanilla speed-driven FOV widening, which got nauseating at high Agility.
+	private static final double SPEED_PER_POINT = 0.02;
 	/** Resilience: +1 armor per point, flat. */
 	private static final double ARMOR_PER_POINT = 1.0;
 	/** Marksmanship: +10% fired-arrow damage per point. */
@@ -251,6 +256,16 @@ public final class StatModifiers {
 	public static int manaRegenPerSecond(PlayerProgress progress) {
 		return MANA_REGEN_BASE + effectivePoints(progress, Stat.INTELLIGENCE) * MANA_REGEN_PER_POINT
 			+ passiveRank(progress, "arcane_mind") * ARCANE_MIND_REGEN_PER_RANK;
+	}
+
+	/**
+	 * Health regenerated PER SECOND from VITALITY: {@code effectivePoints(VITALITY) *}
+	 * {@link #HEALTH_REGEN_PER_POINT}. Starts very small at 1 point and scales up as the player
+	 * invests in Vitality (the health skill). Ticked once per second by {@code ProgressEvents}
+	 * and applied via {@code player.heal}. Returns 0 for a character with no Vitality points.
+	 */
+	public static float healthRegenPerSecond(PlayerProgress progress) {
+		return effectivePoints(progress, Stat.VITALITY) * HEALTH_REGEN_PER_POINT;
 	}
 
 	/**

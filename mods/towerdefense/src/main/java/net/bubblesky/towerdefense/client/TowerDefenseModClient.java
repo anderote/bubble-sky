@@ -56,6 +56,7 @@ public class TowerDefenseModClient implements ClientModInitializer {
 	private static KeyBinding characterKey;
 	private static KeyBinding inventoryKey;
 	private static KeyBinding towersKey;
+	private static KeyBinding toggleEnemyOutlineKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -127,6 +128,15 @@ public class TowerDefenseModClient implements ClientModInitializer {
 			InputUtil.Type.KEYSYM,
 			GLFW.GLFW_KEY_K,
 			KEY_CATEGORY));
+		// N toggles the red enemy OUTLINE (the glow on wave enemies) for everyone. It sends an
+		// empty C2S signal; the server owns the shared flag and re-syncs all live enemies. This
+		// is NOT gated on being in-world with no screen (unlike the menu keys) so it can be hit
+		// any time; rebindable in Controls.
+		toggleEnemyOutlineKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+			"key.towerdefense.toggle_enemy_outline",
+			InputUtil.Type.KEYSYM,
+			GLFW.GLFW_KEY_N,
+			KEY_CATEGORY));
 
 		// Cache each progression snapshot the server pushes (drives the HUD + Character screen).
 		ClientPlayNetworking.registerGlobalReceiver(ProgressSyncPayload.ID,
@@ -135,6 +145,21 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		ClientPlayNetworking.registerGlobalReceiver(
 			net.bubblesky.towerdefense.towerui.net.TowerRosterPayload.ID,
 			(payload, context) -> net.bubblesky.towerdefense.client.ClientTowers.update(payload));
+
+		// Per-tower context menu: sent when the player punches a tower block (and again after an
+		// in-menu Upgrade). If that tower's menu is already open, refresh it in place; otherwise
+		// open a fresh one. Marshalled onto the client thread since it touches the current screen.
+		ClientPlayNetworking.registerGlobalReceiver(
+			net.bubblesky.towerdefense.towerui.net.OpenTowerMenuPayload.ID,
+			(payload, context) -> context.client().execute(() -> {
+				var mc = context.client();
+				if (mc.currentScreen instanceof net.bubblesky.towerdefense.client.screen.TowerMenuScreen menu
+						&& menu.posId() == payload.posId()) {
+					menu.updateSnapshot(payload);
+				} else {
+					mc.setScreen(new net.bubblesky.towerdefense.client.screen.TowerMenuScreen(payload));
+				}
+			}));
 
 		// Open the right screen from a keybind. Always drain the press queues; open only
 		// when in-world with no other screen up. J = full menu, H = hire, P = character,
@@ -149,6 +174,14 @@ public class TowerDefenseModClient implements ClientModInitializer {
 			while (inventoryKey.wasPressed()) openInventory = true;
 			boolean openTowers = false;
 			while (towersKey.wasPressed()) openTowers = true;
+			// Enemy-outline toggle: drain presses and fire the empty C2S signal to the server,
+			// which flips the shared GLOBAL glow flag. Handled BEFORE the screen/in-world guard
+			// so it works even with a menu open (it needs a connection, not an empty screen).
+			boolean toggleOutline = false;
+			while (toggleEnemyOutlineKey.wasPressed()) toggleOutline = true;
+			if (toggleOutline && client.player != null) {
+				ClientPlayNetworking.send(new net.bubblesky.towerdefense.towerui.net.ToggleEnemyGlowPayload());
+			}
 			if (client.currentScreen != null || client.player == null) {
 				return;
 			}

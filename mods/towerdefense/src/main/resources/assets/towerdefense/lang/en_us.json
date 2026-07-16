@@ -67,6 +67,7 @@
 	"key.towerdefense.open_character": "Open Character Screen (P)",
 	"key.towerdefense.open_inventory": "Open Inventory (I)",
 	"key.towerdefense.open_towers": "Open My Towers (K)",
+	"key.towerdefense.toggle_enemy_outline": "Toggle Enemy Outline (N)",
 
 	"screen.towerdefense.character.title": "Character",
 	"screen.towerdefense.character.level": "Level",

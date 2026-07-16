@@ -153,6 +153,18 @@ public final class WaveManager {
 	 *  identical to the default path). Server-thread-only. */
 	private static WarlordDirector.SpawnEmphasis activeEmphasis = null;
 
+	// ---- enemy outline toggle ---------------------------------------------
+	/** Server-authoritative, session-scoped GLOBAL toggle for the red enemy OUTLINE (the
+	 *  {@code GLOWING} glow applied by {@link #markEnemyVisible}). Shared by ALL players (there
+	 *  is no per-player state): a client keybind sends a {@code ToggleEnemyGlowPayload} which
+	 *  flips this flag and re-syncs every live enemy. Defaults to {@code true} (outlines ON).
+	 *  Resets to the default whenever the JVM/server restarts (it is not persisted). Read/written
+	 *  only on the server thread, like {@link #WALL_DAMAGE}. When {@code false}, {@link
+	 *  #markEnemyVisible} skips the glow on spawn (new spawns honour the current flag), while the
+	 *  RED {@link #ENEMY_TEAM} assignment — which colours the outline and the minimap radar — is
+	 *  always applied regardless (the outline only ever shows while an enemy is glowing). */
+	private static boolean enemyGlowEnabled = true;
+
 	// ---- horde / drip-spawn ------------------------------------------------
 	/** Concurrent live-enemy cap: deep waves can queue 150+ enemies, so spawning pauses
 	 *  whenever this many wave enemies are already on the field, resuming as they die.
@@ -919,9 +931,17 @@ public final class WaveManager {
 	 *  it gets close enough for {@link EntityNavigation} to path the rest of the way. */
 	/** Make an enemy clearly visible: a permanent Glowing outline (seen through walls and on
 	 *  Xaero's minimap radar) + membership in a RED scoreboard team so that glow/marker reads
-	 *  as "the enemy". Called once on spawn. */
+	 *  as "the enemy". Called once on spawn.
+	 *
+	 *  <p>The RED {@link #ENEMY_TEAM} assignment (which tints the outline + minimap radar) is
+	 *  applied unconditionally. The {@code GLOWING} effect — the outline itself — is gated on
+	 *  the GLOBAL {@link #enemyGlowEnabled} toggle: with outlines OFF we skip the glow entirely
+	 *  so a fresh spawn honours the current flag, and it can be turned back on mid-wave via
+	 *  {@link #toggleEnemyGlow(MinecraftServer)} (which re-applies it to every live enemy). */
 	private static void markEnemyVisible(ServerWorld world, MobEntity mob) {
-		mob.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, Integer.MAX_VALUE, 0, false, false, false));
+		if (enemyGlowEnabled) {
+			mob.addStatusEffect(glowEffect());
+		}
 		Scoreboard sb = world.getScoreboard();
 		Team team = sb.getTeam(ENEMY_TEAM);
 		if (team == null) {
@@ -929,6 +949,52 @@ public final class WaveManager {
 			team.setColor(Formatting.RED);
 		}
 		sb.addScoreHolderToTeam(mob.getUuidAsString(), team);
+	}
+
+	/** The permanent, hidden-particle {@code GLOWING} outline effect applied to wave enemies —
+	 *  a near-infinite duration so it never lapses mid-run. Built here so the on-spawn path
+	 *  ({@link #markEnemyVisible}) and the live re-apply path ({@link #toggleEnemyGlow}) stay in
+	 *  lockstep (identical duration/amplifier/flags). */
+	private static StatusEffectInstance glowEffect() {
+		return new StatusEffectInstance(StatusEffects.GLOWING, Integer.MAX_VALUE, 0, false, false, false);
+	}
+
+	/**
+	 * Flip the GLOBAL enemy-outline toggle and immediately re-sync every live wave enemy in the
+	 * arena world to the new state, then broadcast a short action-bar note to all players.
+	 *
+	 * <p>Server-authoritative and shared: this is a single mod-wide flag, so any player's keybind
+	 * press toggles the outline for EVERYONE (the broadcast makes that clear). Turning it OFF
+	 * strips the {@code GLOWING} effect from every {@code td_enemy}-tagged mob currently on the
+	 * field; turning it ON re-applies the long, refreshed {@link #glowEffect()} to them all —
+	 * mirroring exactly how {@link #markEnemyVisible} applies it on spawn. The RED
+	 * {@link #ENEMY_TEAM} colour assignment is left untouched either way. Works mid-wave, and new
+	 * spawns automatically honour the flag because {@link #markEnemyVisible} checks it.
+	 *
+	 * @param server the running server (used to reach the arena world + broadcast feedback)
+	 */
+	public static void toggleEnemyGlow(MinecraftServer server) {
+		enemyGlowEnabled = !enemyGlowEnabled;
+		TdArenaState st = TdArenaState.get(server);
+		ServerWorld world = st.getArenaWorld(server);
+		// Update every enemy currently alive in the arena. Guard on base != null because the
+		// arena bounding box (enemies(...)) is anchored on the Idol; with no arena set there are
+		// simply no live enemies to re-sync, so we just flip the flag + tell players.
+		if (world != null && st.base != null) {
+			for (Entity e : enemies(world, st)) {
+				if (!(e instanceof MobEntity mob)) {
+					continue;
+				}
+				if (enemyGlowEnabled) {
+					mob.addStatusEffect(glowEffect());
+				} else {
+					mob.removeStatusEffect(StatusEffects.GLOWING);
+				}
+			}
+		}
+		broadcast(server, Text.literal("Enemy outlines: " + (enemyGlowEnabled ? "ON" : "OFF")
+			+ " (shared toggle for all players)")
+			.formatted(enemyGlowEnabled ? Formatting.GREEN : Formatting.GRAY));
 	}
 
 	private static void beelineToBase(MobEntity mob, TdArenaState st) {

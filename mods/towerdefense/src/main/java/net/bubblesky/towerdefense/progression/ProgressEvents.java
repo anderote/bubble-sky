@@ -401,6 +401,12 @@ public final class ProgressEvents {
 		ProgressState state = ProgressState.get(server);
 		for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
 			PlayerProgress progress = state.forPlayer(player.getUuid());
+			// Vitality-scaled slow HEALTH regen — starts tiny, grows as Vitality is invested.
+			// Runs before the mana-full early-return so it always applies (vanilla syncs health).
+			float hpRegen = StatModifiers.healthRegenPerSecond(progress);
+			if (hpRegen > 0.0f && player.getHealth() < player.getMaxHealth()) {
+				player.heal(hpRegen);
+			}
 			int before = progress.getMana();
 			if (before >= progress.getMaxMana()) {
 				continue; // already full — nothing to regen, nothing to sync
