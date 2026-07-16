@@ -103,12 +103,15 @@ public class PlayerProgress {
 	// ---- curve -------------------------------------------------------------
 	/**
 	 * XP required to advance FROM {@code level} to {@code level + 1}:
-	 * {@code 50 + 25*(n-1) + 4*(n-1)^2}. A pure function (no state) so the client
-	 * HUD/screen can compute the same threshold from a synced level.
+	 * {@code 100 + 50*(n-1) + 15*(n-1)^2}. Steepened from the original so leveling is slower
+	 * overall and each higher level costs progressively more (a strongly super-linear grind:
+	 * L1→2 = 100, L5 = 540, L10 = 1765, L20 = 6465). Drives BOTH the global character level and
+	 * every per-class level ({@link ClassProgress} delegates here). A pure function (no state) so
+	 * the client HUD/screen can compute the same threshold from a synced level.
 	 */
 	public static int xpForLevel(int level) {
 		int m = Math.max(0, level - 1);
-		return 50 + 25 * m + 4 * m * m;
+		return 100 + 50 * m + 15 * m * m;
 	}
 
 	// ---- mutation ----------------------------------------------------------

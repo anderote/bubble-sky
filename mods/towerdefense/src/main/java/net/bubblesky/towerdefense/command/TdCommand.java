@@ -87,6 +87,42 @@ public final class TdCommand {
 	public record ShopEntry(String id, int price) {
 	}
 
+	// ---- build materials ---------------------------------------------------
+	// BUILD MATERIALS are plain block items sold straight into the buyer's INVENTORY for
+	// walling off lanes / building mazes — distinct from TOWERS (which hand over placeable
+	// tower blocks) and paid for out of the SAME per-player bank balance. Cheap, sold a
+	// stack-ish quantity at a time.
+
+	/** A buyable build material: the inventory item, its coin price, and how many you get. */
+	private record MaterialDef(net.minecraft.item.Item item, int price, int count) {
+	}
+
+	/** The build-materials storefront (insertion order = display order). */
+	private static final Map<String, MaterialDef> MATERIALS = new LinkedHashMap<>();
+
+	static {
+		MATERIALS.put("stone_bricks", new MaterialDef(net.minecraft.item.Items.STONE_BRICKS, 8, 16));
+		MATERIALS.put("stone_stairs", new MaterialDef(net.minecraft.item.Items.STONE_STAIRS, 8, 16));
+		MATERIALS.put("torch", new MaterialDef(net.minecraft.item.Items.TORCH, 5, 16));
+		MATERIALS.put("oak_planks", new MaterialDef(net.minecraft.item.Items.OAK_PLANKS, 6, 16));
+	}
+
+	/** Public, immutable view of a buyable material (id + coin price + stack count) for client UIs. */
+	public record MaterialEntry(String id, int price, int count) {
+	}
+
+	/**
+	 * The build-materials catalogue as an ordered list — the single source of truth shared
+	 * with the client Tower Defense menu so its materials section always matches {@code /td buy}.
+	 */
+	public static java.util.List<MaterialEntry> materialCatalogue() {
+		java.util.List<MaterialEntry> list = new java.util.ArrayList<>();
+		for (Map.Entry<String, MaterialDef> e : MATERIALS.entrySet()) {
+			list.add(new MaterialEntry(e.getKey(), e.getValue().price(), e.getValue().count()));
+		}
+		return list;
+	}
+
 	// ---- hireable allies ---------------------------------------------------
 	/** Hard cap on how many allies may be alive in the arena at once. */
 	private static final int MAX_ALLIES = 20;
@@ -260,6 +296,8 @@ public final class TdCommand {
 		line(src, "lightning_tower", lightning + " coins — powerful bolt that chains between enemies");
 		line(src, "flame_tower", flame + " coins — fast flamethrower; torches crowds + burning ground");
 		body(src, "Buy → get a placeable tower block → place it to raise the tower.");
+		body(src, "Build materials (stone_bricks/stone_stairs/torch/oak_planks) are also on");
+		body(src, "/td shop — /td buy <id> drops a stack in your pack to wall lanes & mazes.");
 		body(src, "The flame tower is a short-range incinerator; the others reach further out.");
 		body(src, "Prefer shooting? A bought tower arrow fired from your bow still builds too.");
 		body(src, "Aim at a built tower and /td upgrade to raise its tier for coins.");
@@ -323,6 +361,11 @@ public final class TdCommand {
 			int price = e.getValue().price();
 			line(src, e.getKey(), price + " coins  (/td buy " + e.getKey() + ")");
 		}
+		src.sendFeedback(() -> Text.literal("Build Materials").formatted(Formatting.GOLD), false);
+		for (Map.Entry<String, MaterialDef> e : MATERIALS.entrySet()) {
+			MaterialDef d = e.getValue();
+			line(src, e.getKey(), d.price() + " coins for " + d.count() + "  (/td buy " + e.getKey() + ")");
+		}
 		src.sendFeedback(() -> Text.literal("  Your coins: " + coins).formatted(Formatting.AQUA), false);
 		src.sendFeedback(() -> Text.literal("  Buy gives a placeable tower block — place it to raise the tower.")
 			.formatted(Formatting.GRAY), false);
@@ -341,6 +384,13 @@ public final class TdCommand {
 	private static int buy(CommandContext<ServerCommandSource> ctx, String type, int count, int tier) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity player = src.getPlayerOrThrow();
+
+		// Build materials share the /td buy entry point but go straight to inventory (no tier).
+		// {@code count} is honoured as the number of stacks/bundles purchased.
+		MaterialDef material = MATERIALS.get(type);
+		if (material != null) {
+			return buyMaterial(ctx, material, type, count);
+		}
 
 		TowerDef def = TOWERS.get(type);
 		TowerKind kind = TowerKind.fromId(type);
@@ -374,6 +424,38 @@ public final class TdCommand {
 			: " Place them on the ground to raise the towers.";
 		src.sendFeedback(() -> Text.literal("Bought " + count + "x " + type + " T" + tier + " for " + total
 			+ " coins (" + remaining + " left)." + howTo)
+			.formatted(Formatting.GREEN), false);
+		return 1;
+	}
+
+	/**
+	 * Buy build materials: spend the buyer's BANK gold (same balance towers use) and drop
+	 * {@code count} bundles of {@code def.count()} of the item straight into the player's
+	 * INVENTORY (overflow drops at their feet). Unlike towers there is no tier — these are
+	 * plain blocks for walling lanes / building mazes.
+	 */
+	private static int buyMaterial(CommandContext<ServerCommandSource> ctx, MaterialDef def, String type, int count)
+			throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+
+		int total = def.price() * count;
+		int give = def.count() * count;
+		int coins = countCoins(player);
+		if (coins < total) {
+			src.sendError(Text.literal("Not enough coins: need " + total + " for " + give + "x "
+				+ type + ", have " + coins + "."));
+			return 0;
+		}
+		// Hand over the materials as a stack (dropping any that don't fit in the pack).
+		ItemStack stack = new ItemStack(def.item(), give);
+		if (!player.getInventory().insertStack(stack)) {
+			player.dropItem(stack, false);
+		}
+		removeCoins(player, total);
+		int remaining = coins - total;
+		src.sendFeedback(() -> Text.literal("Bought " + give + "x " + type + " for " + total
+			+ " coins (" + remaining + " left). Build your walls & mazes!")
 			.formatted(Formatting.GREEN), false);
 		return 1;
 	}

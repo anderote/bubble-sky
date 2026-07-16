@@ -2,6 +2,8 @@ package net.bubblesky.towerdefense.entity;
 
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.entity.attribute.EntityAttributeInstance;
+import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.world.World;
@@ -32,8 +34,32 @@ import net.minecraft.world.World;
  */
 public class TdSkeletonArcher extends TdAllyArcher {
 
+	/**
+	 * How far (blocks) this skeleton will loose arrows — well beyond the base
+	 * {@link TdAllyArcher}'s 14-block range so the summoned bowmen snipe from the back line.
+	 */
+	private static final float SKELETON_SHOOT_RANGE = 24.0f;
+
+	/**
+	 * FOLLOW_RANGE (blocks) forced onto every skeleton archer so it can ACQUIRE targets from as
+	 * far as it can shoot them — the base ally follow range (32) is already generous, but we push
+	 * it further so the longer {@link #SKELETON_SHOOT_RANGE} shooting range is actually usable.
+	 */
+	private static final double SKELETON_FOLLOW_RANGE = 48.0;
+
 	public TdSkeletonArcher(EntityType<? extends TdSkeletonArcher> type, World world) {
 		super(type, world);
+		// Widen sight to match the longer shooting range (attributes exist by now, set post-super).
+		EntityAttributeInstance follow = this.getAttributeInstance(EntityAttributes.FOLLOW_RANGE);
+		if (follow != null) {
+			follow.setBaseValue(SKELETON_FOLLOW_RANGE);
+		}
+	}
+
+	/** Shoot from noticeably farther than the base ranger archer (see {@link #SKELETON_SHOOT_RANGE}). */
+	@Override
+	protected float shootRange() {
+		return SKELETON_SHOOT_RANGE;
 	}
 
 	/**

@@ -19,7 +19,9 @@ import net.bubblesky.towerdefense.registry.ModBlocks;
 import net.bubblesky.towerdefense.registry.ModEntities;
 import net.bubblesky.towerdefense.tower.TowerKind;
 import net.bubblesky.towerdefense.tower.TowerStructure;
+import net.minecraft.block.BlockState;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LightningEntity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.SpawnReason;
@@ -30,6 +32,7 @@ import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.mob.HostileEntity;
+import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.passive.WolfEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ArrowEntity;
@@ -362,29 +365,45 @@ public enum SpellType {
 
 	// ================= NECROMANCER =================
 	/**
-	 * RAISE DEAD: reanimate the corpses of recently-slain enemies near the caster into melee
-	 * {@link TdSkeletonWarrior} allies. Consumes up to {@code 1 + }{@link #rankOf} of the
-	 * nearest un-consumed corpses (recorded by {@link SpellManager#recordCorpse} on every
-	 * {@code td_enemy} death) within {@link #RAISE_DEAD_RADIUS}, raising one caster-owned
-	 * warrior — ordered to ATTACK, persistent, and registered with {@link SpellManager} for a
-	 * full {@link SpellManager#SKELETON_SUMMON_LIFETIME_TICKS} (5 minutes) — at each. If NO
-	 * corpse is in range it still raises a single, slightly weaker warrior at the caster's feet
-	 * so the spell never feels dead. Base one skeleton at rank 0, +1 per allocated rank.
+	 * SUMMON WARRIORS (id {@code raise_dead}): raise a squad of melee {@link TdSkeletonWarrior}
+	 * allies, KEEPING the necromantic "reanimate the fallen" flavour — corpses first, then fresh
+	 * summons to fill out the ranks.
+	 *
+	 * <p><b>Count.</b> The squad size is {@code min(}{@link #SUMMON_MAX_COUNT}{@code ,
+	 * }{@link #SUMMON_WARRIOR_BASE}{@code  + }{@link #rankOf}{@code )} — a few early ranks reach the
+	 * hard cap of {@value #SUMMON_MAX_COUNT}. It first consumes up to {@code count} of the nearest
+	 * un-consumed enemy corpses (recorded by {@link SpellManager#recordCorpse} on every
+	 * {@code td_enemy} death) within {@link #RAISE_DEAD_RADIUS}, reanimating a warrior AT each
+	 * corpse tile, then TOPS UP with fresh warriors summoned at the aim anchor
+	 * ({@link #summonTarget WHERE THE CASTER IS POINTING}) until the squad reaches {@code count}.
+	 * With no corpses in range the whole squad is simply summoned at the anchor, so the spell never
+	 * feels dead.
+	 *
+	 * <p><b>Quality.</b> Every warrior is passed through {@link #empowerSummon}, which scales its
+	 * HP + damage with the caster's rank (and the {@code minion_mastery} passive) and equips a
+	 * rank-gated armour tier (leather → chainmail → iron → diamond) that never drops. Each is
+	 * ordered to ATTACK, made persistent, and registered with {@link SpellManager} for the full
+	 * 5-minute {@link SpellManager#SKELETON_SUMMON_LIFETIME_TICKS} lifetime.
 	 */
-	RAISE_DEAD("raise_dead", "Raise Dead", 18, 160) {
+	RAISE_DEAD("raise_dead", "Summon Warriors", 18, 160) {
 		@Override
 		public void cast(ServerWorld world, ServerPlayerEntity caster, Vec3d aim) {
-			int count = 1 + rankOf(caster);
+			int rank = rankOf(caster);
+			int count = Math.min(SUMMON_MAX_COUNT, SUMMON_WARRIOR_BASE + rank);
+			// 1) Reanimate the nearest corpses first, AT their own corpse tiles.
 			List<Vec3d> corpses = SpellManager.consumeCorpses(world, caster.getPos(), RAISE_DEAD_RADIUS, count);
-			if (corpses.isEmpty()) {
-				// Fallback: no corpses to work with — raise a single, weaker skeleton at the feet.
-				TdSkeletonWarrior fallback = spawnSkeletonWarrior(world, caster, caster.getPos());
-				if (fallback != null) {
-					fallback.setHealth(fallback.getMaxHealth() * RAISE_DEAD_FALLBACK_HP_FRACTION);
+			int spawned = 0;
+			for (Vec3d pos : corpses) {
+				if (spawnSkeletonWarrior(world, caster, pos, rank) != null) {
+					spawned++;
 				}
-			} else {
-				for (Vec3d pos : corpses) {
-					spawnSkeletonWarrior(world, caster, pos);
+			}
+			// 2) Top up with fresh warriors at the aim anchor until we reach the (capped) count.
+			if (spawned < count) {
+				BlockPos anchor = summonTarget(world, caster, SUMMON_RANGE);
+				for (int i = spawned; i < count; i++) {
+					BlockPos spot = spreadSpot(world, anchor, i - spawned);
+					spawnSkeletonWarrior(world, caster, Vec3d.ofBottomCenter(spot), rank);
 				}
 			}
 			Vec3d c = caster.getPos();
@@ -427,33 +446,45 @@ public enum SpellType {
 	},
 
 	/**
-	 * Raise a squad of {@link #SKELETON_ARCHER_COUNT} beefy SKELETON ARCHERS
-	 * ({@link ModEntities#ALLY_SKELETON}) at the caster's feet, ordered to ATTACK and
-	 * owned by the caster (a Necromancer signature spell). Unlike the fleeting wolf summons, these undead bowmen are
-	 * built to hold a line: they are registered with {@link SpellManager} for a full
-	 * {@link SpellManager#SKELETON_SUMMON_LIFETIME_TICKS} ticks (5 minutes) before they
-	 * crumble to dust. Each is a friendly {@link TdAllyEntity} under the hood — only its
-	 * skin is skeletal — so the caster's own towers never mistake it for a wave enemy.
+	 * SUMMON ARCHERS (id {@code summon_squad}): raise a squad of beefy SKELETON ARCHERS
+	 * ({@link ModEntities#ALLY_SKELETON}) at the aim anchor, ordered to ATTACK and owned by the
+	 * caster (a Necromancer signature spell). Unlike the fleeting wolf summons, these undead
+	 * bowmen are built to hold a line: they are registered with {@link SpellManager} for a full
+	 * {@link SpellManager#SKELETON_SUMMON_LIFETIME_TICKS} ticks (5 minutes) before they crumble to
+	 * dust. Each is a friendly {@link TdAllyEntity} under the hood — only its skin is skeletal — so
+	 * the caster's own towers never mistake it for a wave enemy.
+	 *
+	 * <p><b>Count.</b> The squad size is {@code min(}{@link #SUMMON_MAX_COUNT}{@code ,
+	 * }{@link #SUMMON_ARCHER_BASE}{@code  + }{@link #rankOf}{@code )}, so a few early ranks reach
+	 * the hard cap of {@value #SUMMON_MAX_COUNT}. Beyond that, further ranks upgrade QUALITY rather
+	 * than quantity: every archer is passed through {@link #empowerSummon}, which scales HP + damage
+	 * with rank (and the {@code minion_mastery} passive) and equips a rank-gated, no-drop armour
+	 * tier (leather → chainmail → iron → diamond).
 	 */
-	SUMMON_SQUAD("summon_squad", "Summon Skeletons", 22, 220) {
+	SUMMON_SQUAD("summon_squad", "Summon Archers", 22, 220) {
 		@Override
 		public void cast(ServerWorld world, ServerPlayerEntity caster, Vec3d aim) {
 			int rank = rankOf(caster);
-			int count = SKELETON_ARCHER_COUNT + rank / 2; // +1 archer every 2 ranks
-			double archerDmgMult = 1.0 + SQUAD_RANK_DAMAGE_BONUS * rank; // +10% archer damage per rank
+			int count = Math.min(SUMMON_MAX_COUNT, SUMMON_ARCHER_BASE + rank);
 			int lifetime = necroSummonLifetime(caster); // Unholy Vigor stretches the crumble timer
+			// Raise the squad WHERE THE CASTER IS POINTING (clamped/ground-snapped), not at the feet,
+			// then cluster the archers in a small footprint around that anchor.
+			BlockPos anchor = summonTarget(world, caster, SUMMON_RANGE);
 			for (int i = 0; i < count; i++) {
-				TdAllyEntity ally = ModEntities.ALLY_SKELETON.spawn(world, caster.getBlockPos(), SpawnReason.EVENT);
+				BlockPos spot = spreadSpot(world, anchor, i);
+				TdAllyEntity ally = ModEntities.ALLY_SKELETON.spawn(world, spot, SpawnReason.EVENT);
 				if (ally == null) {
 					continue;
 				}
 				ally.addCommandTag(TdAllyEntity.ALLY_TAG);
 				ally.setPersistent();
 				ally.setOrder(TdAllyEntity.Order.ATTACK, null, caster.getUuid());
-				// Squad rank buffs archer damage; minion_mastery adds HP+damage on top.
-				scaleMinion(caster, ally, 1.0, archerDmgMult);
+				// Rank scales HP + damage (minion_mastery folded in) and equips a no-drop armour tier.
+				empowerSummon(caster, ally, rank);
 				SpellManager.addSummon(ally, lifetime);
 			}
+			// A burst at the landing anchor so the player sees where the squad materialised.
+			summonBurst(world, anchor);
 			castSound(world, caster, SoundEvents.ENTITY_SKELETON_AMBIENT, 1.0f);
 		}
 	},
@@ -534,8 +565,23 @@ public enum SpellType {
 	 * {@code 2400 + 5×3120 = 18000} ticks (15 min); rank 0 = 2400 ticks (2 min).
 	 */
 	private static final int DEPLOY_TURRET_TICKS_PER_RANK = 3120;
-	/** Summon Skeletons: +10% skeleton-archer damage per Summon Skeletons rank. */
-	private static final double SQUAD_RANK_DAMAGE_BONUS = 0.10;
+	/** Hard cap on how many skeletons EITHER Necromancer summon spell may raise at once. */
+	private static final int SUMMON_MAX_COUNT = 5;
+	/** Summon Archers base squad size at rank 0 (rank then adds +1 each up to the cap). */
+	private static final int SUMMON_ARCHER_BASE = 3;
+	/** Summon Warriors base squad size at rank 0 (rank then adds +1 each up to the cap). */
+	private static final int SUMMON_WARRIOR_BASE = 3;
+	/**
+	 * Per-rank HP &amp; ATTACK_DAMAGE bonus applied to EVERY raised skeleton (both summon spells):
+	 * +6% each per rank, layered on top of the {@code minion_mastery} passive by {@link #scaleMinion}.
+	 * This is the "quality keeps climbing after the count caps" scaling.
+	 */
+	private static final double SUMMON_RANK_STAT_BONUS = 0.06;
+	/** Effective-rank thresholds at which summoned skeletons gain each (no-drop) armour tier. */
+	private static final int ARMOR_RANK_LEATHER = 5;
+	private static final int ARMOR_RANK_CHAINMAIL = 9;
+	private static final int ARMOR_RANK_IRON = 13;
+	private static final int ARMOR_RANK_DIAMOND = 17;
 	/** Necromancer Amplify passive: +10% Bone Spear (and spell) damage per rank. */
 	private static final float AMPLIFY_DAMAGE_BONUS = 0.10f;
 	/** Necromancer Minion Mastery passive: +10% minion HP &amp; damage per rank. */
@@ -543,10 +589,8 @@ public enum SpellType {
 	/** Necromancer Unholy Vigor passive: +30s (600 ticks) minion lifetime per rank. */
 	private static final int UNHOLY_VIGOR_TICKS_PER_RANK = 600;
 
-	/** Radius (blocks) around the caster within which RAISE_DEAD reanimates enemy corpses. */
+	/** Radius (blocks) around the caster within which Summon Warriors reanimates enemy corpses. */
 	private static final double RAISE_DEAD_RADIUS = 16.0;
-	/** Health fraction of the lone fallback warrior raised when no corpse is in range (weaker). */
-	private static final float RAISE_DEAD_FALLBACK_HP_FRACTION = 0.6f;
 
 	/** Bone Spear reach (blocks) along the caster's aim. */
 	private static final double BONE_SPEAR_RANGE = 18.0;
@@ -580,8 +624,16 @@ public enum SpellType {
 	private static final double WARCRY_RADIUS = 10.0;
 	private static final int WARCRY_DURATION_TICKS = 160;
 
-	/** How many skeleton archers the Necromancer's Summon Skeletons spell raises. */
-	private static final int SKELETON_ARCHER_COUNT = 3;
+	/**
+	 * Max reach (blocks) for the Necromancer's aimed skeleton summons — both
+	 * {@link #SUMMON_SQUAD} and the no-corpse {@link #RAISE_DEAD} fallback drop their undead at
+	 * {@link #summonTarget the tile the caster is pointing at}, clamped to this range.
+	 */
+	private static final double SUMMON_RANGE = 24.0;
+	/** How far up {@link #groundSnap} peeks for a floor when its start cell is buried (blocks). */
+	private static final int SUMMON_SNAP_UP = 4;
+	/** How far down {@link #groundSnap} drops looking for a floor when aiming over open air (blocks). */
+	private static final int SUMMON_SNAP_DOWN = 24;
 
 	private static final double CHARGE_SPEED = 1.6;
 	private static final double CHARGE_RADIUS = 3.5;
@@ -668,13 +720,13 @@ public enum SpellType {
 	}
 
 	/**
-	 * Spawn one caster-owned {@link TdSkeletonWarrior} at {@code at}: tagged as an ally,
-	 * made persistent, ordered to ATTACK, and registered with {@link SpellManager} for the
-	 * 5-minute {@link SpellManager#SKELETON_SUMMON_LIFETIME_TICKS} lifetime. Returns the
-	 * spawned warrior (or {@code null} if the spawn failed) so callers can tweak it (e.g. the
-	 * weaker fallback warrior).
+	 * Spawn one caster-owned {@link TdSkeletonWarrior} at {@code at}: tagged as an ally, made
+	 * persistent, ordered to ATTACK, empowered by {@code spellRank} (HP/damage + a no-drop armour
+	 * tier via {@link #empowerSummon}), and registered with {@link SpellManager} for the 5-minute
+	 * {@link SpellManager#SKELETON_SUMMON_LIFETIME_TICKS} lifetime. Returns the spawned warrior (or
+	 * {@code null} if the spawn failed) so callers can tweak it further.
 	 */
-	private static TdSkeletonWarrior spawnSkeletonWarrior(ServerWorld world, ServerPlayerEntity caster, Vec3d at) {
+	private static TdSkeletonWarrior spawnSkeletonWarrior(ServerWorld world, ServerPlayerEntity caster, Vec3d at, int spellRank) {
 		BlockPos pos = BlockPos.ofFloored(at.x, at.y, at.z);
 		TdSkeletonWarrior ally = ModEntities.ALLY_SKELETON_WARRIOR.spawn(world, pos, SpawnReason.EVENT);
 		if (ally == null) {
@@ -683,8 +735,9 @@ public enum SpellType {
 		ally.addCommandTag(TdAllyEntity.ALLY_TAG);
 		ally.setPersistent();
 		ally.setOrder(TdAllyEntity.Order.ATTACK, null, caster.getUuid());
-		// Minion Mastery scales the raised warrior's HP + damage; Unholy Vigor lengthens its life.
-		scaleMinion(caster, ally, 1.0, 1.0);
+		// Rank scales HP + damage (minion_mastery folded in) and equips a no-drop armour tier;
+		// Unholy Vigor lengthens its life.
+		empowerSummon(caster, ally, spellRank);
 		SpellManager.addSummon(ally, necroSummonLifetime(caster));
 		return ally;
 	}
@@ -717,6 +770,69 @@ public enum SpellType {
 		scaleBaseValue(minion, EntityAttributes.MAX_HEALTH, extraHpMult * masteryMult);
 		scaleBaseValue(minion, EntityAttributes.ATTACK_DAMAGE, extraDmgMult * masteryMult);
 		minion.setHealth(minion.getMaxHealth());
+	}
+
+	/**
+	 * Shared "make this raised skeleton better with rank" pass used by BOTH Necromancer summon
+	 * spells ({@link #SUMMON_SQUAD Summon Archers} and {@link #RAISE_DEAD Summon Warriors}). Given a
+	 * freshly-spawned skeleton and the caster's spell {@code rank}, it:
+	 * <ol>
+	 *   <li>scales HP + ATTACK_DAMAGE by {@value #SUMMON_RANK_STAT_BONUS} per rank (via
+	 *       {@link #scaleMinion}, which also folds in the {@code minion_mastery} passive), and</li>
+	 *   <li>equips a rank-gated ARMOUR tier that never drops (see {@link #equipArmorTier}), keyed on
+	 *       the <em>effective</em> rank ({@code rank + minion_mastery} passive rank) so investing in
+	 *       Minion Mastery also pushes the troops into sturdier plate.</li>
+	 * </ol>
+	 * Once the summon count is capped at {@value #SUMMON_MAX_COUNT}, this is where every further
+	 * rank is spent — "more upgrade levels → better troops".
+	 */
+	static void empowerSummon(ServerPlayerEntity caster, LivingEntity minion, int rank) {
+		double statMult = 1.0 + SUMMON_RANK_STAT_BONUS * rank;
+		scaleMinion(caster, minion, statMult, statMult);
+		int effectiveRank = rank + casterPassiveRank(caster, "minion_mastery");
+		equipArmorTier(minion, effectiveRank);
+	}
+
+	/**
+	 * Equip {@code minion} with an ARMOUR set gated by {@code effectiveRank} — nothing below
+	 * {@value #ARMOR_RANK_LEATHER}, then leather / chainmail / iron / diamond at the
+	 * {@value #ARMOR_RANK_LEATHER} / {@value #ARMOR_RANK_CHAINMAIL} / {@value #ARMOR_RANK_IRON} /
+	 * {@value #ARMOR_RANK_DIAMOND} rank thresholds. All four slots are filled and every piece's
+	 * drop chance is zeroed (via {@link MobEntity#setEquipmentDropChance}) so the summons never
+	 * spew loot when they crumble. No-op for a non-{@link MobEntity} (never happens for our
+	 * skeletons, which are {@link TdAllyEntity}/{@link MobEntity}).
+	 */
+	private static void equipArmorTier(LivingEntity minion, int effectiveRank) {
+		if (!(minion instanceof MobEntity mob) || effectiveRank < ARMOR_RANK_LEATHER) {
+			return;
+		}
+		net.minecraft.item.Item helmet;
+		net.minecraft.item.Item chest;
+		net.minecraft.item.Item legs;
+		net.minecraft.item.Item boots;
+		if (effectiveRank >= ARMOR_RANK_DIAMOND) {
+			helmet = Items.DIAMOND_HELMET; chest = Items.DIAMOND_CHESTPLATE;
+			legs = Items.DIAMOND_LEGGINGS; boots = Items.DIAMOND_BOOTS;
+		} else if (effectiveRank >= ARMOR_RANK_IRON) {
+			helmet = Items.IRON_HELMET; chest = Items.IRON_CHESTPLATE;
+			legs = Items.IRON_LEGGINGS; boots = Items.IRON_BOOTS;
+		} else if (effectiveRank >= ARMOR_RANK_CHAINMAIL) {
+			helmet = Items.CHAINMAIL_HELMET; chest = Items.CHAINMAIL_CHESTPLATE;
+			legs = Items.CHAINMAIL_LEGGINGS; boots = Items.CHAINMAIL_BOOTS;
+		} else {
+			helmet = Items.LEATHER_HELMET; chest = Items.LEATHER_CHESTPLATE;
+			legs = Items.LEATHER_LEGGINGS; boots = Items.LEATHER_BOOTS;
+		}
+		equipNoDrop(mob, EquipmentSlot.HEAD, helmet);
+		equipNoDrop(mob, EquipmentSlot.CHEST, chest);
+		equipNoDrop(mob, EquipmentSlot.LEGS, legs);
+		equipNoDrop(mob, EquipmentSlot.FEET, boots);
+	}
+
+	/** Put {@code item} in {@code slot} and zero its drop chance so the summon never sheds loot. */
+	private static void equipNoDrop(MobEntity mob, EquipmentSlot slot, net.minecraft.item.Item item) {
+		mob.equipStack(slot, new ItemStack(item));
+		mob.setEquipmentDropChance(slot, 0.0f);
 	}
 
 	/** Multiply an entity's attribute base value by {@code mult} in place (no-op when 1.0 / absent). */
@@ -867,6 +983,118 @@ public enum SpellType {
 			p = below;
 		}
 		return p;
+	}
+
+	/**
+	 * The ground tile the Necromancer's summoned undead should materialise on: the standable
+	 * cell WHERE THE CASTER IS POINTING, clamped to {@code maxRange} and dropped to the floor.
+	 *
+	 * <p>Resolution, in order:
+	 * <ol>
+	 *   <li><b>Aim hits a block within range.</b> Take the empty cell against the struck face
+	 *       ({@link BlockHitResult#getSide()}) — the natural "on top of / next to the surface"
+	 *       spot — and {@link #groundSnap ground-snap} it so we land on a real floor rather than
+	 *       a cell floating off a wall.</li>
+	 *   <li><b>Aim meets nothing (open sky / beyond range).</b> Walk {@code maxRange} blocks along
+	 *       the caster's FLAT (horizontal) look direction — clamping the anchor to at most
+	 *       {@code maxRange} away horizontally — then {@link #groundSnap ground-snap} straight down
+	 *       (peeking a little up first) for the nearest solid, non-fluid floor.</li>
+	 * </ol>
+	 * The returned cell is always a standable air pocket (never buried in a solid block). If no
+	 * valid tile can be found anywhere along the way, it degrades to a snapped/near-caster
+	 * fallback so a summon never silently fails.
+	 */
+	private static BlockPos summonTarget(ServerWorld world, ServerPlayerEntity caster, double maxRange) {
+		// 1. Aim raycast: if it strikes a surface within reach, stand against the struck face.
+		HitResult hit = caster.raycast(maxRange, 1.0f, false);
+		if (hit instanceof BlockHitResult bhr && hit.getType() == HitResult.Type.BLOCK) {
+			BlockPos against = bhr.getBlockPos().offset(bhr.getSide());
+			BlockPos snapped = groundSnap(world, against);
+			if (snapped != null) {
+				return snapped;
+			}
+		}
+		// 2. Open air / too far: clamp to maxRange along the flat look, then snap to the ground.
+		Vec3d look = caster.getRotationVec(1.0f);
+		Vec3d flat = new Vec3d(look.x, 0.0, look.z);
+		flat = flat.lengthSquared() < 1.0e-6 ? new Vec3d(0, 0, 1) : flat.normalize();
+		Vec3d far = caster.getPos().add(flat.multiply(maxRange));
+		BlockPos base = BlockPos.ofFloored(far.x, caster.getY(), far.z);
+		BlockPos snapped = groundSnap(world, base);
+		if (snapped != null) {
+			return snapped;
+		}
+		// 3. Nothing standable out there — degrade gracefully to a floor near the caster.
+		BlockPos nearFeet = groundSnap(world, caster.getBlockPos());
+		return nearFeet != null ? nearFeet : caster.getBlockPos();
+	}
+
+	/**
+	 * Find the nearest STANDABLE cell to {@code base} by scanning vertically: down as far as
+	 * {@link #SUMMON_SNAP_DOWN} (the common "aimed over a ledge, drop to the floor" case) and up to
+	 * {@link #SUMMON_SNAP_UP} (in case {@code base} started buried in terrain), preferring the cell
+	 * closest to {@code base}. Returns {@code null} if no floor is found in range.
+	 */
+	private static BlockPos groundSnap(ServerWorld world, BlockPos base) {
+		for (int d = 0; d <= SUMMON_SNAP_DOWN; d++) {
+			BlockPos below = base.down(d);
+			if (isStandable(world, below)) {
+				return below;
+			}
+			if (d > 0 && d <= SUMMON_SNAP_UP) {
+				BlockPos above = base.up(d);
+				if (isStandable(world, above)) {
+					return above;
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Whether a mob can be dropped into {@code pos}: the cell (and the one above it, for head room)
+	 * is passable air and the cell below is a solid, non-fluid floor to stand on. Guards against
+	 * spawning inside solid blocks or in fluids, and stays within the world's build height.
+	 */
+	private static boolean isStandable(ServerWorld world, BlockPos pos) {
+		if (world.isOutOfHeightLimit(pos) || world.isOutOfHeightLimit(pos.up())) {
+			return false;
+		}
+		return canStandOn(world, pos.down()) && passable(world, pos) && passable(world, pos.up());
+	}
+
+	/** A solid, non-fluid floor a mob can stand on top of (non-empty collision shape, no fluid). */
+	private static boolean canStandOn(ServerWorld world, BlockPos pos) {
+		BlockState state = world.getBlockState(pos);
+		return state.getFluidState().isEmpty() && !state.getCollisionShape(world, pos).isEmpty();
+	}
+
+	/** An empty, non-fluid cell a mob can occupy (no collision, no fluid). */
+	private static boolean passable(ServerWorld world, BlockPos pos) {
+		BlockState state = world.getBlockState(pos);
+		return state.getFluidState().isEmpty() && state.getCollisionShape(world, pos).isEmpty();
+	}
+
+	/**
+	 * A standable spot for the {@code i}-th squad member: a small deterministic 3x3 footprint
+	 * around {@code anchor}, each candidate ground-snapped so nobody spawns floating or buried.
+	 * Falls back to {@code anchor} itself when an offset cell has no valid floor.
+	 */
+	private static BlockPos spreadSpot(ServerWorld world, BlockPos anchor, int i) {
+		int dx = (i % 3) - 1;          // -1, 0, 1
+		int dz = ((i / 3) % 3) - 1;    // widen into a second/third row as the count grows
+		BlockPos snapped = groundSnap(world, anchor.add(dx, 0, dz));
+		return snapped != null ? snapped : anchor;
+	}
+
+	/** A soul-fire summon flourish at {@code anchor} so the player sees where the undead landed. */
+	private static void summonBurst(ServerWorld world, BlockPos anchor) {
+		double x = anchor.getX() + 0.5;
+		double y = anchor.getY() + 0.5;
+		double z = anchor.getZ() + 0.5;
+		world.spawnParticles(ParticleTypes.SOUL, x, y, z, 24, 0.5, 0.4, 0.5, 0.02);
+		world.spawnParticles(ParticleTypes.SOUL_FIRE_FLAME, x, y, z, 12, 0.4, 0.3, 0.4, 0.01);
+		world.playSound(null, x, y, z, SoundEvents.ENTITY_SKELETON_AMBIENT, SoundCategory.PLAYERS, 0.9f, 0.7f);
 	}
 
 	/** Draw a straight line of particles from {@code from} to {@code to} to fake a projectile streak. */

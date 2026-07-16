@@ -42,37 +42,57 @@ public final class TdClientHud {
 			return;
 		}
 
-		// ---- always-on gold counter --------------------------------------------
-		// The player's current coins, shown at ALL times (not just during a match),
-		// mirroring the server sidebar. Drawn top-left so it sits clear of the
-		// wave/idol bossbar at the top-centre.
-		// Essence (the premium loot currency) rides on the same line in purple, so the two
-		// spendable balances read together at a glance.
+		// ---- always-on TD readout (TOP-RIGHT, right-aligned, tightly grouped) ----
+		// The whole progression/economy readout sits in the TOP-RIGHT corner so it stays
+		// clear of the player's top-left minimap mod AND the top-centre wave/idol bossbar.
+		// Every line is RIGHT-ALIGNED to the screen edge: text x = scaledWidth - lineWidth -
+		// MARGIN, and the slim bars share a right edge at scaledWidth - MARGIN. Lines are
+		// stacked top-down with tight vertical spacing. Order:
+		//   1) Bank balance (gold) + Essence
+		//   2) Class + character Level + XP bar
+		//   3) Mana + mana bar
+		final int MARGIN = 6;
+		final int barW = 80;
+		final int barH = 4;
+		final int scaledWidth = mc.getWindow().getScaledWidth();
+		final int barX = scaledWidth - MARGIN - barW; // shared right-aligned bar left edge
+
+		// (1) Bank + Essence — the two spendable balances read together. The "Gold" total is
+		// really the player's BANK balance (coins auto-collect into the bank), so it is
+		// labelled "Bank:". Essence (premium loot currency) rides alongside in purple.
 		int gold = TdClientStatus.coins();
 		int essence = TdClientStatus.essence();
-		Text goldLine = Text.literal("Gold: ").formatted(Formatting.GRAY)
+		Text bankLine = Text.literal("Bank: ").formatted(Formatting.GRAY)
 			.append(Text.literal(Integer.toString(gold)).formatted(Formatting.GOLD))
 			.append(Text.literal("   Essence: ").formatted(Formatting.GRAY))
 			.append(Text.literal(Integer.toString(essence)).formatted(Formatting.LIGHT_PURPLE));
-		context.drawTextWithShadow(mc.textRenderer, goldLine, 6, 6, 0xFFFFFF);
+		int bankY = 4;
+		int bankX = scaledWidth - mc.textRenderer.getWidth(bankLine) - MARGIN;
+		context.drawTextWithShadow(mc.textRenderer, bankLine, bankX, bankY, 0xFFFFFFFF);
 
-		// ---- always-on RPG level + XP bar --------------------------------------
-		// Player level, a slim XP bar, and unspent-point nudge, drawn just below the gold
-		// line at top-left — clear of the top-centre wave/idol bossbar. Progression is
-		// permanent, so this is meaningful even outside a live match.
+		// (2) Class + character Level (+ unspent-point nudge), with the slim XP bar just below.
+		// The active class + its class-level ride at the front so the loadout is legible; the
+		// XP bar keeps its green fill.
 		int level = ClientProgress.level();
 		int points = ClientProgress.unspentPoints();
-		Text levelLine = Text.literal("Lvl ").formatted(Formatting.GRAY)
-			.append(Text.literal(Integer.toString(level)).formatted(Formatting.AQUA));
+		Text levelLine;
+		if (ClientProgress.hasClass()) {
+			levelLine = Text.literal(classDisplay() + " L" + ClientProgress.classLevel() + "  ")
+					.formatted(Formatting.LIGHT_PURPLE)
+				.append(Text.literal("Lvl ").formatted(Formatting.GRAY))
+				.append(Text.literal(Integer.toString(level)).formatted(Formatting.AQUA));
+		} else {
+			levelLine = Text.literal("Lvl ").formatted(Formatting.GRAY)
+				.append(Text.literal(Integer.toString(level)).formatted(Formatting.AQUA));
+		}
 		if (points > 0) {
 			levelLine = levelLine.copy()
 				.append(Text.literal("  (+" + points + " — press P)").formatted(Formatting.GREEN));
 		}
-		context.drawTextWithShadow(mc.textRenderer, levelLine, 6, 18, 0xFFFFFF);
-		int barX = 6;
-		int barY = 29;
-		int barW = 80;
-		int barH = 4;
+		int levelY = 14;
+		int levelX = scaledWidth - mc.textRenderer.getWidth(levelLine) - MARGIN;
+		context.drawTextWithShadow(mc.textRenderer, levelLine, levelX, levelY, 0xFFFFFFFF);
+		int barY = 24;
 		context.fill(barX - 1, barY - 1, barX + barW + 1, barY + barH + 1, 0xFF000000);
 		context.fill(barX, barY, barX + barW, barY + barH, 0xFF303030);
 		int filled = (int) (barW * ClientProgress.xpFraction());
@@ -80,21 +100,16 @@ public final class TdClientHud {
 			context.fill(barX, barY, barX + filled, barY + barH, 0xFF39C339);
 		}
 
-		// ---- always-on MANA bar (blue) + active class ----------------------------
-		// A slim blue pool beneath the XP bar, reading the synced mana/maxMana. Spells
-		// spend it (SpellItem) and it regenerates server-side; the bar creeps live. When a
-		// class is active, its name + class-level ride alongside so the loadout is legible.
+		// (3) MANA (blue) — a slim pool beneath the XP bar, reading the synced mana/maxMana.
+		// Spells spend it (SpellItem) and it regenerates server-side; the bar creeps live.
 		int maxMana = ClientProgress.maxMana();
 		if (maxMana > 0) {
-			int manaY = barY + barH + 4; // just below the XP bar
 			Text manaLabel = Text.literal("Mana ").formatted(Formatting.GRAY)
 				.append(Text.literal(ClientProgress.mana() + "/" + maxMana).formatted(Formatting.AQUA));
-			if (ClientProgress.hasClass()) {
-				manaLabel = manaLabel.copy().append(Text.literal("   " + classDisplay()
-						+ " L" + ClientProgress.classLevel()).formatted(Formatting.LIGHT_PURPLE));
-			}
-			context.drawTextWithShadow(mc.textRenderer, manaLabel, 6, manaY, 0xFFFFFF);
-			int manaBarY = manaY + 11;
+			int manaY = 31;
+			int manaX = scaledWidth - mc.textRenderer.getWidth(manaLabel) - MARGIN;
+			context.drawTextWithShadow(mc.textRenderer, manaLabel, manaX, manaY, 0xFFFFFFFF);
+			int manaBarY = 41;
 			context.fill(barX - 1, manaBarY - 1, barX + barW + 1, manaBarY + barH + 1, 0xFF000000);
 			context.fill(barX, manaBarY, barX + barW, manaBarY + barH, 0xFF202030);
 			int manaFilled = (int) (barW * ClientProgress.manaFraction());

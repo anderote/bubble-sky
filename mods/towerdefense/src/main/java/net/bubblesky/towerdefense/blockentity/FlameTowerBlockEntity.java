@@ -16,6 +16,7 @@ import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.random.Random;
 import net.minecraft.world.World;
 
 /**
@@ -137,8 +138,8 @@ public class FlameTowerBlockEntity extends AbstractTowerBlockEntity {
 		double ty = target.getBodyY(0.5);
 		double tz = target.getZ();
 
-		// 1) The visible flame stream: a cone of fire from muzzle to target.
-		sprayCone(world, cx, cy, cz, tx, ty, tz);
+		// 1) The visible flame stream: a directional jet of fire from muzzle to target.
+		sprayFlameJet(world, cx, cy, cz, tx, ty, tz);
 
 		// 2) Torch every hostile bunched around the aim point.
 		Box cone = new Box(target.getBlockPos()).expand(CONE_RADIUS);
@@ -158,12 +159,31 @@ public class FlameTowerBlockEntity extends AbstractTowerBlockEntity {
 	}
 
 	/**
-	 * Draw the flamethrower's jet: step from the muzzle to the target, spawning FLAME
-	 * along the whole line, SMALL_FLAME for body, and the occasional LAVA gob for grit.
-	 * The spread widens with distance from the muzzle so the stream reads as a cone, and
-	 * grows a little per tier so upgraded towers throw a fatter flame.
+	 * Draw the flamethrower's JET: a dense, directional stream of fire shot from the muzzle
+	 * straight at the target, so it reads unmistakably as a flamethrower rather than a puff of
+	 * scattered flames.
+	 *
+	 * <p>The key is HOW the particles are spawned. Rather than the vanilla "count &gt; 0" mode
+	 * (which scatters particles with random velocities), every jet particle is emitted in the
+	 * <b>count == 0</b> mode of {@link ServerWorld#spawnParticles}: the delta-x/y/z arguments are
+	 * then interpreted as the particle's <em>velocity</em> and the {@code speed} arg as its scale,
+	 * so each flame is launched with a real velocity pointing down-range at the target. There is no
+	 * positional spread — the fan-out comes purely from jittering the velocity DIRECTION within a
+	 * narrow cone that widens toward the target end, so the stream flares out like a real nozzle.
+	 *
+	 * <p>Three layers give the jet depth:
+	 * <ul>
+	 *   <li>a bright, fast {@link ParticleTypes#SMALL_FLAME SMALL_FLAME} <b>core</b> (tight cone,
+	 *       highest velocity),</li>
+	 *   <li>a fuller {@link ParticleTypes#FLAME FLAME} <b>body</b> around it (wider cone), and</li>
+	 *   <li>a slow, wispy {@link ParticleTypes#CAMPFIRE_COSY_SMOKE}/{@link ParticleTypes#SMOKE}
+	 *       <b>trail</b> plus the occasional {@link ParticleTypes#LAVA LAVA} gob for grit.</li>
+	 * </ul>
+	 * A {@link ParticleTypes#FLAME}/{@link ParticleTypes#LARGE_SMOKE} <b>burst</b> at the target
+	 * point sells the impact. Everything scales a little with {@link #getTier() tier} so upgraded
+	 * towers throw a fatter, faster flame. This is purely cosmetic — no mechanics touched.
 	 */
-	private void sprayCone(ServerWorld world, double cx, double cy, double cz,
+	private void sprayFlameJet(ServerWorld world, double cx, double cy, double cz,
 			double tx, double ty, double tz) {
 		double dx = tx - cx;
 		double dy = ty - cy;
@@ -172,24 +192,67 @@ public class FlameTowerBlockEntity extends AbstractTowerBlockEntity {
 		if (dist < 1.0e-3) {
 			return;
 		}
+		// Unit direction muzzle -> target: the axis every jet particle is fired along.
+		double nx = dx / dist;
+		double ny = dy / dist;
+		double nz = dz / dist;
 		int t = getTier();
-		// One flame step roughly every half block along the line.
-		int steps = Math.max(4, (int) (dist * 2.0));
-		double coneWidth = 0.6 + 0.1 * t;
+		Random rnd = world.random;
+		// Base down-range speed of the jet, a touch faster per tier so the stream reaches further.
+		double jetSpeed = 0.9 + 0.12 * t;
+		// Emit at ~2.5 points per block so the stream is continuous, not dotted.
+		int steps = Math.max(6, (int) (dist * 2.5));
 		for (int i = 0; i <= steps; i++) {
 			double f = (double) i / steps;
 			double px = cx + dx * f;
 			double py = cy + dy * f;
 			double pz = cz + dz * f;
-			// Spread grows toward the target end so the jet fans out into a cone.
-			double spread = coneWidth * f;
-			world.spawnParticles(ParticleTypes.FLAME, px, py, pz, 2 + t, spread, spread, spread, 0.01);
-			world.spawnParticles(ParticleTypes.SMALL_FLAME, px, py, pz, 3 + t, spread, spread, spread, 0.0);
-			if (i % 3 == 0) {
-				world.spawnParticles(ParticleTypes.LAVA, px, py, pz, 1, spread * 0.5, spread * 0.5, spread * 0.5, 0.0);
+			// Cone half-angle grows toward the target end so the jet fans out like a nozzle.
+			double cone = 0.05 + 0.20 * f + 0.02 * t;
+
+			// Bright, fast core: SMALL_FLAME in a tight cone at the highest velocity.
+			for (int k = 0; k < 2 + t; k++) {
+				emitDirected(world, ParticleTypes.SMALL_FLAME, px, py, pz, nx, ny, nz, cone * 0.5, jetSpeed * 1.25, rnd);
 			}
-			world.spawnParticles(ParticleTypes.SMOKE, px, py + 0.15, pz, 1, spread * 0.5, spread * 0.5, spread * 0.5, 0.01);
+			// Fuller body of FLAME around the core in a wider cone.
+			for (int k = 0; k < 3 + t; k++) {
+				emitDirected(world, ParticleTypes.FLAME, px, py, pz, nx, ny, nz, cone, jetSpeed, rnd);
+			}
+			// Wispy smoke trailing the flame, slower so it lags behind the front.
+			if (i % 2 == 0) {
+				emitDirected(world, ParticleTypes.CAMPFIRE_COSY_SMOKE, px, py + 0.05, pz, nx, ny, nz, cone, jetSpeed * 0.45, rnd);
+			}
+			// Occasional molten gob for grit.
+			if (i % 4 == 0) {
+				emitDirected(world, ParticleTypes.LAVA, px, py, pz, nx, ny, nz, cone * 0.7, jetSpeed * 0.8, rnd);
+			}
 		}
+
+		// Impact burst at the target so the far end of the jet "splashes" into fire.
+		world.spawnParticles(ParticleTypes.FLAME, tx, ty, tz, 12 + 2 * t, 0.2, 0.2, 0.2, 0.06);
+		world.spawnParticles(ParticleTypes.SMALL_FLAME, tx, ty, tz, 10 + 2 * t, 0.15, 0.15, 0.15, 0.09);
+		world.spawnParticles(ParticleTypes.LARGE_SMOKE, tx, ty, tz, 4, 0.2, 0.25, 0.2, 0.02);
+	}
+
+	/**
+	 * Emit ONE particle launched down-range along {@code (nx,ny,nz)} with its direction jittered
+	 * inside a {@code spread}-wide cone, at {@code speed}. Uses the {@code count == 0} form of
+	 * {@link ServerWorld#spawnParticles} so the delta args carry the particle's VELOCITY (not a
+	 * positional offset): the flame actually flies toward the target instead of milling in place.
+	 */
+	private static void emitDirected(ServerWorld world, net.minecraft.particle.ParticleEffect particle,
+			double px, double py, double pz, double nx, double ny, double nz,
+			double spread, double speed, Random rnd) {
+		double vx = nx + (rnd.nextDouble() - 0.5) * spread;
+		double vy = ny + (rnd.nextDouble() - 0.5) * spread;
+		double vz = nz + (rnd.nextDouble() - 0.5) * spread;
+		double len = Math.sqrt(vx * vx + vy * vy + vz * vz);
+		if (len < 1.0e-6) {
+			len = 1.0;
+		}
+		double s = speed / len;
+		// count == 0 => (dx,dy,dz) is the velocity, last arg scales it. No positional spread.
+		world.spawnParticles(particle, px, py, pz, 0, vx * s, vy * s, vz * s, 1.0);
 	}
 
 	/**

@@ -100,7 +100,7 @@ public class LightningTowerBlockEntity extends AbstractTowerBlockEntity {
 
 		// Thunder impact, kept quiet so a field of these towers doesn't deafen players.
 		world.playSound(null, target.getX(), target.getY(), target.getZ(),
-			SoundEvents.ENTITY_LIGHTNING_BOLT_IMPACT, SoundCategory.BLOCKS, 0.5f, 1.2f);
+			SoundEvents.ENTITY_LIGHTNING_BOLT_IMPACT, SoundCategory.BLOCKS, 0.3f, 1.5f);
 	}
 
 	/**
@@ -131,16 +131,17 @@ public class LightningTowerBlockEntity extends AbstractTowerBlockEntity {
 	 * block destruction); it despawns on its own, so nothing lingers in the world.
 	 */
 	private void strike(ServerWorld world, ServerPlayerEntity owner, double x, double y, double z) {
-		LightningEntity bolt = new LightningEntity(EntityType.LIGHTNING_BOLT, world);
-		bolt.setPosition(x, y, z);
-		bolt.setCosmetic(true);
-		if (owner != null) {
-			bolt.setChanneler(owner);
-		}
-		world.spawnEntity(bolt);
-
-		// A crackle of electric sparks at the strike point (scaled up per tier).
+		// No cosmetic LightningEntity: its vanilla thunderclap plays at ~volume 10 and is heard
+		// across the world, which is deafening when a field of these towers fires constantly.
+		// Instead we render the bolt purely with particles (fully volume-controlled) — a bright
+		// vertical streak of sparks down onto the target plus a crackle at the impact point.
 		int t = getTier();
+		// Vertical "bolt" streak: a column of sparks from a few blocks up down to the target.
+		for (double dy = 0; dy <= 5.0; dy += 0.5) {
+			world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, x, y + dy, z,
+				2, 0.06, 0.06, 0.06, 0.0);
+		}
+		// A crackle of electric sparks at the strike point (scaled up per tier).
 		world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, x, y + 1.0, z,
 			20 + 8 * t, 0.4, 0.8, 0.4, 0.25);
 		world.spawnParticles(ParticleTypes.END_ROD, x, y + 1.0, z,

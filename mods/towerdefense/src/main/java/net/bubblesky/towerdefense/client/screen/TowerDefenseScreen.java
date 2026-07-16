@@ -49,10 +49,11 @@ public class TowerDefenseScreen extends Screen {
 		int top = 52;
 		int bottomReserve = 30;                 // room for the Close button
 		int leftRows = 9;                        // 6 controls + 3 orders (update if you add/remove)
-		int rightRows = 3                        // Shop + Tier + Qty selector buttons
-			+ TdCommand.catalogue().size()       // one Buy button per tower
-			+ 1                                  // Upgrade button
-			+ TdCommand.hireCatalogue().size();  // hire buttons
+		int rightRows = 3                          // Shop + Tier + Qty selector buttons
+			+ TdCommand.catalogue().size()         // one Buy button per tower
+			+ 1                                    // Upgrade button
+			+ TdCommand.materialCatalogue().size() // one Buy button per build material
+			+ TdCommand.hireCatalogue().size();    // hire buttons
 		int rows = Math.max(leftRows, rightRows);
 		int avail = this.height - top - bottomReserve;
 		int step = Math.max(16, Math.min(BUTTON_H + GAP, avail / Math.max(1, rows)));
@@ -116,6 +117,16 @@ public class TowerDefenseScreen extends Screen {
 		addButton(rightX, ry, colW, rowH, Text.literal("Upgrade (aim at tower)"),
 			b -> run("td upgrade", true));
 		ry += step;
+
+		// ---- right column: build materials (real catalogue) ---------------
+		// Blocks bought straight into the inventory for walling lanes / building mazes.
+		// They don't need the crosshair, so the menu stays open after buying.
+		for (TdCommand.MaterialEntry entry : TdCommand.materialCatalogue()) {
+			String label = "Buy " + prettify(entry.id()) + " x" + entry.count() + " (" + entry.price() + ")";
+			addButton(rightX, ry, colW, rowH, Text.literal(label),
+				b -> run("td buy " + entry.id(), false));
+			ry += step;
+		}
 
 		// ---- right column: hire allies (real catalogue) -------------------
 		for (TdCommand.HireEntry entry : TdCommand.hireCatalogue()) {

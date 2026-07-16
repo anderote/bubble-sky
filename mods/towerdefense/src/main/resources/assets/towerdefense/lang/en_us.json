@@ -27,9 +27,9 @@
 	"item.towerdefense.spell_repair_pulse": "Repair Pulse",
 	"item.towerdefense.spell_wall_of_acid": "Wall of Acid",
 	"item.towerdefense.spell_war_cry": "War Cry",
-	"item.towerdefense.spell_summon_squad": "Summon Skeletons",
+	"item.towerdefense.spell_summon_squad": "Summon Archers",
 	"item.towerdefense.spell_charge": "Charge",
-	"item.towerdefense.spell_raise_dead": "Raise Dead",
+	"item.towerdefense.spell_raise_dead": "Summon Warriors",
 	"item.towerdefense.spell_bone_spear": "Bone Spear",
 
 	"entity.towerdefense.flag_arrow": "Flag Arrow",

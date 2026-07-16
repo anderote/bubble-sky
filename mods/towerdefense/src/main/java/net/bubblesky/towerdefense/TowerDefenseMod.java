@@ -88,6 +88,10 @@ public class TowerDefenseMod implements ModInitializer {
 		// kill as tower vs player). The bridge endpoints + WaveManager already drive its plans.
 		net.bubblesky.towerdefense.game.WarlordDirector.register();
 		TdHud.register();
+		// RPG damage numbers: floating text-display markers over an enemy when a PLAYER hits it
+		// (melee / bow / spell). Server-driven + client-visible with no client mod; suppresses
+		// tower auto-shots so only the player's own hits paint numbers. See game/DamageMarkers.
+		net.bubblesky.towerdefense.game.DamageMarkers.register();
 
 		// Colony layer: the /colony command + the by-name chat control, both routing
 		// through the shared ColonyOrders hub. Colonists are recruited with gold and do
@@ -251,7 +255,11 @@ public class TowerDefenseMod implements ModInitializer {
 					dropWorld,
 					online.getX(), online.getBodyY(0.5), online.getZ(),
 					new ItemStack(ModItems.COIN, count));
-				coinEntity.setToDefaultPickupDelay();
+				// Coins are BANK income, never inventory items: an infinite pickup delay stops
+				// vanilla walk-over pickup entirely, so a coin can only leave the world via the
+				// server-side vacuum sweep (ProgressEvents#onCollectTick), which reads the stack,
+				// banks it for everyone, and discards the entity.
+				coinEntity.setPickupDelayInfinite();
 				dropWorld.spawnEntity(coinEntity);
 			}
 		});

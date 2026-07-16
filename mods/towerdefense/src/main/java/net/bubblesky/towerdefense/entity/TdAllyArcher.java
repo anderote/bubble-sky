@@ -36,7 +36,16 @@ public class TdAllyArcher extends TdAllyEntity implements RangedAttackMob {
 	@Override
 	protected void initGoals() {
 		super.initGoals();
-		this.goalSelector.add(2, new ProjectileAttackGoal(this, 1.0, SHOOT_INTERVAL, SHOOT_RANGE));
+		this.goalSelector.add(2, new ProjectileAttackGoal(this, 1.0, SHOOT_INTERVAL, this.shootRange()));
+	}
+
+	/**
+	 * The maximum range (blocks) at which this archer will loose arrows — the {@code maxShootRange}
+	 * fed to its {@link ProjectileAttackGoal}. Overridable so specialised archers (e.g. the
+	 * summoned {@link TdSkeletonArcher}) can shoot from noticeably farther than the base ranger.
+	 */
+	protected float shootRange() {
+		return SHOOT_RANGE;
 	}
 
 	@Override

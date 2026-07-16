@@ -41,7 +41,7 @@ public final class ClassSkillTree {
 	public enum Type { ACTIVE, PASSIVE }
 
 	/** Every skill caps at this many ranks. */
-	public static final int MAX_RANK = 5;
+	public static final int MAX_RANK = 20;
 
 	/** Class level required to spend into a tier-1 skill. */
 	public static final int TIER1_LEVEL = 1;
@@ -97,9 +97,9 @@ public final class ClassSkillTree {
 
 		// NECROMANCER — raise/summon/bone plus minion + damage passives.
 		TREES.put(PlayerClass.NECROMANCER, List.of(
-			active("raise_dead", "Raise Dead", 1, "+1 skeleton per rank"),
+			active("raise_dead", "Summon Warriors", 1, "+1 warrior per rank (max 5), then rank adds armor & power"),
 			passive("minion_mastery", "Minion Mastery", 1, "+10% minion HP & damage per rank"),
-			active("summon_squad", "Summon Skeletons", 2, "+1 archer per 2 ranks & +10% archer damage per rank"),
+			active("summon_squad", "Summon Archers", 2, "+1 archer per rank (max 5), then rank adds armor & power"),
 			passive("unholy_vigor", "Unholy Vigor", 2, "+30s minion lifetime per rank"),
 			active("bone_spear", "Bone Spear", 3, "+2 damage per rank"),
 			passive("amplify", "Amplify", 3, "+10% Bone Spear & spell damage per rank")));

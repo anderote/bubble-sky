@@ -1103,7 +1103,9 @@ public final class WaveManager {
 		for (ServerPlayerEntity player : world.getPlayers()) {
 			ItemEntity drop = new ItemEntity(world, player.getX(), player.getBodyY(0.5), player.getZ(),
 				new ItemStack(ModItems.COIN, paid));
-			drop.setToDefaultPickupDelay();
+			// Coins are BANK income, never inventory items: infinite pickup delay disables
+			// vanilla walk-over pickup, leaving the server-side vacuum sweep the only collector.
+			drop.setPickupDelayInfinite();
 			world.spawnEntity(drop);
 		}
 	}

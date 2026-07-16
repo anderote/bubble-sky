@@ -43,6 +43,8 @@ public class CharacterScreen extends Screen {
 	private static final int SKILL_ROW_H = 26;
 	/** Vertical space reserved above the first skill of each tier for the tier header. */
 	private static final int TIER_HEADER_H = 13;
+	/** Pixels the Skills tab scrolls per mouse-wheel notch. */
+	private static final int SKILLS_SCROLL_STEP = 12;
 
 	/** Which tab is showing: {@code 0} = Stats, {@code 1} = Skills. */
 	private int tab = 0;
@@ -58,8 +60,23 @@ public class CharacterScreen extends Screen {
 	private List<ClassSkillTree.Skill> skillList = List.of();
 	/** Per-skill "+" buttons (parallel to {@link #skillList}). */
 	private ButtonWidget[] skillPlus = new ButtonWidget[0];
-	/** The Y of each skill row (parallel to {@link #skillList}). */
+	/**
+	 * The Y of each skill row RELATIVE TO the scrollable panel's top (content space), parallel
+	 * to {@link #skillList}. Render adds {@link #panelTop} and subtracts {@link #skillsScroll}
+	 * to map a row into screen space.
+	 */
 	private int[] skillRowY = new int[0];
+	/** Vertical scroll offset (px) of the Skills-tab content; clamped to {@code [0, maxScroll]}. */
+	private int skillsScroll = 0;
+	/** Total pixel height of the Skills-tab content (all tiers + rows), computed in {@link #init}. */
+	private int skillsContentHeight = 0;
+	/** Left/right/top/bottom of the scrollable Skills panel rectangle, computed in {@link #init}. */
+	private int panelX1;
+	private int panelX2;
+	private int panelTop;
+	private int panelBottom;
+	/** The X of the Skills-tab "+" buttons (sits just left of the right-edge scrollbar gutter). */
+	private int skillPlusX;
 
 	// ---- shared layout -----------------------------------------------------
 	private int contentTop;
@@ -99,12 +116,23 @@ public class CharacterScreen extends Screen {
 		}
 
 		// ---- Skills tab: the active class's tree -------------------------
+		// The tree can overflow the screen (six 20-rank skills across three tiers), so it lives
+		// in a SCROLLABLE panel. Its rectangle spans the same width as the rows, from just below
+		// the class-points header down to just above the pinned Close button. skillRowY[i] is
+		// stored in CONTENT space (relative to panelTop); render maps it to the screen by adding
+		// panelTop and subtracting skillsScroll, then clips to the panel with a scissor.
+		panelX1 = labelX;
+		panelX2 = plusX + PLUS_W;
+		panelTop = 80;
+		panelBottom = this.height - 30;
+		skillPlusX = plusX - 6; // leave a 2px gutter for the scrollbar on the panel's right edge
+
 		activeClass = PlayerClass.fromId(ClientProgress.activeClass());
 		skillList = ClassSkillTree.skills(activeClass);
 		skillPlus = new ButtonWidget[skillList.size()];
 		skillRowY = new int[skillList.size()];
-		int skillTop = 90;
-		int y = skillTop;
+		skillsScroll = 0;
+		int y = 0;
 		int lastTier = -1;
 		for (int i = 0; i < skillList.size(); i++) {
 			ClassSkillTree.Skill skill = skillList.get(i);
@@ -114,12 +142,13 @@ public class CharacterScreen extends Screen {
 			}
 			skillRowY[i] = y;
 			ButtonWidget plus = ButtonWidget.builder(Text.literal("+"), b -> allocateSkill(skill.id()))
-				.dimensions(plusX, y + 1, PLUS_W, 18)
+				.dimensions(skillPlusX, panelTop + y + 1, PLUS_W, 18)
 				.build();
 			skillPlus[i] = plus;
 			this.addDrawableChild(plus);
 			y += SKILL_ROW_H;
 		}
+		skillsContentHeight = y; // total content height, for scroll clamping
 
 		// Pin Close to the bottom so it never collides with the (taller) Skills-tab rows.
 		int closeY = this.height - 26;
@@ -136,7 +165,12 @@ public class CharacterScreen extends Screen {
 		updateTabVisibility();
 	}
 
-	/** Show only the active tab's "+" buttons (tab + close buttons stay visible via render). */
+	/**
+	 * Show only the active tab's "+" buttons (tab + close buttons stay visible via render). The
+	 * Skills-tab "+" buttons are hidden here unconditionally: {@link #renderSkillsTab} re-shows
+	 * only the ones that scroll into the panel's visible band each frame, so an off-panel button
+	 * never draws (vanilla draws buttons without our scissor) nor keeps a stray click target.
+	 */
 	private void updateTabVisibility() {
 		for (ButtonWidget b : plusButtons) {
 			if (b != null) {
@@ -145,7 +179,7 @@ public class CharacterScreen extends Screen {
 		}
 		for (ButtonWidget b : skillPlus) {
 			if (b != null) {
-				b.visible = tab == 1;
+				b.visible = false;
 			}
 		}
 	}
@@ -164,6 +198,32 @@ public class CharacterScreen extends Screen {
 			return;
 		}
 		ClientPlayNetworking.send(new AllocateClassPointPayload(skillId));
+	}
+
+	/**
+	 * Scroll the Skills tab when the wheel turns over its panel. Only handles the event (and
+	 * consumes it) while the Skills tab is active, a class is selected, the cursor is inside the
+	 * panel rectangle, and the content actually overflows; otherwise it defers to {@code super}
+	 * so the Stats tab and everything else behave exactly as before.
+	 */
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+		if (tab == 1 && activeClass != null
+			&& mouseX >= panelX1 && mouseX <= panelX2
+			&& mouseY >= panelTop && mouseY <= panelBottom) {
+			int maxScroll = Math.max(0, skillsContentHeight - (panelBottom - panelTop));
+			if (maxScroll > 0) {
+				// verticalAmount is +1 per notch scrolling UP (toward earlier rows), so subtract.
+				skillsScroll = clamp(skillsScroll - (int) (verticalAmount * SKILLS_SCROLL_STEP), 0, maxScroll);
+				return true;
+			}
+		}
+		return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+	}
+
+	/** Clamp {@code v} into the inclusive range {@code [min, max]}. */
+	private static int clamp(int v, int min, int max) {
+		return v < min ? min : Math.min(v, max);
 	}
 
 	@Override
@@ -254,10 +314,19 @@ public class CharacterScreen extends Screen {
 				.formatted(classPoints > 0 ? Formatting.GREEN : Formatting.DARK_GRAY));
 		context.drawCenteredTextWithShadow(this.textRenderer, ptsLine, cx, 66, 0xFFFFFFFF);
 
+		// ---- scrollable skill list --------------------------------------
+		int visibleHeight = panelBottom - panelTop;
+		int maxScroll = Math.max(0, skillsContentHeight - visibleHeight);
+		// Re-clamp defensively: content height / screen size may change between frames.
+		skillsScroll = clamp(skillsScroll, 0, maxScroll);
+
+		// Clip the rows to the panel so a partially-scrolled row is cut cleanly at the edges and
+		// nothing spills over the header above or the tabs/Close button beyond the panel.
+		context.enableScissor(panelX1, panelTop, panelX2, panelBottom);
 		int lastTier = -1;
 		for (int i = 0; i < skillList.size(); i++) {
 			ClassSkillTree.Skill skill = skillList.get(i);
-			int rowY = skillRowY[i];
+			int rowY = panelTop + skillRowY[i] - skillsScroll; // content space -> screen space
 			int gate = ClassSkillTree.levelGate(skill.tier());
 
 			// Tier header (once, above the first skill in each tier).
@@ -287,9 +356,27 @@ public class CharacterScreen extends Screen {
 				Text.literal(skill.description()).formatted(Formatting.DARK_GRAY),
 				labelX, rowY + 13, 0xFFFFFFFF);
 
+			// Track the "+" to its scrolled spot, and only show/enable it when the WHOLE button
+			// lands inside the panel band — vanilla draws buttons without our scissor, so an
+			// out-of-band button would both draw outside the panel and leave a stray click target.
 			if (skillPlus[i] != null) {
-				skillPlus[i].active = canSpend;
+				int btnY = rowY + 1;
+				boolean inBand = btnY >= panelTop && btnY + 18 <= panelBottom;
+				skillPlus[i].setY(btnY);
+				skillPlus[i].visible = inBand;
+				skillPlus[i].active = inBand && canSpend;
 			}
+		}
+		context.disableScissor();
+
+		// ---- scrollbar (only when the content overflows the panel) ------
+		if (maxScroll > 0) {
+			int sbW = 4;
+			int sbX = panelX2 - sbW;
+			context.fill(sbX, panelTop, sbX + sbW, panelBottom, 0xFF303030); // track
+			int thumbH = Math.max(20, visibleHeight * visibleHeight / skillsContentHeight);
+			int thumbY = panelTop + (int) ((long) skillsScroll * (visibleHeight - thumbH) / maxScroll);
+			context.fill(sbX, thumbY, sbX + sbW, thumbY + thumbH, 0xFFAAAAAA); // thumb
 		}
 	}
 
