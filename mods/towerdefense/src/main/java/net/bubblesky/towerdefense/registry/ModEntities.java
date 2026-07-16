@@ -11,8 +11,12 @@ import net.bubblesky.towerdefense.entity.TdAllyEntity;
 import net.bubblesky.towerdefense.entity.TdArcherEnemy;
 import net.bubblesky.towerdefense.entity.TdBarbarian;
 import net.bubblesky.towerdefense.entity.TdBarbarianSapper;
+import net.bubblesky.towerdefense.entity.TdDirewolf;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
 import net.bubblesky.towerdefense.entity.TdFootman;
+import net.bubblesky.towerdefense.entity.TdGargoyle;
+import net.bubblesky.towerdefense.entity.TdHexer;
+import net.bubblesky.towerdefense.entity.TdJuggernaut;
 import net.bubblesky.towerdefense.entity.TdMeleeEnemy;
 import net.bubblesky.towerdefense.entity.TdSkeletonArcher;
 import net.bubblesky.towerdefense.entity.TdSkeletonWarrior;
@@ -71,6 +75,18 @@ public final class ModEntities {
 	/** The siege breaker (deep-game). Bores a straight tunnel to the Idol. */
 	public static final EntityType<TdBarbarianSapper> BARBARIAN_SAPPER =
 		registerEnemy("barbarian_sapper", TdBarbarianSapper::new, 0.7f, 2.1f);
+	/** The Gargoyle — a winged FLYER that routes OVER walls straight at the Idol (anti-turtle). */
+	public static final EntityType<TdGargoyle> GARGOYLE =
+		registerEnemy("gargoyle", TdGargoyle::new, 0.7f, 1.9f);
+	/** The Juggernaut — an armoured TANK (huge HP, slow). Larger hitbox to match its scaled render. */
+	public static final EntityType<TdJuggernaut> JUGGERNAUT =
+		registerEnemy("juggernaut", TdJuggernaut::new, 0.85f, 2.7f);
+	/** The Direwolf — a fast BEAST/pack rusher. Small, four-legged wolf-sized hitbox. */
+	public static final EntityType<TdDirewolf> DIREWOLF =
+		registerEnemy("direwolf", TdDirewolf::new, 0.6f, 0.85f);
+	/** The Hexer — a SUPPORT caster that buffs/heals nearby enemies (a priority target). */
+	public static final EntityType<TdHexer> HEXER =
+		registerEnemy("hexer", TdHexer::new, 0.6f, 1.95f);
 
 	// ---- hireable ALLY roster ---------------------------------------------
 	/** Friendly biped mobs the player buys with coins to fight the waves. */
@@ -272,6 +288,29 @@ public final class ModEntities {
 			.add(EntityAttributes.FOLLOW_RANGE, 24.0);
 	}
 
+	/**
+	 * Attribute template for the FLYER (Gargoyle): the standard hostile stats plus a
+	 * {@code generic.flying_speed} so its {@link net.minecraft.entity.ai.control.FlightMoveControl}
+	 * has a cruising pace to fly at (the ground horde's zombie-march speed override does not touch
+	 * {@code flying_speed}, so the Gargoyle actually flies at a brisk clip).
+	 */
+	private static DefaultAttributeContainer.Builder flyerAttrs(double hp, double atk, double speed, double flyingSpeed) {
+		return attrs(hp, atk, speed).add(EntityAttributes.FLYING_SPEED, flyingSpeed);
+	}
+
+	/**
+	 * Attribute template for the TANK (Juggernaut): the standard hostile stats plus inherent
+	 * {@code generic.armor} and {@code generic.armor_toughness}. The wave manager reassigns
+	 * {@code generic.armor} per-wave for every enemy, but it never touches ARMOR_TOUGHNESS, so
+	 * the toughness here STICKS and makes the tank soak individual hits harder on top of its huge
+	 * HP pool.
+	 */
+	private static DefaultAttributeContainer.Builder tankAttrs(double hp, double atk, double speed, double armor, double toughness) {
+		return attrs(hp, atk, speed)
+			.add(EntityAttributes.ARMOR, armor)
+			.add(EntityAttributes.ARMOR_TOUGHNESS, toughness);
+	}
+
 	/** Attribute template for the friendly ally roster (a PathAwareEntity/creature). */
 	private static DefaultAttributeContainer.Builder allyAttrs(double hp, double atk, double speed) {
 		return MobEntity.createMobAttributes()
@@ -292,6 +331,17 @@ public final class ModEntities {
 		// Barbarians: a rugged bruiser and the tanky straight-line siege sapper.
 		FabricDefaultAttributeRegistry.register(BARBARIAN, attrs(45.0, 7.0, 0.26));
 		FabricDefaultAttributeRegistry.register(BARBARIAN_SAPPER, attrs(70.0, 6.0, 0.18));
+		// New variety roster:
+		//  - Gargoyle: a moderate-HP, low-armour FLYER (armour is granted per-wave); its
+		//    flying_speed (0.6) lets it actually fly, bypassing the ground zombie-march cap.
+		FabricDefaultAttributeRegistry.register(GARGOYLE, flyerAttrs(24.0, 4.0, 0.30, 0.6));
+		//  - Juggernaut: an armoured TANK — very high HP, slow, with inherent armour toughness
+		//    that soaks per-hit damage on top of its HP pool.
+		FabricDefaultAttributeRegistry.register(JUGGERNAUT, tankAttrs(120.0, 8.0, 0.18, 18.0, 8.0));
+		//  - Direwolf: a frail, FAST pack beast — dies in a hit but swarms in numbers.
+		FabricDefaultAttributeRegistry.register(DIREWOLF, attrs(10.0, 3.0, 0.42));
+		//  - Hexer: a moderate-HP SUPPORT caster that buffs/heals nearby enemies (see TdHexer).
+		FabricDefaultAttributeRegistry.register(HEXER, attrs(28.0, 3.0, 0.24));
 
 		// Allies are tuned a notch above their same-name enemy so a few can hold a line.
 		FabricDefaultAttributeRegistry.register(ALLY_FOOTMAN, allyAttrs(28.0, 5.0, 0.28));
@@ -314,6 +364,7 @@ public final class ModEntities {
 		return (EntityType<? extends TdEnemyEntity>[]) new EntityType<?>[] {
 			GOBLIN_SKIRMISHER, FOOTMAN, ARCHER, MAN_AT_ARMS, UNDEAD_SOLDIER, HEAVY_KNIGHT,
 			BARBARIAN, BARBARIAN_SAPPER,
+			DIREWOLF, GARGOYLE, JUGGERNAUT, HEXER,
 		};
 	}
 

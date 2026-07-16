@@ -3,7 +3,9 @@ package net.bubblesky.towerdefense.client;
 import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.client.render.ColonistBipedRenderer;
 import net.bubblesky.towerdefense.client.render.FlagArrowEntityRenderer;
+import net.bubblesky.towerdefense.client.render.JuggernautBipedRenderer;
 import net.bubblesky.towerdefense.client.render.ShellEntityRenderer;
+import net.bubblesky.towerdefense.client.render.TdWolfRenderer;
 import net.bubblesky.towerdefense.client.render.TowerArrowEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TowerBoltEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TdAllyBipedRenderer;
@@ -69,6 +71,14 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		bind(ModEntities.HEAVY_KNIGHT, "heavy_knight");
 		bind(ModEntities.BARBARIAN, "barbarian");
 		bind(ModEntities.BARBARIAN_SAPPER, "barbarian_sapper");
+		// New variety roster. Gargoyle + Hexer are reskinned bipeds like the rest; the
+		// Juggernaut is a biped drawn ~1.4x larger; the Direwolf uses the vanilla wolf model.
+		bind(ModEntities.GARGOYLE, "gargoyle");
+		bind(ModEntities.HEXER, "hexer");
+		EntityRendererRegistry.register(ModEntities.JUGGERNAUT, ctx -> new JuggernautBipedRenderer(ctx,
+			Identifier.of(TowerDefenseMod.MOD_ID, "textures/entity/juggernaut.png")));
+		EntityRendererRegistry.register(ModEntities.DIREWOLF, ctx -> new TdWolfRenderer(ctx,
+			Identifier.of(TowerDefenseMod.MOD_ID, "textures/entity/direwolf.png")));
 
 		// Friendly ally roster (blue-tinted biped skins).
 		bindAlly(ModEntities.ALLY_FOOTMAN, "ally_footman");

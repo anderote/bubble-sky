@@ -33,8 +33,13 @@ import net.minecraft.server.network.ServerPlayerEntity;
  * next shot. The write only happens when {@code bullets < capacity}, so a full gun costs nothing.
  */
 public final class InfiniteAmmo {
-	/** Base item every Guns++ gun is built on ({@link GunsPlusPlus#gun}). */
-	private static final net.minecraft.item.Item GUN_BASE_ITEM = Items.CARROT_ON_A_STICK;
+	/** Base items a Guns++ gun can be. Guns++ SWAPS a gun between {@code carrot_on_a_stick} and
+	 *  {@code warped_fungus_on_a_stick} while it is being fired (it detects successive clicks via
+	 *  two separate {@code minecraft.used:*} scoreboard criteria). We MUST top up both forms — if
+	 *  we only refilled the carrot form the magazine would drain to 0 mid-fire ("out of ammo"). */
+	private static boolean isGunBase(ItemStack stack) {
+		return stack.isOf(Items.CARROT_ON_A_STICK) || stack.isOf(Items.WARPED_FUNGUS_ON_A_STICK);
+	}
 	/** Custom-data sub-compound key Guns++ stores gun state under. */
 	private static final String GZ_DATA_KEY = "gz_data";
 	/** Magazine-size byte inside {@link #GZ_DATA_KEY}. */
@@ -78,7 +83,7 @@ public final class InfiniteAmmo {
 	 * items, plain {@code carrot_on_a_stick}s, and already-full guns.
 	 */
 	private static void topUpMagazine(ItemStack stack) {
-		if (stack.isEmpty() || !stack.isOf(GUN_BASE_ITEM)) {
+		if (stack.isEmpty() || !isGunBase(stack)) {
 			return;
 		}
 		NbtComponent data = stack.get(DataComponentTypes.CUSTOM_DATA);

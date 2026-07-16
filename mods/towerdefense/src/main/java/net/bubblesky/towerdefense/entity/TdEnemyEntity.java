@@ -66,6 +66,23 @@ public abstract class TdEnemyEntity extends HostileEntity {
 		return false;
 	}
 
+	/**
+	 * Whether this enemy is a <em>flyer</em> — an airborne unit that IGNORES walls. Unlike a
+	 * ground enemy (which paths around obstacles and only smashes a wall when boxed in) or a
+	 * siege breaker (which tunnels straight through), a flyer routes <em>over</em> whatever the
+	 * defender builds: the wave manager never makes it dig, instead letting its flight
+	 * navigation ({@link net.minecraft.entity.ai.pathing.BirdNavigation}) carry it up-and-over
+	 * the wall straight at the Idol — the anti-turtle unit. Normal enemies return {@code false};
+	 * {@link TdGargoyle} overrides this to {@code true}.
+	 *
+	 * <p>A flyer is still a fully ordinary {@code td_enemy}: tagged, glow-highlighted,
+	 * telemetry-tracked, escalation-scaled, and damageable by towers and players exactly like
+	 * any other roster member — it simply cannot be stopped by a wall.
+	 */
+	public boolean isFlyer() {
+		return false;
+	}
+
 	@Override
 	protected void initGoals() {
 		this.goalSelector.add(6, new WanderAroundGoal(this, 1.0));

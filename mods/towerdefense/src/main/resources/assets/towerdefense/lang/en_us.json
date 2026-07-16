@@ -52,6 +52,10 @@
 	"entity.towerdefense.heavy_knight": "Heavy Knight",
 	"entity.towerdefense.barbarian": "Barbarian",
 	"entity.towerdefense.barbarian_sapper": "Barbarian Sapper",
+	"entity.towerdefense.gargoyle": "Gargoyle",
+	"entity.towerdefense.juggernaut": "Juggernaut",
+	"entity.towerdefense.direwolf": "Direwolf",
+	"entity.towerdefense.hexer": "Hexer",
 
 	"entity.towerdefense.ally_footman": "Allied Footman",
 	"entity.towerdefense.ally_archer": "Allied Archer",

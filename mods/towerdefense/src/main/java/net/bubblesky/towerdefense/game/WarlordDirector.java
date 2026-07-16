@@ -87,6 +87,12 @@ public final class WarlordDirector {
 		put("knight", ModEntities.HEAVY_KNIGHT, 3.0);
 		put("barbarian", ModEntities.BARBARIAN, 2.0);
 		put("sapper", ModEntities.BARBARIAN_SAPPER, 3.0);
+		// Variety roster: a cheap fast pack beast, a wall-bypassing flyer, an armoured tank,
+		// and a support caster — priced by how much pressure each adds to a wave's budget.
+		put("direwolf", ModEntities.DIREWOLF, 1.5);
+		put("gargoyle", ModEntities.GARGOYLE, 3.0);
+		put("juggernaut", ModEntities.JUGGERNAUT, 5.0);
+		put("hexer", ModEntities.HEXER, 4.0);
 		// The boss has a cost but no direct roster mapping (spawned via spawnBoss).
 		THREAT.put(BOSS_ID, 8.0);
 	}

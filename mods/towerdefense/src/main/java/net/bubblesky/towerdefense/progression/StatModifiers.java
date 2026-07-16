@@ -67,10 +67,15 @@ public final class StatModifiers {
 	private static final double COIN_PER_POINT = 0.12;
 	/** Intelligence: +8% XP gained per point. */
 	private static final double XP_PER_POINT = 0.08;
-	/** Base coin-vacuum collection radius (blocks) every player has at Intelligence 0. */
-	private static final double COLLECTION_BASE_RADIUS = 2.5;
-	/** Intelligence: +1.0 block of collection radius per point. */
-	private static final double COLLECTION_PER_POINT = 1.0;
+	/** Base coin pickup radius (blocks) — small, so you physically RUN OVER coins to collect
+	 *  them (they still bank rather than clutter your inventory). Was a big Intelligence-scaled
+	 *  vacuum that collected from across the map. */
+	private static final double COLLECTION_BASE_RADIUS = 1.75;
+	/** Intelligence: only a slight +0.1 block of pickup radius per point (capped small below),
+	 *  so high Intelligence gives a modest edge, not instant map-wide collection. */
+	private static final double COLLECTION_PER_POINT = 0.1;
+	/** Hard cap on the coin pickup radius so it never becomes a vacuum. */
+	private static final double COLLECTION_MAX_RADIUS = 4.0;
 	/** Base max mana every player has at Intelligence 0. */
 	private static final int MANA_BASE_MAX = 20;
 	/** Intelligence: +5 max mana per point. */
@@ -276,7 +281,8 @@ public final class StatModifiers {
 	 * effect: a smarter hero sweeps dropped coins into their bank from farther away.
 	 */
 	public static double collectionRadius(PlayerProgress progress) {
-		return COLLECTION_BASE_RADIUS + effectivePoints(progress, Stat.INTELLIGENCE) * COLLECTION_PER_POINT;
+		return Math.min(COLLECTION_MAX_RADIUS,
+			COLLECTION_BASE_RADIUS + effectivePoints(progress, Stat.INTELLIGENCE) * COLLECTION_PER_POINT);
 	}
 
 	/** The base collection radius (blocks) used when no progression record is available. */

@@ -66,7 +66,10 @@ public final class TdClientHud {
 			.append(Text.literal(Integer.toString(gold)).formatted(Formatting.GOLD))
 			.append(Text.literal("   Essence: ").formatted(Formatting.GRAY))
 			.append(Text.literal(Integer.toString(essence)).formatted(Formatting.LIGHT_PURPLE));
-		int bankY = 4;
+		// Start below the top-centre wave/idol BOSSBAR (its right end reaches into the top-right
+		// corner on many aspect ratios and would overlap the Bank line at y=4).
+		final int TOP = 30;
+		int bankY = TOP;
 		int bankX = scaledWidth - mc.textRenderer.getWidth(bankLine) - MARGIN;
 		context.drawTextWithShadow(mc.textRenderer, bankLine, bankX, bankY, 0xFFFFFFFF);
 
@@ -89,10 +92,10 @@ public final class TdClientHud {
 			levelLine = levelLine.copy()
 				.append(Text.literal("  (+" + points + " — press P)").formatted(Formatting.GREEN));
 		}
-		int levelY = 14;
+		int levelY = TOP + 10;
 		int levelX = scaledWidth - mc.textRenderer.getWidth(levelLine) - MARGIN;
 		context.drawTextWithShadow(mc.textRenderer, levelLine, levelX, levelY, 0xFFFFFFFF);
-		int barY = 24;
+		int barY = TOP + 20;
 		context.fill(barX - 1, barY - 1, barX + barW + 1, barY + barH + 1, 0xFF000000);
 		context.fill(barX, barY, barX + barW, barY + barH, 0xFF303030);
 		int filled = (int) (barW * ClientProgress.xpFraction());
@@ -106,10 +109,10 @@ public final class TdClientHud {
 		if (maxMana > 0) {
 			Text manaLabel = Text.literal("Mana ").formatted(Formatting.GRAY)
 				.append(Text.literal(ClientProgress.mana() + "/" + maxMana).formatted(Formatting.AQUA));
-			int manaY = 31;
+			int manaY = TOP + 27;
 			int manaX = scaledWidth - mc.textRenderer.getWidth(manaLabel) - MARGIN;
 			context.drawTextWithShadow(mc.textRenderer, manaLabel, manaX, manaY, 0xFFFFFFFF);
-			int manaBarY = 41;
+			int manaBarY = TOP + 37;
 			context.fill(barX - 1, manaBarY - 1, barX + barW + 1, manaBarY + barH + 1, 0xFF000000);
 			context.fill(barX, manaBarY, barX + barW, manaBarY + barH, 0xFF202030);
 			int manaFilled = (int) (barW * ClientProgress.manaFraction());

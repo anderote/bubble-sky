@@ -230,12 +230,14 @@ public final class WaveManager {
 	 * The pool of enemy types a given wave draws from, composed by tier:
 	 * <ul>
 	 *   <li>waves 1-3: goblin_skirmisher, footman</li>
-	 *   <li>waves 4-7: + archer, man_at_arms</li>
-	 *   <li>waves 6+:  + barbarian (rugged heavy melee), growing more common</li>
-	 *   <li>waves 8+:  + undead_soldier, heavy_knight, with the heavy mix growing
-	 *       as waves climb</li>
-	 *   <li>waves 10+: + barbarian_sapper (the straight-line siege breaker) so walls
-	 *       start getting threatened as the game deepens</li>
+	 *   <li>waves 4-7: + archer, man_at_arms, direwolf (fast pack rusher)</li>
+	 *   <li>waves 6+:  + barbarian (rugged heavy melee) + gargoyle (wall-bypassing flyer),
+	 *       growing more common</li>
+	 *   <li>waves 8+:  + undead_soldier, heavy_knight, juggernaut (armoured tank), with the
+	 *       heavy mix growing as waves climb</li>
+	 *   <li>waves 10+: + barbarian_sapper (the straight-line siege breaker) + hexer (support
+	 *       caster) so walls get threatened and the horde starts buffing itself as the game
+	 *       deepens</li>
 	 * </ul>
 	 * Duplicate entries act as spawn weights, so the goblin swarm stays common
 	 * while heavies get rarer-but-scarier billing.
@@ -250,18 +252,27 @@ public final class WaveManager {
 		if (wave >= 4) {
 			pool.add(ModEntities.MAN_AT_ARMS);
 			pool.add(ModEntities.MAN_AT_ARMS);
+			// Direwolves: a cheap, fast pack rusher that swarms in numbers — two copies so the
+			// beasts are a common swarm-filler once they arrive.
+			pool.add(ModEntities.DIREWOLF);
+			pool.add(ModEntities.DIREWOLF);
 		}
-		// Tier 2.5 — barbarians: a rugged heavy that gets more common as the run goes.
+		// Tier 2.5 — barbarians (rugged heavy) + gargoyles (wall-bypassing flyers), both more
+		// common as the run goes.
 		if (wave >= 6) {
 			pool.add(ModEntities.BARBARIAN);
+			pool.add(ModEntities.GARGOYLE);
 			if (wave >= 9) {
 				pool.add(ModEntities.BARBARIAN);
+				pool.add(ModEntities.GARGOYLE);
 			}
 		}
 		// Tier 3 — the heavies, weighted up the further the run goes.
 		if (wave >= 8) {
 			pool.add(ModEntities.UNDEAD_SOLDIER);
 			pool.add(ModEntities.HEAVY_KNIGHT);
+			// Juggernauts: armoured tanks that soak tower fire — rarer billing than the swarm.
+			pool.add(ModEntities.JUGGERNAUT);
 			int extra = Math.min(4, (wave - 8) / 2);
 			for (int i = 0; i < extra; i++) {
 				pool.add(ModEntities.HEAVY_KNIGHT);
@@ -269,9 +280,11 @@ public final class WaveManager {
 				pool.add(ModEntities.MAN_AT_ARMS);
 			}
 		}
-		// Tier 4 — sappers: the straight-line wall-breakers, threatening deep-game walls.
+		// Tier 4 — sappers (straight-line wall-breakers) + hexers (support casters that buff the
+		// horde), threatening deep-game walls and snowballing the pack.
 		if (wave >= 10) {
 			pool.add(ModEntities.BARBARIAN_SAPPER);
+			pool.add(ModEntities.HEXER);
 			if (wave >= 20) {
 				pool.add(ModEntities.BARBARIAN_SAPPER);
 			}
@@ -942,6 +955,20 @@ public final class WaveManager {
 			return;
 		}
 		TdEnemyEntity te = mob instanceof TdEnemyEntity ? (TdEnemyEntity) mob : null;
+
+		// Flyer: IGNORE walls entirely — never dig. Its BirdNavigation path-finds through the
+		// AIR, routing up-and-over whatever the defender built, straight at the Idol (the
+		// anti-turtle unit). If the flight path-finder can't reach (Idol beyond its range), fall
+		// back to a straight 3D beeline so it still seeks the Idol from anywhere on the map.
+		if (te != null && te.isFlyer()) {
+			Path path = nav.findPathTo(st.base, 1);
+			if (path != null && path.reachesTarget()) {
+				nav.startMovingAlong(path, NAV_SPEED);
+			} else {
+				beelineToBase(mob, st);
+			}
+			return;
+		}
 
 		// Siege breaker: bore straight toward the Idol, tunnelling through whatever's
 		// directly ahead; when nothing solid blocks it, march straight (no pathing).
