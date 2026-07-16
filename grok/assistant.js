@@ -17,7 +17,7 @@ const USERNAME = process.env.MC_USER || 'Grok'
 // 'all' to let Grok respond to EVERY player. Default: claudebert only.
 const ALLOW = new Set((process.env.GROK_ALLOW || 'claudebert').toLowerCase().split(',').map(s => s.trim()).filter(Boolean))
 const ALLOW_ALL = ALLOW.has('*') || ALLOW.has('all')
-const BOTNAMES = /^(Grok|GrokDev|Overseer|Assistant|Tester|Codex.*|.*Drone\d+|ViscousVermin\d+|CodexSwarm\d+)$/i
+const BOTNAMES = /^(Grok|GrokDev|Overseer|Assistant|Tester|Codex.*|.*Drone\d+|ViscousVermin\d+|CodexSwarm\d+|.*Warlord.*|.*Foreman.*|server)$/i
 
 function log(...a) { console.log(`[${new Date().toISOString()}]`, ...a) }
 const sleep = ms => new Promise(r => setTimeout(r, ms))
