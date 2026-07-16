@@ -49,7 +49,13 @@ if (!process.env.BUBBLESKY_BRIDGE_TOKEN) {
 const makeBridge = require('./lib/bridge')
 const { createLLM } = require('./lib/llm')
 
-const MODEL = process.env.WARLORD_MODEL || 'claude-opus-4-8'
+// The Warlord runs on xAI's GROK by default — it plans more unpredictably + inventively than
+// Claude, so waves stay original ("always trying something"). Override with WARLORD_PROVIDER /
+// WARLORD_MODEL (e.g. WARLORD_PROVIDER=anthropic WARLORD_MODEL=claude-opus-4-8).
+const PROVIDER = process.env.WARLORD_PROVIDER || 'xai'
+const MODEL = process.env.WARLORD_MODEL
+  || (PROVIDER === 'anthropic' ? 'claude-opus-4-8'
+    : (process.env.XAI_MODEL || 'grok-4.20-0309-non-reasoning'))
 const POLL_MS = Math.max(1000, parseInt(process.env.WARLORD_POLL_MS, 10) || 4000)
 const ARGV = new Set(process.argv.slice(2))
 const ONCE = ARGV.has('--once')
@@ -59,7 +65,7 @@ function log(...a) { console.log(`[${new Date().toISOString()}] [warlord]`, ...a
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 const bridge = makeBridge({ timeoutMs: 8000 })
-const llm = createLLM({ provider: 'anthropic' })
+const llm = createLLM({ provider: PROVIDER })
 
 // ---- weak-flank analysis ---------------------------------------------------
 // Classify each tower into a compass side relative to the Idol and weight it by

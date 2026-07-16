@@ -25,7 +25,9 @@ if [ -z "${BUBBLESKY_BRIDGE_TOKEN:-}" ] && [ -f "$BRIDGE_CONFIG" ]; then
 fi
 
 export BUBBLESKY_BRIDGE_URL="${BUBBLESKY_BRIDGE_URL:-http://127.0.0.1:25580}"
-export WARLORD_MODEL="${WARLORD_MODEL:-claude-opus-4-8}"
+# The Warlord runs on xAI Grok by default (more unpredictable/inventive wave planning).
+export WARLORD_PROVIDER="${WARLORD_PROVIDER:-xai}"
+export WARLORD_MODEL="${WARLORD_MODEL:-grok-4.20-0309-non-reasoning}"
 
 cd "$GROK_DIR"
 exec node warlord.js "$@"
