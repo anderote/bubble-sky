@@ -236,8 +236,8 @@ async function planCycle() {
     const resp = await bridge.request('POST', '/td/waveplan', { wave, ...plan })
     const accepted = (resp && resp.accepted) || resp
     log(`ACCEPTED wave ${wave} (clamped by mod): ${summarizePlan(accepted, bf)}`)
-    // Announce the assault in-character.
-    try { await bridge.request('POST', '/td/taunt', { text: plan.taunt }) } catch (e) { log('taunt broadcast failed:', e.message) }
+    // NOTE: do NOT broadcast the taunt here — POST /td/waveplan already broadcasts
+    // plan.taunt server-side (styled "☠ Warlord:"). A second /td/taunt would double it.
     return { wave, plan, accepted }
   } catch (e) { log('waveplan POST failed (mod falls back):', e.message); return null }
 }
