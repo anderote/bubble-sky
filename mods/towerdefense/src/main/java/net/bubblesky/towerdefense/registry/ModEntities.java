@@ -3,6 +3,7 @@ package net.bubblesky.towerdefense.registry;
 import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.colony.ColonistEntity;
 import net.bubblesky.towerdefense.entity.FlagArrowEntity;
+import net.bubblesky.towerdefense.entity.ShellEntity;
 import net.bubblesky.towerdefense.entity.TowerArrowEntity;
 import net.bubblesky.towerdefense.entity.TowerBoltEntity;
 import net.bubblesky.towerdefense.entity.TdAllyArcher;
@@ -112,6 +113,24 @@ public final class ModEntities {
 	 * damage + knockback on hit, then vanishes almost immediately (no lingering clutter).
 	 */
 	public static final EntityType<TowerBoltEntity> TOWER_BOLT = registerTowerBolt("tower_bolt");
+
+	/**
+	 * The CANNON tower's ARTILLERY SHELL: a fast, dark, whistling round that bursts in a
+	 * cosmetic explosion on impact (no damage of its own — the tower keeps its splash).
+	 */
+	public static final EntityType<ShellEntity> SHELL = registerShell("shell");
+
+	private static EntityType<ShellEntity> registerShell(String name) {
+		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,
+			Identifier.of(TowerDefenseMod.MOD_ID, name));
+		EntityType<ShellEntity> type = EntityType.Builder
+			.<ShellEntity>create(ShellEntity::new, SpawnGroup.MISC)
+			.dimensions(0.5f, 0.5f)
+			.maxTrackingRange(6)
+			.trackingTickInterval(10)
+			.build(key);
+		return Registry.register(Registries.ENTITY_TYPE, key, type);
+	}
 
 	private static EntityType<FlagArrowEntity> registerFlagArrow(String name) {
 		RegistryKey<EntityType<?>> key = RegistryKey.of(RegistryKeys.ENTITY_TYPE,

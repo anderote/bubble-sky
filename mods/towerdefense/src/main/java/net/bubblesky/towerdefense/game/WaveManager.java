@@ -123,6 +123,33 @@ public final class WaveManager {
 	/** Floor on the shrinking per-enemy spawn cadence — see {@link #spawnInterval(int)}. */
 	private static final int SPAWN_INTERVAL_MIN = 3;
 
+	// ---- adaptive escalation buffs -----------------------------------------
+	/**
+	 * How the Warlord's adaptive escalation factor {@code E} (a session rubber-band held in
+	 * {@link WarlordDirector#escalation()}, always {@code >= 1.0}) toughens EVERY spawned enemy
+	 * when the defence is dominating. These are pure multipliers/bonuses layered on top of the
+	 * normal per-wave scaling, applied identically whether the enemy came from the default
+	 * roster or a Warlord-planned composition:
+	 * <ul>
+	 *   <li>MAX_HEALTH is multiplied by {@code E} outright;</li>
+	 *   <li>{@link #ESCALATION_ARMOR_PER_E} extra armor per {@code +1.0} of {@code E} is added on
+	 *       top of {@link #armorFor(int)}, the bonus itself capped at
+	 *       {@link #ESCALATION_ARMOR_CAP};</li>
+	 *   <li>the mob is physically enlarged via {@code generic.scale} to
+	 *       {@code min(1 + (E-1)*}{@link #ESCALATION_SCALE_PER_E}{@code , }{@link
+	 *       #ESCALATION_SCALE_MAX}{@code )} so tougher waves LOOK bigger.</li>
+	 * </ul>
+	 * At the baseline {@code E == 1.0} every one of these is a no-op (×1 HP, +0 armor, ×1 size),
+	 * so a non-escalated wave spawns byte-for-byte as before.
+	 */
+	private static final double ESCALATION_ARMOR_PER_E = 4.0;
+	/** Hard cap on the BONUS armor the escalation adds (on top of the per-wave {@link #armorFor}). */
+	private static final double ESCALATION_ARMOR_CAP = 30.0;
+	/** Physical-size growth per {@code +1.0} of {@code E} (via {@code generic.scale}). */
+	private static final double ESCALATION_SCALE_PER_E = 0.3;
+	/** Hard cap on the escalation size multiplier so enemies grow imposing but not absurd. */
+	private static final double ESCALATION_SCALE_MAX = 2.0;
+
 	// ---- wall-breaking -----------------------------------------------------
 	/** Shared units of dig-damage needed to shatter one wall block (many enemies
 	 *  bashing the SAME block pool their damage, so a horde breaks through faster). */
@@ -355,6 +382,26 @@ public final class WaveManager {
 	}
 
 	/**
+	 * BONUS armor the adaptive escalation adds on top of {@link #armorFor(int)} — scaled by how
+	 * far the factor {@code e} sits above baseline ({@code (e-1) * }{@link
+	 * #ESCALATION_ARMOR_PER_E}) and capped at {@link #ESCALATION_ARMOR_CAP}. Returns 0 at the
+	 * baseline {@code e <= 1.0} (never negative), so escalation only ever ADDS armor.
+	 */
+	private static double escalationArmorBonus(double e) {
+		return Math.min(ESCALATION_ARMOR_CAP, Math.max(0.0, (e - 1.0) * ESCALATION_ARMOR_PER_E));
+	}
+
+	/**
+	 * The physical {@code generic.scale} multiplier the adaptive escalation applies so a tougher
+	 * wave LOOKS bigger: {@code min(1 + (e-1)*}{@link #ESCALATION_SCALE_PER_E}{@code , }{@link
+	 * #ESCALATION_SCALE_MAX}{@code )}. Returns 1.0 (no visual change) at the baseline
+	 * {@code e <= 1.0}.
+	 */
+	private static double escalationSize(double e) {
+		return Math.min(ESCALATION_SCALE_MAX, 1.0 + Math.max(0.0, e - 1.0) * ESCALATION_SCALE_PER_E);
+	}
+
+	/**
 	 * Per-enemy spawn cadence (ticks between staggered spawns), shrinking with the wave so
 	 * hordes pour in quicker as the run deepens: {@code max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL
 	 * - floor(wave/2))}. Floored at {@link #SPAWN_INTERVAL_MIN} so even deep waves don't spawn
@@ -430,14 +477,16 @@ public final class WaveManager {
 			// always spawn (heightmap/chunk available) and keep ticking/pathing even if
 			// every player walks off. Idempotent, so re-forcing each wave is harmless.
 			setArenaForced(world, st, true);
-			// Begin Warlord telemetry for this wave (spawned/leaked/killed-by/duration).
-			WarlordDirector.get().onWaveStart(st.currentWave, world.getTime());
+			// Begin Warlord telemetry for this wave (spawned/leaked/killed-by/duration +
+			// pressure metrics). The Idol's current HP is captured as the baseline so the
+			// wave's idolDamage can be derived when it finalises.
+			WarlordDirector.get().onWaveStart(st.currentWave, world.getTime(), st.baseHp);
 			if (!boss) {
 				// Boss-wave feedback fires from spawnBoss (so it lands at the gate).
 				TdFeedback.waveStart(world, st);
 			}
 		} else {
-			WarlordDirector.get().onWaveStart(st.currentWave, 0L);
+			WarlordDirector.get().onWaveStart(st.currentWave, 0L, st.baseHp);
 		}
 	}
 
@@ -569,8 +618,9 @@ public final class WaveManager {
 			// Wave cleared. Reset the shared wall-damage pool so it can't grow unbounded
 			// across a long run (any part-broken walls "heal" between waves).
 			WALL_DAMAGE.clear();
-			// Finalise Warlord telemetry for the cleared wave and drop any spent plan state.
-			WarlordDirector.get().finalizeWave(st.currentWave, world.getTime());
+			// Finalise Warlord telemetry for the cleared wave (passing the Idol's end HP so the
+			// wave's idolDamage + adaptive escalation are computed) and drop spent plan state.
+			WarlordDirector.get().finalizeWave(st.currentWave, world.getTime(), st.baseHp);
 			PLANNED_QUEUE.clear();
 			activeEmphasis = null;
 			st.wavesSurvived = st.currentWave;
@@ -638,12 +688,17 @@ public final class WaveManager {
 		mob.addAllyCombatGoals();
 
 		int wave = st.currentWave;
+		// The Warlord's ADAPTIVE escalation factor (>= 1.0). When the defence has been
+		// dominating, this globally toughens EVERY spawned enemy — regardless of whether it
+		// was drawn from the default roster or a Warlord-planned composition — via more HP,
+		// bonus armor, and a larger physical size. At the baseline (E == 1.0) it is a no-op.
+		double e = WarlordDirector.get().escalation();
 		// Scale each enemy's OWN base stats by the wave factor, preserving the
 		// roster's relative differences (a wave-10 goblin is still frailer than a
-		// wave-10 knight).
+		// wave-10 knight). The escalation factor multiplies HP on top of that.
 		double scale = waveScale(wave);
 		double baseHp = mob.getMaxHealth();
-		setAttribute(mob, EntityAttributes.MAX_HEALTH, baseHp * scale);
+		setAttribute(mob, EntityAttributes.MAX_HEALTH, baseHp * scale * e);
 		mob.setHealth(mob.getMaxHealth());
 		// All enemies shuffle in slowly like zombies: a fixed slow march speed (NOT the
 		// mob's own base) with only a gentle per-wave nudge, hard-capped low.
@@ -654,9 +709,12 @@ public final class WaveManager {
 		// Mostly knockback-resistant (0.5): arrow hits nudge them back a little (slowing
 		// their advance) without launching them off their march to the Idol.
 		setAttribute(mob, EntityAttributes.KNOCKBACK_RESISTANCE, 0.5);
-		// Per-wave ARMOR (capped): later enemies soak more chip damage, so towers must
-		// out-scale them rather than tickle a swelling horde to death.
-		setAttribute(mob, EntityAttributes.ARMOR, armorFor(wave));
+		// Per-wave ARMOR (capped) plus the escalation's bonus armor: later — and dominated —
+		// enemies soak more chip damage, so towers must out-scale them rather than tickle a
+		// swelling horde to death.
+		setAttribute(mob, EntityAttributes.ARMOR, armorFor(wave) + escalationArmorBonus(e));
+		// Physically enlarge the mob under escalation so a tougher wave visibly looks bigger.
+		setAttribute(mob, EntityAttributes.SCALE, escalationSize(e));
 
 		// The archer still marches to base, but re-arm its ranged goal so it shoots
 		// players who wander into range (clearGoalsAndTasks stripped it above).
@@ -708,8 +766,12 @@ public final class WaveManager {
 		boss.setCustomNameVisible(true);
 
 		int wave = st.currentWave;
+		// A boss is a spawned enemy too, so the adaptive escalation factor toughens it as
+		// well — more HP and bonus armor on top of the boss's own big multipliers. Its
+		// physical size stays at the (already larger) BOSS_SCALE.
+		double e = WarlordDirector.get().escalation();
 		double scale = waveScale(wave);
-		double hp = boss.getMaxHealth() * scale * BOSS_HP_MULT;
+		double hp = boss.getMaxHealth() * scale * BOSS_HP_MULT * e;
 		setAttribute(boss, EntityAttributes.MAX_HEALTH, hp);
 		boss.setHealth(boss.getMaxHealth());
 		setAttribute(boss, EntityAttributes.ATTACK_DAMAGE, BOSS_ATTACK_BASE);
@@ -718,9 +780,9 @@ public final class WaveManager {
 			Math.min(SPEED_CAP, ZOMBIE_MARCH_SPEED * speedScale(wave) * BOSS_SPEED_FACTOR));
 		setAttribute(boss, EntityAttributes.FOLLOW_RANGE, PATHFIND_RANGE);
 		setAttribute(boss, EntityAttributes.KNOCKBACK_RESISTANCE, 0.5);
-		// The Warlord stacks BOSS_ARMOR_MULT on the per-wave armor, making it a true
-		// bullet-sponge that a well-upgraded battery must focus down.
-		setAttribute(boss, EntityAttributes.ARMOR, armorFor(wave) * BOSS_ARMOR_MULT);
+		// The Warlord stacks BOSS_ARMOR_MULT on the per-wave armor, plus the escalation's bonus
+		// armor, making it a true bullet-sponge that a well-upgraded battery must focus down.
+		setAttribute(boss, EntityAttributes.ARMOR, armorFor(wave) * BOSS_ARMOR_MULT + escalationArmorBonus(e));
 
 		markEnemyVisible(world, boss);
 		steerToBase(boss, st);
@@ -813,6 +875,9 @@ public final class WaveManager {
 		double scale = waveScale(Math.max(1, st.currentWave));
 		for (Entity e : enemies(world, st)) {
 			double distSq = e.squaredDistanceTo(bx, by, bz);
+			// Pressure metric: track the closest ANY live enemy gets to the Idol this wave
+			// (in blocks). The running minimum feeds the Warlord's adaptive escalation.
+			WarlordDirector.get().recordApproach(Math.sqrt(distSq));
 			if (distSq <= ARRIVAL_DIST_SQ) {
 				// Each enemy deals its OWN attack damage (scaled by the wave), so a
 				// heavy knight punches the base far harder than a goblin.

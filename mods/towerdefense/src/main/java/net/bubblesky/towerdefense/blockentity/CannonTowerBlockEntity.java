@@ -1,13 +1,11 @@
 package net.bubblesky.towerdefense.blockentity;
 
 import java.util.List;
+import net.bubblesky.towerdefense.entity.ShellEntity;
 import net.bubblesky.towerdefense.registry.ModBlockEntities;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.projectile.thrown.SnowballEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -31,7 +29,8 @@ public class CannonTowerBlockEntity extends AbstractTowerBlockEntity {
 	private static final int BASE_COOLDOWN = 60;
 	private static final double CANNON_DAMAGE = 8.0;
 	private static final double SPLASH_RADIUS = 3.0;
-	private static final float LOB_SPEED = 1.1f;
+	/** Muzzle velocity of the artillery shell — faster and flatter than the old snowball lob. */
+	private static final float SHELL_SPEED = 1.6f;
 
 	public CannonTowerBlockEntity(BlockPos pos, BlockState state) {
 		super(ModBlockEntities.CANNON_TOWER, pos, state);
@@ -54,20 +53,31 @@ public class CannonTowerBlockEntity extends AbstractTowerBlockEntity {
 
 	@Override
 	protected void fire(ServerWorld world, double cx, double cy, double cz, HostileEntity target) {
-		// Cosmetic lobbed "cannonball" (snowball) for the throw-a-rock feel.
+		// The ARTILLERY SHELL: a fast, dark, whistling round that bursts in a cosmetic
+		// explosion when it lands (see ShellEntity). It carries NO damage itself — the tower
+		// still owns all the splash below, exactly as the old snowball build did.
 		ServerPlayerEntity owner = placerPlayer(world);
-		SnowballEntity ball = new SnowballEntity(world, cx, cy, cz, new ItemStack(Items.SNOWBALL));
+		ShellEntity shell = new ShellEntity(world, cx, cy, cz);
 		if (owner != null) {
-			ball.setOwner(owner);
+			shell.setOwner(owner);
 		}
 		double dx = target.getX() - cx;
 		double dy = target.getBodyY(0.5) - cy;
 		double dz = target.getZ() - cz;
 		double horizontal = Math.sqrt(dx * dx + dz * dz);
-		ball.setVelocity(dx, dy + horizontal * 0.2, dz, LOB_SPEED, 1.0f);
-		world.spawnEntity(ball);
+		// A flat, fast shot with only a slight lofted arc so the round reads as artillery,
+		// not a lobbed ball, yet still comes down around the target point.
+		shell.setVelocity(dx, dy + horizontal * 0.1, dz, SHELL_SPEED, 1.0f);
+		world.spawnEntity(shell);
+
+		// Muzzle bang at the cannon the instant it fires: a flash + smoke puff at the barrel
+		// and a firing report, distinct from the shell's impact boom downrange.
+		spawnMuzzleFlash(world, cx, cy, cz);
+		world.playSound(null, cx, cy, cz, SoundEvents.ENTITY_GENERIC_EXPLODE,
+			SoundCategory.BLOCKS, 0.5f, 1.5f);
 
 		// Splash damage at the target: every enemy in the blast radius takes the hit.
+		// (Unchanged from the snowball build — same source, damage, radius, and timing.)
 		DamageSource source = owner != null
 			? world.getDamageSources().playerAttack(owner)
 			: world.getDamageSources().magic();
@@ -79,32 +89,17 @@ public class CannonTowerBlockEntity extends AbstractTowerBlockEntity {
 				damageAndCredit(world, mob, source, damage);
 			}
 		}
-
-		// Visible AoE: an explosion-style burst filling the splash radius so players SEE
-		// the blast, not just feel it. Scaled up a notch per tier.
-		spawnBlastBurst(world, target.getX(), target.getBodyY(0.5), target.getZ());
-
-		world.playSound(null, cx, cy, cz, SoundEvents.ENTITY_GENERIC_EXPLODE,
-			SoundCategory.BLOCKS, 0.6f, 1.4f);
 	}
 
 	/**
-	 * A one-shot explosion burst centred on the impact point, sized to the splash
-	 * radius: a couple of explosion puffs, a cloud of large smoke filling the blast,
-	 * a bright ring of crit/sweep sparks marking the edge, and lingering rising smoke.
-	 * Particle counts grow with tier so upgraded cannons read as bigger hits.
+	 * A brief muzzle-flash at the cannon's barrel the instant it fires: a bright flash, a
+	 * puff of large smoke, and a spray of firing sparks. Purely cosmetic and scaled a notch
+	 * per tier so upgraded cannons kick harder.
 	 */
-	private void spawnBlastBurst(ServerWorld world, double x, double y, double z) {
+	private void spawnMuzzleFlash(ServerWorld world, double x, double y, double z) {
 		int t = getTier();
-		double r = SPLASH_RADIUS;
-		// Core detonation: a few explosion puffs at the centre.
-		world.spawnParticles(ParticleTypes.EXPLOSION, x, y, z, 1 + t, r * 0.3, r * 0.3, r * 0.3, 0.0);
-		// Body of the blast: large smoke filling roughly the splash sphere.
-		world.spawnParticles(ParticleTypes.LARGE_SMOKE, x, y, z, 22 + 10 * t, r * 0.5, r * 0.4, r * 0.5, 0.02);
-		// Edge flash: a bright ring of crit sparks + a couple of sweep arcs.
-		world.spawnParticles(ParticleTypes.CRIT, x, y, z, 30 + 15 * t, r * 0.6, r * 0.3, r * 0.6, 0.12);
-		world.spawnParticles(ParticleTypes.SWEEP_ATTACK, x, y, z, 2 + t, r * 0.4, 0.2, r * 0.4, 0.0);
-		// Lingering rising smoke after the flash.
-		world.spawnParticles(ParticleTypes.SMOKE, x, y + 0.2, z, 12 + 4 * t, r * 0.4, 0.3, r * 0.4, 0.01);
+		world.spawnParticles(ParticleTypes.FLASH, x, y, z, 1, 0.0, 0.0, 0.0, 0.0);
+		world.spawnParticles(ParticleTypes.LARGE_SMOKE, x, y, z, 8 + 3 * t, 0.25, 0.25, 0.25, 0.02);
+		world.spawnParticles(ParticleTypes.CRIT, x, y, z, 12 + 4 * t, 0.3, 0.3, 0.3, 0.2);
 	}
 }

@@ -28,7 +28,7 @@ public final class WaveRewards {
 			new Entry(Items.OAK_LOG, 8, 16),
 			new Entry(Items.COBBLESTONE, 16, 32),
 			new Entry(Items.TORCH, 8, 16),
-			new Entry(Items.ARROW, 8, 16),
+			// (No arrow drop: the TD bow is unlimited-ammo, so arrows are pointless loot.)
 		},
 		{
 			new Entry(Items.COOKED_BEEF, 4, 8),
@@ -110,47 +110,41 @@ public final class WaveRewards {
 	}
 
 	/**
-	 * Guns++ loot on top of the vanilla bundle: ammo (and sometimes a gun) scaled by the
-	 * same {@link #bandForWave(int)} band. Every band always drops ammo appropriate to its
-	 * tier; guns come out on a per-band chance roll. Boss waves additionally GUARANTEE one
-	 * band-appropriate gun plus a generous matching-ammo stack (on top of the chance rolls).
+	 * Guns++ GUN loot on top of the vanilla bundle, scaled by the same {@link #bandForWave(int)}
+	 * band. Guns come out on a per-band chance roll; boss waves additionally GUARANTEE one
+	 * band-appropriate gun.
+	 *
+	 * <p>No ammo is ever dropped: every gun is kept perpetually full-magazine by
+	 * {@link InfiniteAmmo}, so bullet/round items would be dead weight. A band may therefore
+	 * contribute nothing on a non-boss wave when its chance roll fails — that is expected.
 	 */
 	public static List<ItemStack> rollGunDrops(int wave, boolean bossWave, Random rng) {
 		List<ItemStack> out = new ArrayList<>();
 		int band = bandForWave(wave);
 		switch (band) {
 			case 0 -> {
-				// Waves 1-4: pistol ammo always; sometimes a Glock to go with it.
-				out.add(GunsPlusPlus.bullets(8 + rng.nextInt(9)));
+				// Waves 1-4: sometimes a Glock.
 				if (rng.nextInt(100) < 35) {
 					out.add(GunsPlusPlus.glock());
 				}
 			}
 			case 1 -> {
-				// Waves 5-9: medium + pistol ammo always; sometimes a rifle (AR-15 or AK-47).
-				out.add(GunsPlusPlus.mediumRounds(12 + rng.nextInt(13)));
-				out.add(GunsPlusPlus.bullets(8 + rng.nextInt(9)));
+				// Waves 5-9: sometimes a rifle (AR-15 or AK-47).
 				if (rng.nextInt(100) < 40) {
 					out.add(rng.nextBoolean() ? GunsPlusPlus.ar15() : GunsPlusPlus.ak47());
 				}
 			}
 			case 2 -> {
-				// Waves 10-14: medium + heavy ammo always; chance of a hunting rifle and/or a Deagle.
-				out.add(GunsPlusPlus.mediumRounds(16 + rng.nextInt(17)));
-				out.add(GunsPlusPlus.heavyRounds(4 + rng.nextInt(5)));
+				// Waves 10-14: chance of a hunting rifle and/or a Deagle.
 				if (rng.nextInt(100) < 35) {
 					out.add(GunsPlusPlus.huntingRifle());
 				}
 				if (rng.nextInt(100) < 25) {
 					out.add(GunsPlusPlus.deagle());
-					out.add(GunsPlusPlus.fiftyCal(6 + rng.nextInt(7)));
 				}
 			}
 			default -> {
-				// Waves 15+: full spread of ammo always; chance of a top-tier gun.
-				out.add(GunsPlusPlus.mediumRounds(24));
-				out.add(GunsPlusPlus.heavyRounds(8));
-				out.add(GunsPlusPlus.fiftyCal(6));
+				// Waves 15+: chance of a top-tier gun.
 				if (rng.nextInt(100) < 45) {
 					out.add(switch (rng.nextInt(3)) {
 						case 0 -> GunsPlusPlus.awp();
@@ -161,24 +155,12 @@ public final class WaveRewards {
 			}
 		}
 		if (bossWave) {
-			// Guaranteed band-appropriate gun + a generous matching-ammo stack.
+			// Guaranteed band-appropriate gun.
 			switch (band) {
-				case 0 -> {
-					out.add(GunsPlusPlus.glock());
-					out.add(GunsPlusPlus.bullets(24 + rng.nextInt(9)));
-				}
-				case 1 -> {
-					out.add(rng.nextBoolean() ? GunsPlusPlus.ar15() : GunsPlusPlus.ak47());
-					out.add(GunsPlusPlus.mediumRounds(24 + rng.nextInt(9)));
-				}
-				case 2 -> {
-					out.add(GunsPlusPlus.huntingRifle());
-					out.add(GunsPlusPlus.heavyRounds(24 + rng.nextInt(9)));
-				}
-				default -> {
-					out.add(GunsPlusPlus.awp());
-					out.add(GunsPlusPlus.heavyRounds(24 + rng.nextInt(9)));
-				}
+				case 0 -> out.add(GunsPlusPlus.glock());
+				case 1 -> out.add(rng.nextBoolean() ? GunsPlusPlus.ar15() : GunsPlusPlus.ak47());
+				case 2 -> out.add(GunsPlusPlus.huntingRifle());
+				default -> out.add(GunsPlusPlus.awp());
 			}
 		}
 		return out;

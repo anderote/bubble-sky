@@ -79,6 +79,10 @@ public class TowerDefenseMod implements ModInitializer {
 		registerCoinDrops();
 		registerJoinHint();
 		registerStartingGear();
+		// Ammunition is abolished: every Guns++ gun is kept perpetually full-magazine by a
+		// server tick sweep, so no bullets/reload are ever needed (the TD bow is already
+		// unlimited by construction). See game/InfiniteAmmo.
+		net.bubblesky.towerdefense.game.InfiniteAmmo.register();
 
 		// Game loop: the /td command family + the endless wave state machine.
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
@@ -174,15 +178,19 @@ public class TowerDefenseMod implements ModInitializer {
 			player.equipStack(EquipmentSlot.CHEST, new ItemStack(Items.CHAINMAIL_CHESTPLATE));
 			player.equipStack(EquipmentSlot.LEGS, new ItemStack(Items.CHAINMAIL_LEGGINGS));
 			player.equipStack(EquipmentSlot.FEET, new ItemStack(Items.CHAINMAIL_BOOTS));
-			// Weapons + ammo into the inventory (drops nearby if somehow full). The bow
-			// is the unified TD bow: fire = combat arrow, sneak-fire = plant a flag, and
-			// a bought tower arrow fired from it shoot-to-places that tower.
-			giveOrDrop(player, new ItemStack(Items.WOODEN_SWORD));
+			// Weapons into the inventory (drops nearby if somehow full). The bow is the
+			// unified TD bow: fire = combat arrow, sneak-fire = plant a flag, and a bought
+			// tower arrow fired from it shoot-to-places that tower. No arrows are handed out
+			// because the TD bow is unlimited-ammo by construction (see item/TdBowItem).
+			giveOrDrop(player, new ItemStack(Items.IRON_SWORD));
 			giveOrDrop(player, new ItemStack(ModItems.TD_BOW));
-			giveOrDrop(player, new ItemStack(Items.ARROW, 64));
-			// Guns++ starter sidearm: a Glock pistol plus a stack of pistol bullets.
+			// Basic survival tools so a fresh player can gather + build straight away.
+			giveOrDrop(player, new ItemStack(Items.IRON_PICKAXE));
+			giveOrDrop(player, new ItemStack(Items.IRON_SHOVEL));
+			giveOrDrop(player, new ItemStack(Items.IRON_AXE));
+			// Guns++ starter sidearm: a Glock pistol. No bullets are granted — every gun is
+			// kept perpetually loaded by game/InfiniteAmmo, so ammo is obsolete.
 			giveOrDrop(player, GunsPlusPlus.glock());
-			giveOrDrop(player, GunsPlusPlus.bullets(64));
 			// Seed gold so a fresh player can afford their first towers straight away. Gold is a
 			// per-player BANK BALANCE (PlayerProgress), not COIN items — set the balance and
 			// resync the HUD rather than dropping coins into the inventory.
@@ -200,7 +208,7 @@ public class TowerDefenseMod implements ModInitializer {
 			player.getInventory().setStack(11, new ItemStack(Items.COBBLESTONE, 64));
 			player.getInventory().setStack(12, new ItemStack(Items.STONE_BRICKS, 64));
 			player.getInventory().setStack(13, new ItemStack(Items.OAK_PLANKS, 64));
-			player.sendMessage(Text.literal("Starter kit granted: TD bow + 64 arrows, a Glock pistol + 64 bullets, "
+			player.sendMessage(Text.literal("Starter kit granted: TD bow (unlimited), a Glock pistol (unlimited), "
 				+ "wooden sword, chainmail armor, "
 				+ STARTER_GOLD + " gold, and a stack each of dirt / gravel / cobblestone / stone bricks / planks for "
 				+ "building. Sneak+fire to plant flags; buy a tower then place/fire it to build.")

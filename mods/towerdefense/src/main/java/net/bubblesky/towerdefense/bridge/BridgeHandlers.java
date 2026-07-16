@@ -197,6 +197,11 @@ final class BridgeHandlers {
 			out.put("nextWave", nextWave);
 			WarlordDirector.WaveTelemetry last = director.lastWave();
 			out.put("lastWave", last == null ? null : last.toJson());
+			// Adaptive escalation factor (the rubber-band): >= 1.0, climbs when the defence
+			// dominates and eases back toward baseline when enemies threaten the Idol. The
+			// lastWave object carries the pressure metrics (closestApproach + idolDamage) that
+			// drove it, so the external Warlord agent can taunt/plan around the current state.
+			out.put("escalation", director.escalation());
 			out.put("enemyTypes", WarlordDirector.enemyTypeInfos());
 			return out;
 		});

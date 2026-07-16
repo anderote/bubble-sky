@@ -109,6 +109,54 @@ public final class WarlordDirector {
 	/** Sanity cap on how many bosses a plan may add on top of the default boss squad. */
 	public static final int MAX_PLAN_BOSSES = 8;
 
+	// ---- adaptive escalation (the rubber-band) -----------------------------
+	/**
+	 * The Warlord's ADAPTIVE difficulty knob — a session-persisted "rubber-band" the
+	 * {@link WaveManager} multiplies into every spawned enemy's toughness (HP / armor /
+	 * size). It reacts to how much PRESSURE the last wave put on the Idol:
+	 * <ul>
+	 *   <li>if the defence <em>dominated</em> — enemies died far from the Idol, dealt it no
+	 *       damage, and none leaked — the Warlord {@link #ESCALATION_STEP escalates} (bigger,
+	 *       tankier enemies next wave);</li>
+	 *   <li>if enemies <em>got close</em>, hurt the Idol, or leaked, it {@link #EASE_STEP
+	 *       eases} back toward baseline so an overshoot self-corrects.</li>
+	 * </ul>
+	 * It only ever ranges over {@code [}{@link #E_MIN}{@code , }{@link #E_MAX}{@code ]}, so it
+	 * can make a dominated player's waves tougher but never eases <em>below</em> baseline
+	 * (it can only ADD toughness, never trivialise a wave). Not persisted to disk — it resets
+	 * to {@link #E_MIN} each server run. Read off-thread by the bridge (published {@code
+	 * volatile}); only ever written on the server thread in {@link #finalizeWave}.
+	 */
+	public static final double E_MIN = 1.0;
+	/** Hard ceiling on the escalation factor — enemies get much tougher, never invincible. */
+	public static final double E_MAX = 5.0;
+	/** How much the escalation factor climbs after a wave the defence utterly dominated. */
+	private static final double ESCALATION_STEP = 0.25;
+	/** How much the escalation factor relaxes after a wave that pressured the Idol. */
+	private static final double EASE_STEP = 0.15;
+	/**
+	 * "Far from the Idol" boundary (blocks): a wave whose closest-approaching enemy stayed
+	 * beyond this — AND dealt the Idol no damage AND leaked nothing — counts as LOW pressure
+	 * and escalates the Warlord. Enemies dying this far out means the defence has a comfortable
+	 * kill-zone the Warlord should start pushing harder against.
+	 */
+	private static final double NEAR_THRESHOLD = 16.0;
+	/**
+	 * "Dangerously close to the Idol" boundary (blocks): a wave whose closest enemy pierced
+	 * inside this counts as HIGH pressure (even with no damage/leak yet) and eases the Warlord.
+	 * The band {@code (}{@link #CLOSE_THRESHOLD}{@code , }{@link #NEAR_THRESHOLD}{@code ]} — enemies
+	 * that got moderately close but never truly threatened the Idol — HOLDS the factor steady.
+	 */
+	private static final double CLOSE_THRESHOLD = 6.0;
+
+	/**
+	 * The live escalation factor {@code E} — see the {@link #E_MIN} javadoc for the full
+	 * contract. Starts at baseline, updated once per wave in {@link #finalizeWave}, clamped to
+	 * {@code [}{@link #E_MIN}{@code , }{@link #E_MAX}{@code ]}. {@code volatile} so the bridge
+	 * can read it off the server thread without locking.
+	 */
+	private volatile double escalation = E_MIN;
+
 	// ---- pending plans -----------------------------------------------------
 	/** targetWave → the validated+clamped plan submitted for it. Consumed on wave start. */
 	private final Map<Integer, WavePlan> pendingPlans = new ConcurrentHashMap<>();
@@ -314,9 +362,25 @@ public final class WarlordDirector {
 	}
 
 	// ---- telemetry recording (server thread) -------------------------------
-	/** Begin accumulating telemetry for a freshly started wave. */
-	public void onWaveStart(int wave, long worldTime) {
-		live.reset(wave, worldTime);
+	/**
+	 * Begin accumulating telemetry for a freshly started wave.
+	 *
+	 * @param idolHpAtStart the Idol's HP the instant the wave begins — kept so
+	 *        {@link #finalizeWave} can derive the {@code idolDamage} the wave inflicted
+	 */
+	public void onWaveStart(int wave, long worldTime, int idolHpAtStart) {
+		live.reset(wave, worldTime, idolHpAtStart);
+	}
+
+	/**
+	 * Note how close (in blocks) a live enemy currently is to the Idol, keeping the running
+	 * MINIMUM across the whole wave as the wave's {@code closestApproach} pressure metric.
+	 * Called each tick for every live wave enemy from the {@link WaveManager}'s steer pass.
+	 */
+	public void recordApproach(double distBlocks) {
+		if (distBlocks < live.closestApproach) {
+			live.closestApproach = distBlocks;
+		}
 	}
 
 	/** One enemy actually spawned this wave. */
@@ -346,20 +410,84 @@ public final class WarlordDirector {
 
 	/**
 	 * Finalise the current wave's telemetry into an immutable {@link WaveTelemetry} snapshot,
-	 * publish it as {@link #lastWave}, and return it. Called on wave clear.
+	 * update the adaptive {@link #escalation} factor from the wave's PRESSURE, publish the
+	 * snapshot as {@link #lastWave}, and return it. Called on wave clear.
+	 *
+	 * <p>The two pressure metrics are the {@code closestApproach} (min distance any enemy got
+	 * to the Idol, in blocks — a sentinel {@code -1} if no enemy was ever seen this wave) and
+	 * the {@code idolDamage} (HP the Idol lost, {@code idolHpAtStart - idolHpAtEnd}, floored at
+	 * 0), alongside the existing leaked count.
+	 *
+	 * @param idolHpAtEnd the Idol's HP as the wave clears (paired with the start HP captured in
+	 *        {@link #onWaveStart} to derive how much damage the wave dealt)
 	 */
-	public WaveTelemetry finalizeWave(int wave, long worldTime) {
+	public WaveTelemetry finalizeWave(int wave, long worldTime, int idolHpAtEnd) {
+		double closest = live.closestApproach == Double.MAX_VALUE ? -1.0 : live.closestApproach;
+		int idolDamage = Math.max(0, live.idolHpAtStart - idolHpAtEnd);
 		WaveTelemetry snapshot = new WaveTelemetry(
 			wave, live.spawned, live.leaked, live.killedByTowers, live.killedByPlayers,
-			(int) Math.max(0L, worldTime - live.startTime));
+			(int) Math.max(0L, worldTime - live.startTime), closest, idolDamage);
+		updateEscalation(closest, idolDamage, live.leaked);
 		lastWave = snapshot;
 		return snapshot;
+	}
+
+	/**
+	 * Rubber-band the {@link #escalation} factor from a finished wave's pressure (see the
+	 * {@link #E_MIN} contract):
+	 * <ul>
+	 *   <li><b>LOW pressure</b> — the closest enemy stayed beyond {@link #NEAR_THRESHOLD}, the
+	 *       Idol took no damage, and nothing leaked → the defence is dominating, so ESCALATE
+	 *       by {@link #ESCALATION_STEP} (capped at {@link #E_MAX}).</li>
+	 *   <li><b>HIGH pressure</b> — an enemy pierced inside {@link #CLOSE_THRESHOLD}, or the Idol
+	 *       took damage, or an enemy leaked → EASE by {@link #EASE_STEP} (floored at
+	 *       {@link #E_MIN}) so an overshoot self-corrects.</li>
+	 *   <li><b>Otherwise</b> — moderate approach, no real threat → HOLD steady.</li>
+	 * </ul>
+	 * A sentinel {@code closest < 0} (no enemy ever observed) holds the factor unchanged.
+	 */
+	private void updateEscalation(double closest, int idolDamage, int leaked) {
+		if (closest < 0.0) {
+			return; // no enemy data this wave — hold.
+		}
+		boolean low = closest > NEAR_THRESHOLD && idolDamage == 0 && leaked == 0;
+		boolean high = idolDamage > 0 || leaked > 0 || closest <= CLOSE_THRESHOLD;
+		if (low) {
+			escalation = Math.min(E_MAX, escalation + ESCALATION_STEP);
+		} else if (high) {
+			escalation = Math.max(E_MIN, escalation - EASE_STEP);
+		}
+		// else: hold.
 	}
 
 	/** The most recently finished wave's telemetry, or {@code null} if none has ended yet. */
 	@Nullable
 	public WaveTelemetry lastWave() {
 		return lastWave;
+	}
+
+	/**
+	 * The live adaptive escalation factor {@code E} — the toughness multiplier the
+	 * {@link WaveManager} applies to every spawned enemy (see the {@link #E_MIN} contract).
+	 * Always within {@code [}{@link #E_MIN}{@code , }{@link #E_MAX}{@code ]}. Thread-safe
+	 * ({@code volatile}), so the bridge may read it off the server thread.
+	 */
+	public double escalation() {
+		return escalation;
+	}
+
+	/** The last finished wave's closest enemy approach to the Idol (blocks; {@code -1} if none
+	 *  finished / no enemy observed). Convenience accessor mirroring {@link #lastWave()}. */
+	public double lastClosestApproach() {
+		WaveTelemetry lw = lastWave;
+		return lw == null ? -1.0 : lw.closestApproach();
+	}
+
+	/** The last finished wave's Idol damage (HP the Idol lost that wave; {@code 0} if none
+	 *  finished). Convenience accessor mirroring {@link #lastWave()}. */
+	public int lastIdolDamage() {
+		WaveTelemetry lw = lastWave;
+		return lw == null ? 0 : lw.idolDamage();
 	}
 
 	// ---- battlefield snapshot helpers (thread-safe) ------------------------
@@ -502,10 +630,14 @@ public final class WarlordDirector {
 	/**
 	 * An immutable, finished-wave telemetry snapshot: how many enemies {@code spawned},
 	 * how many {@code leaked} to the idol, how many were {@code killedByTowers} vs
-	 * {@code killedByPlayers}, and how long the wave took ({@code durationTicks}).
+	 * {@code killedByPlayers}, how long the wave took ({@code durationTicks}), and the two
+	 * adaptive-difficulty PRESSURE metrics — {@code closestApproach} (min distance any enemy
+	 * got to the Idol this wave, in blocks; {@code -1} if none was ever observed) and
+	 * {@code idolDamage} (HP the Idol lost during the wave).
 	 */
 	public record WaveTelemetry(int number, int spawned, int leaked,
-			int killedByTowers, int killedByPlayers, int durationTicks) {
+			int killedByTowers, int killedByPlayers, int durationTicks,
+			double closestApproach, int idolDamage) {
 
 		/** JSON-serialisable view for the battlefield endpoint. */
 		public Map<String, Object> toJson() {
@@ -516,6 +648,8 @@ public final class WarlordDirector {
 			m.put("killedByTowers", killedByTowers);
 			m.put("killedByPlayers", killedByPlayers);
 			m.put("durationTicks", durationTicks);
+			m.put("closestApproach", closestApproach);
+			m.put("idolDamage", idolDamage);
 			return m;
 		}
 	}
@@ -529,8 +663,13 @@ public final class WarlordDirector {
 		int killedByPlayers;
 		int killedByOther;
 		long startTime;
+		/** Idol HP captured at wave start, so {@link #finalizeWave} can derive idolDamage. */
+		int idolHpAtStart;
+		/** Running MIN distance (blocks) any live enemy reached the Idol this wave; the
+		 *  {@code Double.MAX_VALUE} sentinel means no enemy was ever observed. */
+		double closestApproach;
 
-		void reset(int wave, long worldTime) {
+		void reset(int wave, long worldTime, int idolHpAtStart) {
 			number = wave;
 			spawned = 0;
 			leaked = 0;
@@ -538,6 +677,8 @@ public final class WarlordDirector {
 			killedByPlayers = 0;
 			killedByOther = 0;
 			startTime = worldTime;
+			this.idolHpAtStart = idolHpAtStart;
+			closestApproach = Double.MAX_VALUE;
 		}
 	}
 }

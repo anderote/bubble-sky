@@ -3,6 +3,7 @@ package net.bubblesky.towerdefense.client;
 import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.client.render.ColonistBipedRenderer;
 import net.bubblesky.towerdefense.client.render.FlagArrowEntityRenderer;
+import net.bubblesky.towerdefense.client.render.ShellEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TowerArrowEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TowerBoltEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TdAllyBipedRenderer;
@@ -89,6 +90,8 @@ public class TowerDefenseModClient implements ClientModInitializer {
 		EntityRendererRegistry.register(ModEntities.TOWER_ARROW, TowerArrowEntityRenderer::new);
 		// The arrow/ball towers' combat bolt: also drawn as a vanilla arrow (it just vanishes on hit).
 		EntityRendererRegistry.register(ModEntities.TOWER_BOLT, TowerBoltEntityRenderer::new);
+		// The cannon's artillery shell: a spinning dark fire-charge round that bursts on impact.
+		EntityRendererRegistry.register(ModEntities.SHELL, ShellEntityRenderer::new);
 
 		// Acid renders as a translucent green liquid. It's now a real fluid, so we (a) mark
 		// its block translucent and (b) register a FluidRenderHandler for both the still and
