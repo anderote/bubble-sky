@@ -12,12 +12,14 @@ import net.minecraft.util.Identifier;
 /**
  * Builds Guns++ (namespace {@code thepa}) gun and ammo {@link ItemStack}s in Java.
  *
- * <p>Guns++ guns/ammo are NOT registered items — they are vanilla base items
- * ({@code carrot_on_a_stick} for guns, {@code clock} for ammo) carrying custom data
- * components. The gun's behavior keys off {@code custom_data.gz_data} plus the
- * {@code item_model} id, so those must be byte-for-byte exact for Guns++ to recognize
- * the stack. Each factory here mirrors one of Guns++'s own datapack {@code /give}
- * functions.
+ * <p>Guns++ guns/ammo are NOT registered items — they are vanilla base items carrying custom
+ * data components. Ammo is a {@code clock}. A gun is a stick item whose base type encodes its
+ * state: {@code carrot_on_a_stick} while unloaded, {@code warped_fungus_on_a_stick} while loaded
+ * (only the warped form is fire-able — see {@link #gun}). Because our guns are handed out ready
+ * to shoot, the {@link #gun} factory builds them in the loaded/warped form. The gun's behavior
+ * keys off {@code custom_data.gz_data} plus the {@code item_model} id, so those must be
+ * byte-for-byte exact for Guns++ to recognize the stack. Each factory here mirrors one of Guns++'s
+ * own datapack {@code /give} functions.
  *
  * <p><b>Version sync:</b> these definitions mirror Guns++ datapack give functions as of
  * v5.8.7. If Guns++ updates, re-sync the {@code gz_data} ids/models and item models from
@@ -27,7 +29,7 @@ public final class GunsPlusPlus {
 	private GunsPlusPlus() {
 	}
 
-	// ---- Guns (base item carrot_on_a_stick) --------------------------------
+	// ---- Guns (handed out loaded: base item warped_fungus_on_a_stick) ------
 
 	/** Glock pistol — starter sidearm. Fires pistol {@link #bullets(int)}. */
 	public static ItemStack glock() {
@@ -122,12 +124,32 @@ public final class GunsPlusPlus {
 	// ---- Builders ----------------------------------------------------------
 
 	/**
-	 * Build a Guns++ gun stack: a {@code carrot_on_a_stick} carrying the given item model
-	 * and {@code custom_data} = {@code { gz_data: {...}, HideFlags: 32 }} (HideFlags omitted
-	 * for snipers), named yellow from the given translation key.
+	 * Build a Guns++ gun stack in its <b>loaded</b> state: a {@code warped_fungus_on_a_stick}
+	 * carrying the given item model and {@code custom_data} = {@code { gz_data: {...}, HideFlags: 32 }}
+	 * (HideFlags omitted for snipers), named yellow from the given translation key.
+	 *
+	 * <p><b>Why warped_fungus_on_a_stick and not carrot_on_a_stick.</b> A Guns++ gun is only
+	 * <em>fire-able</em> while it is a {@code warped_fungus_on_a_stick}. The datapack's per-tick
+	 * fire trigger ({@code data/thepa/function/loop.mcfunction}) runs the whole shoot chain only
+	 * for players whose {@code gz_crossbow} score is {@code >=1}, and {@code gz_crossbow} is the
+	 * {@code minecraft.used:minecraft.warped_fungus_on_a_stick} statistic — it only ticks when the
+	 * player right-clicks a <em>warped-fungus</em> stick. A {@code carrot_on_a_stick} instead ticks
+	 * {@code gz_click} ({@code minecraft.used:minecraft.carrot_on_a_stick}), which routes to
+	 * {@code items/select_click} and merely plays the {@code block.iron_trapdoor.open} "dry click" —
+	 * never firing. In vanilla Guns++ a gun is a carrot only while <em>unloaded</em>; loading it
+	 * (sneak-reload) swaps carrot→warped via the {@code crossbow_update} item modifier once
+	 * {@code gz_data.bullets >= 1}. Because our mod never runs that reload path (see
+	 * {@link InfiniteAmmo}), we must hand the gun out already in the loaded/warped form with a full
+	 * magazine, or it can never fire.
+	 *
+	 * <p>The incoming {@code bullets} field is overwritten to a full magazine
+	 * ({@code bullets = capacity}) here so the gun is ready to shoot the instant it is received.
 	 */
 	private static ItemStack gun(String model, NbtCompound gzData, boolean hideFlags, String nameKey) {
-		ItemStack stack = new ItemStack(Items.CARROT_ON_A_STICK);
+		// Hand the gun out fully loaded (see javadoc): a full magazine plus the warped base is what
+		// makes the very first right-click fire, with no reload cycle.
+		gzData.putByte("bullets", gzData.getByte("capacity", (byte) 0));
+		ItemStack stack = new ItemStack(Items.WARPED_FUNGUS_ON_A_STICK);
 		stack.set(DataComponentTypes.ITEM_MODEL, Identifier.of("minecraft", model));
 		NbtCompound custom = new NbtCompound();
 		custom.put("gz_data", gzData);

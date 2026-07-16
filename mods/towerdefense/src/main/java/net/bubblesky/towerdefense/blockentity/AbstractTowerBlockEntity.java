@@ -262,8 +262,16 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 			cz += dz / dist * muzzle;
 		}
 		be.fire(serverWorld, cx, cy, cz, target);
-		be.cooldown = be.cooldownTicks();
+		// Add ±15% statistical NOISE to the cooldown so a field of same-type towers doesn't fire
+		// in lockstep (which looks robotic and wastes shots on already-dying enemies). Each shot's
+		// next cooldown is jittered independently, so towers naturally desynchronise over time.
+		int base = be.cooldownTicks();
+		double jitter = 1.0 + (serverWorld.random.nextDouble() - 0.5) * 2.0 * COOLDOWN_JITTER;
+		be.cooldown = Math.max(1, (int) Math.round(base * jitter));
 	}
+
+	/** Fraction of random spread applied to each tower's post-shot cooldown (±15%). */
+	private static final double COOLDOWN_JITTER = 0.15;
 
 	@Nullable
 	protected HostileEntity findNearestHostile(ServerWorld world, BlockPos pos, double cx, double cy, double cz) {
