@@ -52,6 +52,12 @@ public class CharacterScreen extends Screen {
 	// ---- Stats tab widgets -------------------------------------------------
 	/** Per-stat "+" buttons, in {@link Stat} order, so render can toggle their state. */
 	private final ButtonWidget[] plusButtons = new ButtonWidget[Stat.values().length];
+	/** Vertical scroll offset (px) of the Stats-tab rows. */
+	private int statsScroll = 0;
+	/** Total pixel height of all global-stat rows. */
+	private int statsContentHeight = 0;
+	/** Top of the scrollable global-stat list; its bottom is shared with the Skills panel. */
+	private int statsPanelTop;
 
 	// ---- Skills tab widgets ------------------------------------------------
 	/** The active class resolved from the synced id (null when unclassed). */
@@ -104,6 +110,8 @@ public class CharacterScreen extends Screen {
 
 		// ---- Stats tab: 7-stat rows --------------------------------------
 		contentTop = 100;
+		statsPanelTop = contentTop;
+		statsScroll = 0;
 		Stat[] stats = Stat.values();
 		for (int i = 0; i < stats.length; i++) {
 			Stat stat = stats[i];
@@ -114,6 +122,7 @@ public class CharacterScreen extends Screen {
 			plusButtons[i] = plus;
 			this.addDrawableChild(plus);
 		}
+		statsContentHeight = stats.length * ROW_H;
 
 		// ---- Skills tab: the active class's tree -------------------------
 		// The tree can overflow the screen (six 20-rank skills across three tiers), so it lives
@@ -172,10 +181,10 @@ public class CharacterScreen extends Screen {
 	 * never draws (vanilla draws buttons without our scissor) nor keeps a stray click target.
 	 */
 	private void updateTabVisibility() {
+		// Both sets start hidden. The active tab's renderer exposes only buttons whose complete
+		// hitbox is inside its clipped scrolling panel.
 		for (ButtonWidget b : plusButtons) {
-			if (b != null) {
-				b.visible = tab == 0;
-			}
+			if (b != null) b.visible = false;
 		}
 		for (ButtonWidget b : skillPlus) {
 			if (b != null) {
@@ -208,6 +217,15 @@ public class CharacterScreen extends Screen {
 	 */
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+		if (tab == 0
+			&& mouseX >= panelX1 && mouseX <= panelX2
+			&& mouseY >= statsPanelTop && mouseY <= panelBottom) {
+			int maxScroll = Math.max(0, statsContentHeight - (panelBottom - statsPanelTop));
+			if (maxScroll > 0) {
+				statsScroll = clamp(statsScroll - (int) (verticalAmount * SKILLS_SCROLL_STEP), 0, maxScroll);
+				return true;
+			}
+		}
 		if (tab == 1 && activeClass != null
 			&& mouseX >= panelX1 && mouseX <= panelX2
 			&& mouseY >= panelTop && mouseY <= panelBottom) {
@@ -277,9 +295,14 @@ public class CharacterScreen extends Screen {
 
 		Stat[] stats = Stat.values();
 		boolean hasPoints = points > 0;
+		int visibleHeight = panelBottom - statsPanelTop;
+		int maxScroll = Math.max(0, statsContentHeight - visibleHeight);
+		statsScroll = clamp(statsScroll, 0, maxScroll);
+
+		context.enableScissor(panelX1, statsPanelTop, panelX2, panelBottom);
 		for (int i = 0; i < stats.length; i++) {
 			Stat stat = stats[i];
-			int y = contentTop + i * ROW_H;
+			int y = statsPanelTop + i * ROW_H - statsScroll;
 			int textY = y + 6;
 			int pts = ClientProgress.points(stat);
 			Text label = Text.literal(statName(stat)).formatted(Formatting.WHITE)
@@ -287,8 +310,16 @@ public class CharacterScreen extends Screen {
 				.append(Text.literal("  " + appliedBonus(stat, pts)).formatted(Formatting.DARK_GRAY));
 			context.drawTextWithShadow(this.textRenderer, label, labelX, textY, 0xFFFFFFFF);
 			if (plusButtons[i] != null) {
-				plusButtons[i].active = hasPoints;
+				boolean inBand = y >= statsPanelTop && y + 20 <= panelBottom;
+				plusButtons[i].setY(y);
+				plusButtons[i].visible = inBand;
+				plusButtons[i].active = inBand && hasPoints;
 			}
+		}
+		context.disableScissor();
+
+		if (maxScroll > 0) {
+			drawScrollbar(context, statsPanelTop, panelBottom, statsContentHeight, statsScroll, maxScroll);
 		}
 	}
 
@@ -371,13 +402,20 @@ public class CharacterScreen extends Screen {
 
 		// ---- scrollbar (only when the content overflows the panel) ------
 		if (maxScroll > 0) {
-			int sbW = 4;
-			int sbX = panelX2 - sbW;
-			context.fill(sbX, panelTop, sbX + sbW, panelBottom, 0xFF303030); // track
-			int thumbH = Math.max(20, visibleHeight * visibleHeight / skillsContentHeight);
-			int thumbY = panelTop + (int) ((long) skillsScroll * (visibleHeight - thumbH) / maxScroll);
-			context.fill(sbX, thumbY, sbX + sbW, thumbY + thumbH, 0xFFAAAAAA); // thumb
+			drawScrollbar(context, panelTop, panelBottom, skillsContentHeight, skillsScroll, maxScroll);
 		}
+	}
+
+	/** Draw the shared four-pixel scrollbar used by both Character tabs. */
+	private void drawScrollbar(DrawContext context, int top, int bottom,
+			int contentHeight, int scroll, int maxScroll) {
+		int visibleHeight = bottom - top;
+		int sbW = 4;
+		int sbX = panelX2 - sbW;
+		context.fill(sbX, top, sbX + sbW, bottom, 0xFF303030);
+		int thumbH = Math.max(20, visibleHeight * visibleHeight / contentHeight);
+		int thumbY = top + (int) ((long) scroll * (visibleHeight - thumbH) / maxScroll);
+		context.fill(sbX, thumbY, sbX + sbW, thumbY + thumbH, 0xFFAAAAAA);
 	}
 
 	/** Display name for a stat. */
