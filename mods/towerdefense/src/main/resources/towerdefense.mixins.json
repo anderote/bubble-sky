@@ -1,0 +1,12 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "net.bubblesky.towerdefense.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"ServerPlayerEntityMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
