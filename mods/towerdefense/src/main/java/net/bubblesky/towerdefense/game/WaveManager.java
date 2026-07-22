@@ -208,6 +208,15 @@ public final class WaveManager {
 	private static final int MAX_SPAWN_FAILURES = 40;
 	/** Blocks above the terrain surface to drop a spawned enemy (clears grass/snow). */
 	private static final int SURFACE_SPAWN_OFFSET = 1;
+	/** A gate stored this many blocks (or more) BELOW the heightmap surface counts as an
+	 *  UNDERGROUND gate (a tunnel/cave entrance placed via {@code /td spawn}). The margin
+	 *  absorbs heightmap noise from grass, snow layers, and 1-2 block terrain bumps so a
+	 *  normal surface gate never accidentally trips the tunnel path. */
+	private static final int UNDERGROUND_GATE_DEPTH = 3;
+	/** When resolving an underground spawn cell, walk DOWN at most this many blocks from the
+	 *  gate's stored Y to find the tunnel floor (covers a gate marker set while the player
+	 *  hovered slightly above the floor, or a floor dug a couple blocks deeper since). */
+	private static final int TUNNEL_FLOOR_SEARCH = 3;
 	/** Length of the between-waves intermission (ticks; 20t = 1s). */
 	private static final int INTERMISSION_TICKS = 100;
 	/** The intermission grows this many ticks per wave (1s), for more breathing room later. */
@@ -808,25 +817,106 @@ public final class WaveManager {
 	}
 
 	/**
-	 * Snap a spawn point to the terrain SURFACE at its (x,z) so enemies never spawn
-	 * buried inside a hill (which makes {@code type.spawn} return {@code null}). Uses
-	 * the world heightmap; the enemy lands a block above ground so it isn't stuck in
-	 * a block. The chunk is force-loaded for the match, so the heightmap is valid.
+	 * Resolve a gate's actual spawn position, aware of BOTH kinds of gate:
+	 *
+	 * <p><b>Surface gates</b> (the common case) are snapped to the terrain surface at
+	 * their (x,z) via the world heightmap so enemies never spawn buried inside a hill
+	 * (which makes {@code type.spawn} return {@code null}) or floating over rough
+	 * terrain; the enemy lands a block above ground so it isn't stuck in grass/snow.
+	 *
+	 * <p><b>Underground gates</b> — the gate marker is set at the player's FEET by
+	 * {@code /td spawn}, so a gate placed inside a tunnel/cave carries a trustworthy
+	 * below-surface Y. Blindly heightmap-snapping such a gate teleported its spawns to
+	 * the surface ABOVE the tunnel, which is exactly the bug this branch fixes: when the
+	 * stored Y sits {@link #UNDERGROUND_GATE_DEPTH}+ blocks below the heightmap, we keep
+	 * the stored Y and only validate it via {@link #tunnelSpawn} (head room + a floor
+	 * within {@link #TUNNEL_FLOOR_SEARCH} blocks). Only if that validation fails (the
+	 * tunnel collapsed / was filled in) do we fall back to the surface snap, because a
+	 * broken gate must still spawn SOMEWHERE rather than hang the wave.
+	 *
+	 * <p>The chunk is force-loaded for the match, so heightmap and block reads are valid.
 	 */
 	private static BlockPos surfaceSpawn(ServerWorld world, BlockPos sp) {
+		if (isUndergroundGate(world, sp)) {
+			BlockPos tunnel = tunnelSpawn(world, sp);
+			if (tunnel != null) {
+				return tunnel;
+			}
+		}
 		int surfaceY = world.getTopY(Heightmap.Type.MOTION_BLOCKING, sp.getX(), sp.getZ());
 		return new BlockPos(sp.getX(), surfaceY + SURFACE_SPAWN_OFFSET, sp.getZ());
 	}
 
 	/**
+	 * Whether a gate's stored position sits meaningfully BELOW the heightmap surface of
+	 * its own column — i.e. it was deliberately placed underground (tunnel/cave). The
+	 * {@link #UNDERGROUND_GATE_DEPTH} margin keeps surface gates on bumpy terrain, tall
+	 * grass, or snow layers on the plain heightmap-snap path.
+	 */
+	private static boolean isUndergroundGate(ServerWorld world, BlockPos sp) {
+		int surfaceY = world.getTopY(Heightmap.Type.MOTION_BLOCKING, sp.getX(), sp.getZ());
+		return sp.getY() < surfaceY - UNDERGROUND_GATE_DEPTH;
+	}
+
+	/**
+	 * Validate an underground spawn cell at the gate's stored Y: the cell and the cell
+	 * above must be passable (head room for a biped) with a solid floor directly below.
+	 * Walks DOWN up to {@link #TUNNEL_FLOOR_SEARCH} blocks to find that floor, so a gate
+	 * marker hovering a couple of blocks over the tunnel floor still resolves. Returns
+	 * {@code null} when no standable cell exists (candidate is inside solid rock / over a
+	 * void) so the caller can fall back rather than spawn a mob inside a wall.
+	 */
+	private static BlockPos tunnelSpawn(ServerWorld world, BlockPos pos) {
+		for (int dy = 0; dy <= TUNNEL_FLOOR_SEARCH; dy++) {
+			BlockPos cell = pos.down(dy);
+			if (isStandable(world, cell)) {
+				return cell;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Whether a mob can be dropped into {@code pos}: the cell (and the one above it, for
+	 * head room) is passable and the cell below is a solid, non-fluid floor to stand on.
+	 * Guards against spawning inside solid blocks or in fluids, within build height.
+	 */
+	private static boolean isStandable(ServerWorld world, BlockPos pos) {
+		if (world.isOutOfHeightLimit(pos) || world.isOutOfHeightLimit(pos.up())) {
+			return false;
+		}
+		return canStandOn(world, pos.down()) && passable(world, pos) && passable(world, pos.up());
+	}
+
+	/** A solid, non-fluid floor a mob can stand on top of (non-empty collision shape, no fluid). */
+	private static boolean canStandOn(ServerWorld world, BlockPos pos) {
+		BlockState state = world.getBlockState(pos);
+		return state.getFluidState().isEmpty() && !state.getCollisionShape(world, pos).isEmpty();
+	}
+
+	/** An empty, non-fluid cell a mob can occupy (no collision, no fluid). */
+	private static boolean passable(ServerWorld world, BlockPos pos) {
+		BlockState state = world.getBlockState(pos);
+		return state.getFluidState().isEmpty() && state.getCollisionShape(world, pos).isEmpty();
+	}
+
+	/**
 	 * Multi-point spread spawn: pick a random horizontal offset within
 	 * {@link #spreadRadius(int)} blocks of the given spawn gate (a square kernel of
-	 * {@code [-r, r]} on each axis), then surface-snap the OFFSET position via
+	 * {@code [-r, r]} on each axis), then resolve the OFFSET position via
 	 * {@link #surfaceSpawn} so it still lands on solid ground. The radius grows with the
 	 * wave, so wave 1 emerges tight on the gate tile while mid/late waves pour out across a
 	 * wide front around it. The offset is bounded by {@link #SPREAD_CAP} and the gate's
 	 * force-loaded 3x3 chunk neighbourhood (pinned in {@link #setArenaForced}) so the
-	 * snapped position always sits on loaded, valid terrain.
+	 * resolved position always sits on loaded, valid terrain.
+	 *
+	 * <p><b>Underground gates:</b> the offset cell is validated at the GATE's stored Y
+	 * (walking down a few blocks for the floor, via {@link #tunnelSpawn}). A random
+	 * offset in a narrow tunnel usually lands inside the rock wall — heightmap-snapping
+	 * it would pop the enemy onto the surface above the tunnel, so instead we retry with
+	 * the un-offset gate position (whose own tunnel-aware {@link #surfaceSpawn} path
+	 * keeps it at depth). Underground waves therefore emerge tight from the gate mouth
+	 * rather than spread wide, which is the physically sensible behaviour for a tunnel.
 	 */
 	private static BlockPos spreadSpawn(ServerWorld world, BlockPos sp, int wave) {
 		int radius = spreadRadius(wave);
@@ -835,7 +925,18 @@ public final class WaveManager {
 		}
 		int dx = world.random.nextInt(radius * 2 + 1) - radius;
 		int dz = world.random.nextInt(radius * 2 + 1) - radius;
-		return surfaceSpawn(world, sp.add(dx, 0, dz));
+		BlockPos offset = sp.add(dx, 0, dz);
+		if (isUndergroundGate(world, sp)) {
+			// Keep the spread at TUNNEL depth: accept the offset only if it is a real
+			// standable air pocket at the gate's Y; otherwise fall back to the gate
+			// itself. Never heightmap-snap the offset — that is the surface-leak bug.
+			BlockPos tunnel = tunnelSpawn(world, offset);
+			if (tunnel != null) {
+				return tunnel;
+			}
+			return surfaceSpawn(world, sp);
+		}
+		return surfaceSpawn(world, offset);
 	}
 
 	/**
