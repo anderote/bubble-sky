@@ -111,6 +111,73 @@ public final class TdCommand {
 	public record MaterialEntry(String id, int price, int count) {
 	}
 
+	// ---- equipment kits ----------------------------------------------------
+	// EQUIPMENT KITS are bundles of plain vanilla gear (armour + a weapon) sold straight
+	// into the buyer's INVENTORY — personal combat power for the player's own hands, as
+	// opposed to TOWERS (placeable defences) and ALLIES (hired fighters). Paid out of the
+	// same per-player bank balance.
+
+	/** One piece of a kit: the vanilla item and how many of it the kit contains. */
+	private record KitPiece(net.minecraft.item.Item item, int count) {
+	}
+
+	/** A buyable equipment kit: its coin price plus every piece of gear it grants. */
+	private record KitDef(int price, java.util.List<KitPiece> pieces) {
+	}
+
+	/** The equipment storefront (insertion order = display order, cheap to expensive). */
+	private static final Map<String, KitDef> EQUIPMENT = new LinkedHashMap<>();
+
+	static {
+		// Prices are calibrated against wave income (~2 coins/kill shared to everyone plus a
+		// 5+wave*3 clear bounty ≈ 33 coins on wave 1, ~65 by wave 5, ~105 by wave 10): the
+		// leather kit is a wave-1 impulse buy, chainmail lands around waves 3-5, iron costs
+		// about two mid-game waves, and diamond is a genuine late-game savings goal — still
+		// cheaper than a tier-3 sharpshooter tower (400) so gear never crowds out towers.
+		EQUIPMENT.put("leather_kit", new KitDef(25, java.util.List.of(
+			new KitPiece(net.minecraft.item.Items.LEATHER_HELMET, 1),
+			new KitPiece(net.minecraft.item.Items.LEATHER_CHESTPLATE, 1),
+			new KitPiece(net.minecraft.item.Items.LEATHER_LEGGINGS, 1),
+			new KitPiece(net.minecraft.item.Items.LEATHER_BOOTS, 1))));
+		EQUIPMENT.put("ranger_kit", new KitDef(45, java.util.List.of(
+			new KitPiece(net.minecraft.item.Items.BOW, 1),
+			new KitPiece(net.minecraft.item.Items.ARROW, 64))));
+		EQUIPMENT.put("chainmail_kit", new KitDef(60, java.util.List.of(
+			new KitPiece(net.minecraft.item.Items.CHAINMAIL_HELMET, 1),
+			new KitPiece(net.minecraft.item.Items.CHAINMAIL_CHESTPLATE, 1),
+			new KitPiece(net.minecraft.item.Items.CHAINMAIL_LEGGINGS, 1),
+			new KitPiece(net.minecraft.item.Items.CHAINMAIL_BOOTS, 1),
+			new KitPiece(net.minecraft.item.Items.STONE_SWORD, 1))));
+		EQUIPMENT.put("iron_kit", new KitDef(120, java.util.List.of(
+			new KitPiece(net.minecraft.item.Items.IRON_HELMET, 1),
+			new KitPiece(net.minecraft.item.Items.IRON_CHESTPLATE, 1),
+			new KitPiece(net.minecraft.item.Items.IRON_LEGGINGS, 1),
+			new KitPiece(net.minecraft.item.Items.IRON_BOOTS, 1),
+			new KitPiece(net.minecraft.item.Items.IRON_SWORD, 1))));
+		EQUIPMENT.put("diamond_kit", new KitDef(300, java.util.List.of(
+			new KitPiece(net.minecraft.item.Items.DIAMOND_HELMET, 1),
+			new KitPiece(net.minecraft.item.Items.DIAMOND_CHESTPLATE, 1),
+			new KitPiece(net.minecraft.item.Items.DIAMOND_LEGGINGS, 1),
+			new KitPiece(net.minecraft.item.Items.DIAMOND_BOOTS, 1),
+			new KitPiece(net.minecraft.item.Items.DIAMOND_SWORD, 1))));
+	}
+
+	/** Public, immutable view of a buyable equipment kit (id + coin price) for client UIs. */
+	public record EquipEntry(String id, int price) {
+	}
+
+	/**
+	 * The equipment catalogue as an ordered list — the single source of truth shared with
+	 * the client menu so its Equipment section always matches {@code /td buy}.
+	 */
+	public static java.util.List<EquipEntry> equipmentCatalogue() {
+		java.util.List<EquipEntry> list = new java.util.ArrayList<>();
+		for (Map.Entry<String, KitDef> e : EQUIPMENT.entrySet()) {
+			list.add(new EquipEntry(e.getKey(), e.getValue().price()));
+		}
+		return list;
+	}
+
 	/**
 	 * The build-materials catalogue as an ordered list — the single source of truth shared
 	 * with the client Tower Defense menu so its materials section always matches {@code /td buy}.
@@ -184,6 +251,15 @@ public final class TdCommand {
 			.then(CommandManager.literal("shop").executes(TdCommand::shop))
 			.then(CommandManager.literal("buy")
 				.then(CommandManager.argument("type", StringArgumentType.word())
+					// Tab-complete every buyable id across the three catalogues so equipment
+					// kits are as discoverable as towers and materials.
+					.suggests((c, builder) -> {
+						java.util.List<String> ids = new java.util.ArrayList<>();
+						ids.addAll(TOWERS.keySet());
+						ids.addAll(MATERIALS.keySet());
+						ids.addAll(EQUIPMENT.keySet());
+						return net.minecraft.command.CommandSource.suggestMatching(ids, builder);
+					})
 					.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type"), 1, 1))
 					.then(CommandManager.argument("count", IntegerArgumentType.integer(1, 64))
 						.executes(ctx -> buy(ctx, StringArgumentType.getString(ctx, "type"),
@@ -298,6 +374,8 @@ public final class TdCommand {
 		body(src, "Buy → get a placeable tower block → place it to raise the tower.");
 		body(src, "Build materials (stone_bricks/stone_stairs/torch/oak_planks) are also on");
 		body(src, "/td shop — /td buy <id> drops a stack in your pack to wall lanes & mazes.");
+		body(src, "Equipment kits (leather/ranger/chainmail/iron/diamond) are on /td shop");
+		body(src, "too — /td buy <id>_kit hands armour & weapons for your own fists.");
 		body(src, "The flame tower is a short-range incinerator; the others reach further out.");
 		body(src, "Prefer shooting? A bought tower arrow fired from your bow still builds too.");
 		body(src, "Aim at a built tower and /td upgrade to raise its tier for coins.");
@@ -366,6 +444,10 @@ public final class TdCommand {
 			MaterialDef d = e.getValue();
 			line(src, e.getKey(), d.price() + " coins for " + d.count() + "  (/td buy " + e.getKey() + ")");
 		}
+		src.sendFeedback(() -> Text.literal("Equipment").formatted(Formatting.GOLD), false);
+		for (Map.Entry<String, KitDef> e : EQUIPMENT.entrySet()) {
+			line(src, e.getKey(), e.getValue().price() + " coins  (/td buy " + e.getKey() + ")");
+		}
 		src.sendFeedback(() -> Text.literal("  Your coins: " + coins).formatted(Formatting.AQUA), false);
 		src.sendFeedback(() -> Text.literal("  Buy gives a placeable tower block — place it to raise the tower.")
 			.formatted(Formatting.GRAY), false);
@@ -390,6 +472,12 @@ public final class TdCommand {
 		MaterialDef material = MATERIALS.get(type);
 		if (material != null) {
 			return buyMaterial(ctx, material, type, count);
+		}
+
+		// Equipment kits also share /td buy: gear goes straight to the inventory (no tier).
+		KitDef kit = EQUIPMENT.get(type);
+		if (kit != null) {
+			return buyEquipment(ctx, kit, type);
 		}
 
 		TowerDef def = TOWERS.get(type);
@@ -456,6 +544,38 @@ public final class TdCommand {
 		int remaining = coins - total;
 		src.sendFeedback(() -> Text.literal("Bought " + give + "x " + type + " for " + total
 			+ " coins (" + remaining + " left). Build your walls & mazes!")
+			.formatted(Formatting.GREEN), false);
+		return 1;
+	}
+
+	/**
+	 * Buy an equipment kit: spend the buyer's BANK gold (same balance towers use) and hand
+	 * every piece of the kit straight to the player's INVENTORY (overflow drops at their
+	 * feet). Kits are deliberately one-per-purchase — armour pieces don't stack, so
+	 * honouring a bulk {@code count} would just litter the arena with duplicates.
+	 */
+	private static int buyEquipment(CommandContext<ServerCommandSource> ctx, KitDef def, String type)
+			throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity player = src.getPlayerOrThrow();
+
+		int coins = countCoins(player);
+		if (coins < def.price()) {
+			src.sendError(Text.literal("Not enough coins: need " + def.price() + " for " + type
+				+ ", have " + coins + "."));
+			return 0;
+		}
+		// Hand over each piece separately (armour doesn't stack), dropping overflow at the feet.
+		for (KitPiece piece : def.pieces()) {
+			ItemStack stack = new ItemStack(piece.item(), piece.count());
+			if (!player.getInventory().insertStack(stack)) {
+				player.dropItem(stack, false);
+			}
+		}
+		removeCoins(player, def.price());
+		int remaining = coins - def.price();
+		src.sendFeedback(() -> Text.literal("Bought the " + type + " for " + def.price()
+			+ " coins (" + remaining + " left). Suit up!")
 			.formatted(Formatting.GREEN), false);
 		return 1;
 	}
