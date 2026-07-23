@@ -13,6 +13,7 @@ import net.bubblesky.towerdefense.client.render.TdBipedEntityRenderer;
 import net.bubblesky.towerdefense.client.render.TdSkeletonBipedRenderer;
 import net.bubblesky.towerdefense.client.render.TdSkeletonWarriorRenderer;
 import net.bubblesky.towerdefense.client.screen.CharacterScreen;
+import net.bubblesky.towerdefense.client.screen.ConstructionScreen;
 import net.bubblesky.towerdefense.client.screen.TowerDefenseScreen;
 import net.bubblesky.towerdefense.entity.TdAllyEntity;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
@@ -60,6 +61,9 @@ public class TowerDefenseModClient implements ClientModInitializer {
 	private static KeyBinding inventoryKey;
 	private static KeyBinding towersKey;
 	private static KeyBinding toggleEnemyOutlineKey;
+	private static KeyBinding constructionMenuKey;
+	private static KeyBinding confirmConstructionKey;
+	private static KeyBinding cancelConstructionKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -150,6 +154,22 @@ public class TowerDefenseModClient implements ClientModInitializer {
 			InputUtil.Type.KEYSYM,
 			GLFW.GLFW_KEY_N,
 			KEY_CATEGORY));
+		constructionMenuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+			"key.towerdefense.open_construction",
+			InputUtil.Type.KEYSYM,
+			GLFW.GLFW_KEY_B,
+			KEY_CATEGORY));
+		confirmConstructionKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+			"key.towerdefense.confirm_construction",
+			InputUtil.Type.KEYSYM,
+			GLFW.GLFW_KEY_ENTER,
+			KEY_CATEGORY));
+		cancelConstructionKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+			"key.towerdefense.cancel_construction",
+			InputUtil.Type.KEYSYM,
+			GLFW.GLFW_KEY_BACKSPACE,
+			KEY_CATEGORY));
+		ClientConstructionPreview.register(constructionMenuKey, confirmConstructionKey, cancelConstructionKey);
 
 		// Cache each progression snapshot the server pushes (drives the HUD + Character screen).
 		ClientPlayNetworking.registerGlobalReceiver(ProgressSyncPayload.ID,
@@ -194,6 +214,24 @@ public class TowerDefenseModClient implements ClientModInitializer {
 			while (toggleEnemyOutlineKey.wasPressed()) toggleOutline = true;
 			if (toggleOutline && client.player != null) {
 				ClientPlayNetworking.send(new net.bubblesky.towerdefense.towerui.net.ToggleEnemyGlowPayload());
+			}
+			boolean openConstruction = false;
+			while (constructionMenuKey.wasPressed()) openConstruction = true;
+			boolean confirmConstruction = false;
+			while (confirmConstructionKey.wasPressed()) confirmConstruction = true;
+			boolean cancelConstruction = false;
+			while (cancelConstructionKey.wasPressed()) cancelConstruction = true;
+			if (client.currentScreen == null && client.player != null) {
+				if (confirmConstruction) {
+					ClientConstructionPreview.confirm();
+				}
+				if (cancelConstruction) {
+					ClientConstructionPreview.cancel();
+				}
+				if (openConstruction) {
+					client.setScreen(new ConstructionScreen());
+					return;
+				}
 			}
 			if (client.currentScreen != null || client.player == null) {
 				return;

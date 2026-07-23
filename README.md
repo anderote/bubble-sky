@@ -149,6 +149,10 @@ A human-facing custom-content Fabric mod — a **survival TD + RPG** that lives 
   (melee), **Agility** (speed), **Marksmanship** (bow), **Fortune** (gold). **`I`** opens inventory.
 - **Controls:** **`J`** menu · **`H`** hire · **`I`** inventory · **`P`** character · `/td` for
   everything (`idol`, `spawn`, `wave`, `buy`, `upgrade`, `hire`, `command`, `shop`, `status`, `reset`).
+- **Build Spells (`B`):** build without waiting on an LLM. Presets include a bridge, wall,
+  flatten/clear, tower pad, temporary tower stairs + landing, and a kill lane. Every useful
+  dimension is directly typeable. Preview the full 3D block hologram, move/turn until it sits
+  correctly, press **Enter** to build, **Backspace** to cancel, or use **Undo Last Build**.
 - **Extras in the same mod:** the **acid** block + bucket, the unified **TD bow** (fire = arrow,
   sneak-fire = plant a flag, tower-arrow = deploy a tower), the **Layout Wand** (flags/regions Grok
   reads), and the **agent bridge** (above).
@@ -196,6 +200,11 @@ Java (Temurin) **21** · Node **22**. Don't bump 1.21.6 without re-checking ever
 - **Modded dev server:** `scripts/deploy-modded.sh` stands up a *separate* modded instance
   (`server-modded/` :25566) with the bridge, used to prove Grok/agents-on-mods without touching the
   play server. See [`BRIDGE.md`](BRIDGE.md).
+- **One-command local game:** `./scripts/dev-game.sh` builds/tests the mod, starts that dev
+  server, copies the exact same jar into Prism, verifies checksums, launches the client, and joins
+  `127.0.0.1:25566`. If your instance has another name, use
+  `PRISM_INSTANCE=your-instance ./scripts/dev-game.sh`; stop the server with
+  `./scripts/dev-game.sh stop`.
 - **Grok on the play server:** run it in **bridge** mode so the modded custom entities don't break
   the vanilla protocol: `cd grok && GROK_TRANSPORT=bridge BUBBLESKY_BRIDGE_URL=http://127.0.0.1:25580
   BUBBLESKY_BRIDGE_TOKEN=<server/config token> node assistant.js`.
