@@ -39,7 +39,22 @@ public enum TowerKind {
 		Blocks.MAGMA_BLOCK, Blocks.BLAST_FURNACE, 0),
 	/** Sharpshooter tower: very long range, slow cadence; targets the toughest enemy in range. */
 	SHARPSHOOTER("sharpshooter_tower", () -> ModBlocks.SHARPSHOOTER_TOWER, () -> ModItems.SHARPSHOOTER_TOWER_ARROW,
-		Blocks.POLISHED_BLACKSTONE, Blocks.EMERALD_BLOCK, 0);
+		Blocks.POLISHED_BLACKSTONE, Blocks.EMERALD_BLOCK, 0),
+	/** Snare tower: slows groups so damage towers can finish them. */
+	SNARE("snare_tower", () -> ModBlocks.SNARE_TOWER, () -> ModItems.SNARE_TOWER_ARROW,
+		Blocks.MANGROVE_ROOTS, Blocks.LIME_CONCRETE, 0),
+	/** Ballista tower: slow piercing shots down a lane. */
+	BALLISTA("ballista_tower", () -> ModBlocks.BALLISTA_TOWER, () -> ModItems.BALLISTA_TOWER_ARROW,
+		Blocks.STRIPPED_DARK_OAK_LOG, Blocks.COPPER_BLOCK, 0),
+	/** Mason tower: reinforces nearby walls against sappers. */
+	MASON("mason_tower", () -> ModBlocks.MASON_TOWER, () -> ModItems.MASON_TOWER_ARROW,
+		Blocks.STONE_BRICKS, Blocks.IRON_BLOCK, 0),
+	/** Beacon tower: marks priority targets for bonus tower damage. */
+	BEACON("beacon_tower", () -> ModBlocks.BEACON_TOWER, () -> ModItems.BEACON_TOWER_ARROW,
+		Blocks.QUARTZ_PILLAR, Blocks.GOLD_BLOCK, 0),
+	/** Poison tower: short-range attrition cloud for clustered enemies. */
+	POISON("poison_tower", () -> ModBlocks.POISON_TOWER, () -> ModItems.POISON_TOWER_ARROW,
+		Blocks.DEEPSLATE_BRICKS, Blocks.GREEN_CONCRETE, 0);
 
 	private final String id;
 	private final Supplier<Block> core;

@@ -219,6 +219,15 @@ public abstract class AbstractTowerBlockEntity extends BlockEntity {
 		return (1.0 + 0.4 * (tier - 1)) * veterancyMult();
 	}
 
+	/** Damage multiplier against a specific target. Beacon-marked enemies take bonus tower damage. */
+	protected double damageMultiplier(HostileEntity target) {
+		double mult = damageMultiplier();
+		if (BeaconTowerBlockEntity.isMarked(target)) {
+			mult *= BeaconTowerBlockEntity.MARKED_DAMAGE_MULT;
+		}
+		return mult;
+	}
+
 	/** Resolve the placer to an online player, or null (offline / unset). */
 	@Nullable
 	protected ServerPlayerEntity placerPlayer(ServerWorld world) {

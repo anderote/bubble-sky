@@ -47,6 +47,11 @@ public final class ModItemGroups {
 			entries.add(ModItems.FLAME_TOWER_ARROW);
 			entries.add(ModItems.BALL_TOWER_ARROW);
 			entries.add(ModItems.SHARPSHOOTER_TOWER_ARROW);
+			entries.add(ModItems.SNARE_TOWER_ARROW);
+			entries.add(ModItems.BALLISTA_TOWER_ARROW);
+			entries.add(ModItems.MASON_TOWER_ARROW);
+			entries.add(ModItems.BEACON_TOWER_ARROW);
+			entries.add(ModItems.POISON_TOWER_ARROW);
 			entries.add(ModBlocks.ARROW_TOWER);
 			entries.add(ModBlocks.CANNON_TOWER);
 			entries.add(ModBlocks.FROST_TOWER);
@@ -54,6 +59,11 @@ public final class ModItemGroups {
 			entries.add(ModBlocks.FLAME_TOWER);
 			entries.add(ModBlocks.BALL_TOWER);
 			entries.add(ModBlocks.SHARPSHOOTER_TOWER);
+			entries.add(ModBlocks.SNARE_TOWER);
+			entries.add(ModBlocks.BALLISTA_TOWER);
+			entries.add(ModBlocks.MASON_TOWER);
+			entries.add(ModBlocks.BEACON_TOWER);
+			entries.add(ModBlocks.POISON_TOWER);
 		});
 	}
 }

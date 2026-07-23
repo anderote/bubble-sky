@@ -1,0 +1,6 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "towerdefense:item/ballista_tower_arrow"
+	}
+}

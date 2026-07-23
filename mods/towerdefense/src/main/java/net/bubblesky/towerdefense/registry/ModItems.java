@@ -93,6 +93,16 @@ public final class ModItems {
 	// Long-range, slow-firing precision tower: targets the toughest enemy in range.
 	public static final Item SHARPSHOOTER_TOWER_ARROW = register("sharpshooter_tower_arrow",
 		s -> new TowerArrowItem(s, TowerKind.SHARPSHOOTER), new Item.Settings());
+	public static final Item SNARE_TOWER_ARROW = register("snare_tower_arrow",
+		s -> new TowerArrowItem(s, TowerKind.SNARE), new Item.Settings());
+	public static final Item BALLISTA_TOWER_ARROW = register("ballista_tower_arrow",
+		s -> new TowerArrowItem(s, TowerKind.BALLISTA), new Item.Settings());
+	public static final Item MASON_TOWER_ARROW = register("mason_tower_arrow",
+		s -> new TowerArrowItem(s, TowerKind.MASON), new Item.Settings());
+	public static final Item BEACON_TOWER_ARROW = register("beacon_tower_arrow",
+		s -> new TowerArrowItem(s, TowerKind.BEACON), new Item.Settings());
+	public static final Item POISON_TOWER_ARROW = register("poison_tower_arrow",
+		s -> new TowerArrowItem(s, TowerKind.POISON), new Item.Settings());
 
 	// ---- spell items -------------------------------------------------------
 	// One registered SpellItem per SpellType, each carrying its spell (like TowerArrowItem

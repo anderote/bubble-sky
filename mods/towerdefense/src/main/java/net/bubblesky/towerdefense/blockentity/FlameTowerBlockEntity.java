@@ -132,8 +132,6 @@ public class FlameTowerBlockEntity extends AbstractTowerBlockEntity {
 		DamageSource source = owner != null
 			? world.getDamageSources().playerAttack(owner)
 			: world.getDamageSources().onFire();
-		float damage = (float) (FLAME_DAMAGE * damageMultiplier());
-
 		double tx = target.getX();
 		double ty = target.getBodyY(0.5);
 		double tz = target.getZ();
@@ -146,7 +144,8 @@ public class FlameTowerBlockEntity extends AbstractTowerBlockEntity {
 		for (HostileEntity mob : world.getNonSpectatingEntities(HostileEntity.class, cone)) {
 			if (mob.isAlive() && mob.squaredDistanceTo(target) <= CONE_RADIUS * CONE_RADIUS) {
 				mob.setOnFireFor(BURN_SECONDS);
-				damageAndCredit(world, mob, source, damage);
+				damageAndCredit(world, mob, source,
+					(float) (FLAME_DAMAGE * damageMultiplier(mob)));
 			}
 		}
 
@@ -330,8 +329,6 @@ public class FlameTowerBlockEntity extends AbstractTowerBlockEntity {
 		DamageSource source = owner != null
 			? world.getDamageSources().playerAttack(owner)
 			: world.getDamageSources().onFire();
-		float damage = (float) (TILE_DAMAGE * damageMultiplier());
-
 		// One query over the bounding box of all tiles, then match by feet position.
 		Box bounds = tileBounds();
 		List<HostileEntity> mobs = world.getNonSpectatingEntities(HostileEntity.class, bounds);
@@ -343,7 +340,8 @@ public class FlameTowerBlockEntity extends AbstractTowerBlockEntity {
 			BlockPos feet = mob.getBlockPos();
 			if (burningTiles.containsKey(feet) || burningTiles.containsKey(feet.down())) {
 				mob.setOnFireFor(BURN_SECONDS);
-				damageAndCredit(world, mob, source, damage);
+				damageAndCredit(world, mob, source,
+					(float) (TILE_DAMAGE * damageMultiplier(mob)));
 			}
 		}
 	}

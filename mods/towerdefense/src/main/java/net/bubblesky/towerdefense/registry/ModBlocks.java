@@ -5,11 +5,16 @@ import net.bubblesky.towerdefense.TowerDefenseMod;
 import net.bubblesky.towerdefense.block.AcidFluidBlock;
 import net.bubblesky.towerdefense.block.ArrowTowerBlock;
 import net.bubblesky.towerdefense.block.BallTowerBlock;
+import net.bubblesky.towerdefense.block.BallistaTowerBlock;
+import net.bubblesky.towerdefense.block.BeaconTowerBlock;
 import net.bubblesky.towerdefense.block.CannonTowerBlock;
 import net.bubblesky.towerdefense.block.FlameTowerBlock;
 import net.bubblesky.towerdefense.block.FrostTowerBlock;
 import net.bubblesky.towerdefense.block.LightningTowerBlock;
 import net.bubblesky.towerdefense.block.SharpshooterTowerBlock;
+import net.bubblesky.towerdefense.block.MasonTowerBlock;
+import net.bubblesky.towerdefense.block.PoisonTowerBlock;
+import net.bubblesky.towerdefense.block.SnareTowerBlock;
 import net.bubblesky.towerdefense.item.TowerBlockItem;
 import net.bubblesky.towerdefense.tower.TowerKind;
 import net.minecraft.block.AbstractBlock;
@@ -104,11 +109,54 @@ public final class ModBlocks {
 			.sounds(BlockSoundGroup.STONE),
 		TowerKind.BALL);
 
-	// The corrosive acid FLUID's block form. Now a real vanilla-engine fluid (see
-	// ModFluids / AcidFluid): it spreads, pools and flows downhill exactly like water.
-	// No block item (obtained via acid_bucket, like vanilla fluids); still /setblock-able.
-	// Liquid + replaceable + no collision so you sink through it and it flows like water;
-	// non-opaque + translucent (client) so you can see through the green; drops nothing.
+	public static final Block SNARE_TOWER = registerTower("snare_tower",
+		SnareTowerBlock::new,
+		AbstractBlock.Settings.create()
+			.strength(3.0f, 6.0f)
+			.requiresTool()
+			.nonOpaque()
+			.sounds(BlockSoundGroup.ROOTS),
+		TowerKind.SNARE);
+
+	public static final Block BALLISTA_TOWER = registerTower("ballista_tower",
+		BallistaTowerBlock::new,
+		AbstractBlock.Settings.create()
+			.strength(4.0f, 8.0f)
+			.requiresTool()
+			.nonOpaque()
+			.sounds(BlockSoundGroup.WOOD),
+		TowerKind.BALLISTA);
+
+	public static final Block MASON_TOWER = registerTower("mason_tower",
+		MasonTowerBlock::new,
+		AbstractBlock.Settings.create()
+			.strength(5.0f, 10.0f)
+			.requiresTool()
+			.nonOpaque()
+			.sounds(BlockSoundGroup.STONE),
+		TowerKind.MASON);
+
+	public static final Block BEACON_TOWER = registerTower("beacon_tower",
+		BeaconTowerBlock::new,
+		AbstractBlock.Settings.create()
+			.strength(3.5f, 7.0f)
+			.requiresTool()
+			.nonOpaque()
+			.luminance(s -> 8)
+			.sounds(BlockSoundGroup.GLASS),
+		TowerKind.BEACON);
+
+	public static final Block POISON_TOWER = registerTower("poison_tower",
+		PoisonTowerBlock::new,
+		AbstractBlock.Settings.create()
+			.strength(3.0f, 6.0f)
+			.requiresTool()
+			.nonOpaque()
+			.sounds(BlockSoundGroup.HONEY),
+		TowerKind.POISON);
+
+	// The corrosive acid fluid's block form spreads and flows like water. It has no
+	// block item (use an acid bucket), no collision, and translucent rendering.
 	public static final Block ACID = register("acid",
 		AcidFluidBlock::new,
 		AbstractBlock.Settings.create()

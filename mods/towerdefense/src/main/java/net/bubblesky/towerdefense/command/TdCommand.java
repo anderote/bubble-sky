@@ -81,6 +81,11 @@ public final class TdCommand {
 		TOWERS.put("frost_tower", new TowerDef(ModBlocks.FROST_TOWER, 40));
 		TOWERS.put("lightning_tower", new TowerDef(ModBlocks.LIGHTNING_TOWER, 80));
 		TOWERS.put("flame_tower", new TowerDef(ModBlocks.FLAME_TOWER, 60));
+		TOWERS.put("snare_tower", new TowerDef(ModBlocks.SNARE_TOWER, 70));
+		TOWERS.put("poison_tower", new TowerDef(ModBlocks.POISON_TOWER, 90));
+		TOWERS.put("mason_tower", new TowerDef(ModBlocks.MASON_TOWER, 100));
+		TOWERS.put("ballista_tower", new TowerDef(ModBlocks.BALLISTA_TOWER, 120));
+		TOWERS.put("beacon_tower", new TowerDef(ModBlocks.BEACON_TOWER, 140));
 		TOWERS.put("sharpshooter_tower", new TowerDef(ModBlocks.SHARPSHOOTER_TOWER, 100));
 	}
 

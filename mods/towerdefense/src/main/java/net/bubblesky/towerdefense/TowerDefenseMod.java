@@ -134,7 +134,7 @@ public class TowerDefenseMod implements ModInitializer {
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> LayoutStore.init(server.getRunDirectory()));
 		LayoutWandItem.register();
 
-		LOGGER.info("[towerdefense] initialized: {} weapons + 3 towers (arrow/cannon/frost) + shop/upgrades + coin economy + wave game loop + 6-enemy roster + boss waves + HUD",
+		LOGGER.info("[towerdefense] initialized: {} weapons + 10 purchasable towers + shop/upgrades + coin economy + wave game loop + enemy roster + boss waves + HUD",
 			ModItems.WEAPON_COUNT);
 	}
 
