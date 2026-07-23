@@ -88,6 +88,7 @@ public class TowerDefenseMod implements ModInitializer {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 			TdCommand.register(dispatcher));
 		WaveManager.register();
+		net.bubblesky.towerdefense.game.ArmyManager.register();
 		// Enemy AI Warlord (#17a): the director's telemetry death-hook (classifies each wave
 		// kill as tower vs player). The bridge endpoints + WaveManager already drive its plans.
 		net.bubblesky.towerdefense.game.WarlordDirector.register();

@@ -47,13 +47,21 @@ public final class TdFeedback {
 	}
 
 	/** A wave is cleared: a triumphant level-up chime + green sparkle at the base. */
-	public static void waveClear(ServerWorld world, TdArenaState st) {
+	public static void waveClear(ServerWorld world, TdArenaState st, WarlordDirector.WaveTelemetry report) {
 		playAtBase(world, st, SoundEvents.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
 		if (st.base != null) {
 			world.spawnParticles(ParticleTypes.HAPPY_VILLAGER,
 				st.base.getX() + 0.5, st.base.getY() + 1.2, st.base.getZ() + 0.5,
 				30, 0.8, 0.8, 0.8, 0.1);
 		}
+		String closest = report.closestApproach() < 0 ? "n/a"
+			: String.format(java.util.Locale.ROOT, "%.1fm", report.closestApproach());
+		title(world,
+			Text.literal("WAVE " + report.number() + " — " + report.grade() + " RANK")
+				.formatted(Formatting.GOLD, Formatting.BOLD),
+			Text.literal(String.format(java.util.Locale.ROOT, "%.1fs", report.durationTicks() / 20.0)
+				+ " • " + (report.idolDamage() == 0 ? "Idol flawless" : "Idol -" + report.idolDamage())
+				+ " • Closest " + closest).formatted(Formatting.YELLOW));
 	}
 
 	/** An enemy reached the base: an alarm thud + red damage burst at the base. */

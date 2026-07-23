@@ -65,6 +65,11 @@ public class TdArenaState extends PersistentState {
 	public int intermissionCooldown = 0;
 	/** Highest wave fully cleared / reached (for the game-over report). */
 	public int wavesSurvived = 0;
+	/** Consecutive dominant clears. The Warlord uses this to demand additional,
+	 * player-placed attack gates instead of silently inventing unfair spawn locations. */
+	public int dominanceStreak = 0;
+	/** Minimum number of player-chosen spawn gates required before the next wave may begin. */
+	public int requiredSpawnPoints = 1;
 	/** Set when the base is destroyed; halts spawning until reset. */
 	public boolean gameOver = false;
 
@@ -132,6 +137,8 @@ public class TdArenaState extends PersistentState {
 		spawnFailures = 0;
 		intermissionCooldown = 0;
 		wavesSurvived = 0;
+		dominanceStreak = 0;
+		requiredSpawnPoints = 1;
 		gameOver = false;
 		markDirty();
 	}
@@ -162,6 +169,8 @@ public class TdArenaState extends PersistentState {
 		nbt.putInt("spawnCooldown", spawnCooldown);
 		nbt.putInt("intermissionCooldown", intermissionCooldown);
 		nbt.putInt("wavesSurvived", wavesSurvived);
+		nbt.putInt("dominanceStreak", dominanceStreak);
+		nbt.putInt("requiredSpawnPoints", requiredSpawnPoints);
 		nbt.putBoolean("gameOver", gameOver);
 		return nbt;
 	}
@@ -187,6 +196,8 @@ public class TdArenaState extends PersistentState {
 		s.spawnCooldown = nbt.getInt("spawnCooldown", 0);
 		s.intermissionCooldown = nbt.getInt("intermissionCooldown", 0);
 		s.wavesSurvived = nbt.getInt("wavesSurvived", 0);
+		s.dominanceStreak = nbt.getInt("dominanceStreak", 0);
+		s.requiredSpawnPoints = Math.max(1, nbt.getInt("requiredSpawnPoints", 1));
 		s.gameOver = nbt.getBoolean("gameOver", false);
 		return s;
 	}

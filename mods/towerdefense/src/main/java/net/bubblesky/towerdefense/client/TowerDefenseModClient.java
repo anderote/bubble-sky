@@ -34,6 +34,8 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.BlockRenderLayer;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.EntityType;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 
@@ -229,7 +231,13 @@ public class TowerDefenseModClient implements ClientModInitializer {
 					ClientConstructionPreview.cancel();
 				}
 				if (openConstruction) {
-					client.setScreen(new ConstructionScreen());
+					if ("engineer".equals(TdClientStatus.activeClass())) {
+						client.setScreen(new ConstructionScreen());
+					} else {
+						client.player.sendMessage(Text.literal(
+							"Advanced Build Spells are Engineer-only for now. Pick Engineer with /td class engineer.")
+							.formatted(Formatting.RED), false);
+					}
 					return;
 				}
 			}

@@ -9,6 +9,8 @@ import java.util.UUID;
 import net.bubblesky.towerdefense.construction.ConstructionGeometry.Operation;
 import net.bubblesky.towerdefense.construction.net.ConfirmConstructionPayload;
 import net.bubblesky.towerdefense.construction.net.UndoConstructionPayload;
+import net.bubblesky.towerdefense.progression.PlayerClass;
+import net.bubblesky.towerdefense.progression.ProgressState;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -54,6 +56,11 @@ public final class ConstructionEvents {
 	}
 
 	private static void confirm(ServerPlayerEntity player, ConstructionConfig raw) {
+		if (!isEngineer(player)) {
+			message(player, "Advanced Build Spells are Engineer-only for now. Use /td class engineer.",
+				Formatting.RED);
+			return;
+		}
 		if (ACTIVE.containsKey(player.getUuid())) {
 			message(player, "A construction spell is already building.", Formatting.RED);
 			return;
@@ -190,6 +197,11 @@ public final class ConstructionEvents {
 	}
 
 	private static void undo(ServerPlayerEntity player) {
+		if (!isEngineer(player)) {
+			message(player, "Advanced Build Spells are Engineer-only for now. Use /td class engineer.",
+				Formatting.RED);
+			return;
+		}
 		if (ACTIVE.containsKey(player.getUuid())) {
 			message(player, "Wait for the current construction spell to finish before undoing.", Formatting.RED);
 			return;
@@ -218,6 +230,12 @@ public final class ConstructionEvents {
 		ACTIVE.put(player.getUuid(), new BuildJob(world, player.getUuid(), reverse,
 			"Undo", true, new ArrayList<>()));
 		message(player, "Undo queued: restoring " + reverse.size() + " blocks.", Formatting.GREEN);
+	}
+
+	private static boolean isEngineer(ServerPlayerEntity player) {
+		return player.getServer() != null
+			&& ProgressState.get(player.getServer()).forPlayer(player.getUuid()).getActiveClass()
+				== PlayerClass.ENGINEER;
 	}
 
 	private static void tick(MinecraftServer server) {

@@ -112,10 +112,14 @@ public class TowerDefenseScreen extends Screen {
 		addButton(leftX, ly, colW, rowH, Text.literal("Help"),
 			b -> run("td help", false));
 		ly += step;
-		addButton(leftX, ly, colW, rowH, Text.literal("Build Spells (preview)"),
+		boolean engineer = "engineer".equals(TdClientStatus.activeClass());
+		addButton(leftX, ly, colW, rowH, Text.literal(engineer
+				? "Build Spells (preview)" : "Build Spells — Engineer"),
 			b -> {
-				if (this.client != null) {
+				if (this.client != null && engineer) {
 					this.client.setScreen(new ConstructionScreen());
+				} else {
+					run("td class", false);
 				}
 			});
 		ly += step;
@@ -169,10 +173,15 @@ public class TowerDefenseScreen extends Screen {
 
 		rel = addShopHeader(rel, "Hire Allies");
 		for (TdCommand.HireEntry entry : TdCommand.hireCatalogue()) {
-			String label = "Hire " + prettify(entry.id()) + " (" + entry.price() + ")";
+			String unlock = entry.minWave() > 0 ? ", wave " + entry.minWave() : "";
+			String label = "Hire " + prettify(entry.id()) + " (" + entry.price()
+				+ ", wage " + entry.wage() + unlock + ")";
 			rel = addShopButton(rel, Text.literal(label),
 				b -> run("td hire " + entry.id(), false));
 		}
+		rel = addShopButton(rel, Text.literal("Army Status"), b -> run("td army", false));
+		rel = addShopButton(rel, Text.literal("Rally Army (+25 morale)"),
+			b -> run("td army rally", false));
 
 		// Personal gear bundles — vanilla armour/weapons straight to the inventory,
 		// so the menu stays open like the materials rows.

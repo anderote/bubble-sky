@@ -142,14 +142,20 @@ A human-facing custom-content Fabric mod — a **survival TD + RPG** that lives 
   through**. HP follows a **long-marathon curve** (killable toward wave 100, not an exponential
   wall), with **epic multi-Warlord** milestone waves (25→3, 50→6, 100→12 bosses + a horde) under a
   concurrent-enemy **drip cap**.
-- **Allied soldiers (hire with `H`):** **footman / archer / knight**, each in armor + a house
-  uniform (blue leather / green ranger / diamond plate). Give them hold / attack / follow orders.
+- **Adaptive siege:** every clear gets a screenshot-friendly **S–D rank** with time, Idol damage,
+  hero HP/downs, and closest approach. Sustained dominant clears make the Enemy AI Warlord add
+  pressure and require another **player-chosen attack gate** (`/td spawn`) before play continues.
+- **Standing army (hire with `H`):** **footman / archer / knight**, plus a wave-8 **Banner
+  Captain**. Hires persist, draw wages from the owner's bank from wave 5 onward, gain veterancy
+  and morale when paid, lose morale when unpaid or comrades fall, and can be reviewed/rallied with
+  `/td army` and `/td army rally`. Give squads hold / attack / follow orders.
 - **RPG progression:** permanent **XP → levels → skill points** (persist across sessions & deaths).
   Open the **Character** screen with **`P`** and pour points into **Vitality** (HP), **Strength**
   (melee), **Agility** (speed), **Marksmanship** (bow), **Fortune** (gold). **`I`** opens inventory.
 - **Controls:** **`J`** menu · **`H`** hire · **`I`** inventory · **`P`** character · `/td` for
   everything (`idol`, `spawn`, `wave`, `buy`, `upgrade`, `hire`, `command`, `shop`, `status`, `reset`).
-- **Build Spells (`B`):** build without waiting on an LLM. Presets include a bridge, wall,
+- **Engineer Build Spells (`B`):** the advanced construction kit is Engineer-only for now and
+  builds without waiting on an LLM. Presets include a bridge, wall,
   flatten/clear, tower pad, temporary tower stairs + landing, and a kill lane. Every useful
   dimension is directly typeable. Preview the full 3D block hologram, move/turn until it sits
   correctly, press **Enter** to build, **Backspace** to cancel, or use **Undo Last Build**.

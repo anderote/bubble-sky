@@ -179,6 +179,8 @@ public final class WaveManager {
 	 *  emerges from), or {@code null} when no plan governs the wave (uniform gate choice —
 	 *  identical to the default path). Server-thread-only. */
 	private static WarlordDirector.SpawnEmphasis activeEmphasis = null;
+	/** Avoid repeating the "place another gate" prompt every tick while an intermission waits. */
+	private static boolean gateRequirementAnnounced = false;
 
 	// ---- enemy outline toggle ---------------------------------------------
 	/** Server-authoritative, session-scoped GLOBAL toggle for the red enemy OUTLINE (the
@@ -430,7 +432,16 @@ public final class WaveManager {
 	 * every tick. Anchors: wave 1 → 15, 5 → 13, 10 → 10, 25 → 3, 50 → 3.
 	 */
 	private static int spawnInterval(int wave) {
-		return Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL - wave / 2);
+		int adaptiveRush = (int) Math.floor(Math.max(0.0,
+			WarlordDirector.get().escalation() - WarlordDirector.E_MIN));
+		return Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL - wave / 2 - adaptiveRush);
+	}
+
+	/** Default horde size with a bounded (max +30%) Warlord bonus after dominant clears. */
+	static int adaptiveEnemyCount(int wave) {
+		double bonus = Math.min(0.30, Math.max(0.0,
+			WarlordDirector.get().escalation() - WarlordDirector.E_MIN) * 0.10);
+		return (int) Math.round(enemyCount(wave) * (1.0 + bonus));
 	}
 
 	/** Coin bounty paid to each nearby player when a wave is cleared. */
@@ -452,6 +463,12 @@ public final class WaveManager {
 		if (st.gameOver) {
 			return Text.literal("The Idol was destroyed. Use /td reset to start over.").formatted(Formatting.RED);
 		}
+		if (st.phase != TdArenaState.Phase.SPAWNING && st.phase != TdArenaState.Phase.ACTIVE
+				&& st.spawnPoints.size() < st.requiredSpawnPoints) {
+			return Text.literal("The Warlord has opened another front. Choose gate #"
+				+ (st.spawnPoints.size() + 1) + ": stand at its approach and run /td spawn ("
+				+ st.spawnPoints.size() + "/" + st.requiredSpawnPoints + ").").formatted(Formatting.RED);
+		}
 		// No "wave in progress" guard: /td wave ALWAYS launches the next wave — skipping the
 		// intermission pause, or stacking a fresh wave on top of a live one (a rush).
 		boolean stacking = st.phase == TdArenaState.Phase.SPAWNING || st.phase == TdArenaState.Phase.ACTIVE;
@@ -468,6 +485,7 @@ public final class WaveManager {
 
 	private static void beginWave(MinecraftServer server, TdArenaState st) {
 		st.currentWave += 1;
+		gateRequirementAnnounced = false;
 		st.phase = TdArenaState.Phase.SPAWNING;
 		boolean boss = isBossWave(st.currentWave);
 		// A boss wave fields a SCALING squad of Warlords PLUS an escorting horde of the
@@ -503,6 +521,7 @@ public final class WaveManager {
 			// pressure metrics). The Idol's current HP is captured as the baseline so the
 			// wave's idolDamage can be derived when it finalises.
 			WarlordDirector.get().onWaveStart(st.currentWave, world.getTime(), st.baseHp);
+			WarlordDirector.get().recordHeroHealth(world);
 			if (!boss) {
 				// Boss-wave feedback fires from spawnBoss (so it lands at the gate).
 				TdFeedback.waveStart(world, st);
@@ -528,7 +547,7 @@ public final class WaveManager {
 		if (plan == null) {
 			// Default path — unchanged.
 			st.bossesRemaining = defaultBosses;
-			st.enemiesRemaining = enemyCount(st.currentWave) + defaultBosses;
+			st.enemiesRemaining = adaptiveEnemyCount(st.currentWave) + defaultBosses;
 			return;
 		}
 		activeEmphasis = plan.emphasis();
@@ -554,7 +573,7 @@ public final class WaveManager {
 		if (expanded.isEmpty() && bosses == 0) {
 			activeEmphasis = null;
 			st.bossesRemaining = defaultBosses;
-			st.enemiesRemaining = enemyCount(st.currentWave) + defaultBosses;
+			st.enemiesRemaining = adaptiveEnemyCount(st.currentWave) + defaultBosses;
 			return;
 		}
 		Collections.shuffle(expanded);
@@ -573,6 +592,7 @@ public final class WaveManager {
 		if (world == null) {
 			return;
 		}
+		WarlordDirector.get().recordHeroHealth(world);
 
 		switch (st.phase) {
 			case SPAWNING -> tickSpawning(world, st);
@@ -642,16 +662,35 @@ public final class WaveManager {
 			WALL_DAMAGE.clear();
 			// Finalise Warlord telemetry for the cleared wave (passing the Idol's end HP so the
 			// wave's idolDamage + adaptive escalation are computed) and drop spent plan state.
-			WarlordDirector.get().finalizeWave(st.currentWave, world.getTime(), st.baseHp);
+			WarlordDirector.WaveTelemetry report =
+				WarlordDirector.get().finalizeWave(st.currentWave, world.getTime(), st.baseHp);
 			PLANNED_QUEUE.clear();
 			activeEmphasis = null;
 			st.wavesSurvived = st.currentWave;
 			int reward = waveReward(st.currentWave);
 			payNearbyPlayers(world, st, reward);
-			broadcast(server, Text.literal("Wave " + st.currentWave + " cleared! +"
-				+ reward + " coins. Idol HP " + st.baseHp + "/" + st.baseMaxHp)
-				.formatted(Formatting.GREEN));
-			TdFeedback.waveClear(world, st);
+			ArmyManager.settleWave(world, st.currentWave);
+			boolean dominant = WarlordDirector.isDominant(report);
+			st.dominanceStreak = dominant ? st.dominanceStreak + 1 : Math.max(0, st.dominanceStreak - 1);
+			int oldRequired = st.requiredSpawnPoints;
+			st.requiredSpawnPoints = Math.max(st.requiredSpawnPoints,
+				WarlordDirector.requiredGatesForStreak(st.dominanceStreak));
+			double seconds = report.durationTicks() / 20.0;
+			String closest = report.closestApproach() < 0 ? "n/a"
+				: String.format(java.util.Locale.ROOT, "%.1fm", report.closestApproach());
+			broadcast(server, Text.literal("Wave " + st.currentWave + " — " + report.grade()
+				+ " RANK • " + String.format(java.util.Locale.ROOT, "%.1fs", seconds)
+				+ " • Idol " + (report.idolDamage() == 0 ? "flawless" : "-" + report.idolDamage() + " HP")
+				+ " • Heroes -" + String.format(java.util.Locale.ROOT, "%.1f", report.heroHealthLost())
+				+ " HP/" + report.heroDeaths() + " downs • Closest " + closest
+				+ " • +" + reward + " coins").formatted(Formatting.GREEN));
+			TdFeedback.waveClear(world, st, report);
+			if (st.requiredSpawnPoints > oldRequired && st.spawnPoints.size() < st.requiredSpawnPoints) {
+				broadcast(server, Text.literal("The Warlord adapts: choose a new attack approach! "
+					+ "Stand where gate #" + st.requiredSpawnPoints + " should be and run /td spawn. "
+					+ "The next wave waits for your choice.").formatted(Formatting.RED, Formatting.BOLD));
+				gateRequirementAnnounced = true;
+			}
 			dropWaveReward(server, world, st);
 			st.phase = TdArenaState.Phase.INTERMISSION;
 			st.intermissionCooldown = intermissionTicks(st.currentWave);
@@ -660,6 +699,16 @@ public final class WaveManager {
 	}
 
 	private static void tickIntermission(MinecraftServer server, TdArenaState st) {
+		if (st.spawnPoints.size() < st.requiredSpawnPoints) {
+			if (!gateRequirementAnnounced) {
+				broadcast(server, Text.literal("Wave paused: choose enemy gate #"
+					+ (st.spawnPoints.size() + 1) + " with /td spawn ("
+					+ st.spawnPoints.size() + "/" + st.requiredSpawnPoints + ").")
+					.formatted(Formatting.RED));
+				gateRequirementAnnounced = true;
+			}
+			return;
+		}
 		if (st.intermissionCooldown > 0) {
 			st.intermissionCooldown--;
 			st.markDirty();
@@ -747,6 +796,7 @@ public final class WaveManager {
 		markEnemyVisible(world, mob);
 		steerToBase(mob, st);
 		WarlordDirector.get().recordSpawn();
+		recordSpawnApproach(mob, st);
 		return true;
 	}
 
@@ -809,11 +859,20 @@ public final class WaveManager {
 		markEnemyVisible(world, boss);
 		steerToBase(boss, st);
 		WarlordDirector.get().recordSpawn();
+		recordSpawnApproach(boss, st);
 		// Only the first Warlord of the squad triggers the roar + title fanfare.
 		if (st.bossesRemaining == bossCount(wave)) {
 			TdFeedback.bossSpawn(world, st, sp, wave);
 		}
 		return true;
+	}
+
+	/** Capture at least the gate-to-Idol distance even if a spawn is killed before its next tick. */
+	private static void recordSpawnApproach(Entity enemy, TdArenaState st) {
+		if (st.base != null) {
+			WarlordDirector.get().recordApproach(Math.sqrt(enemy.squaredDistanceTo(
+				st.base.getX() + 0.5, st.base.getY() + 0.5, st.base.getZ() + 0.5)));
+		}
 	}
 
 	/**

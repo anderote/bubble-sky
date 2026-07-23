@@ -10,6 +10,7 @@ import java.util.Map;
 import net.bubblesky.towerdefense.blockentity.AbstractTowerBlockEntity;
 import net.bubblesky.towerdefense.entity.TdAllyEntity;
 import net.bubblesky.towerdefense.game.TdMarkers;
+import net.bubblesky.towerdefense.game.ArmyManager;
 import net.bubblesky.towerdefense.game.WaveManager;
 import net.bubblesky.towerdefense.item.TowerBlockItem;
 import net.bubblesky.towerdefense.layout.LayoutStore;
@@ -195,20 +196,22 @@ public final class TdCommand {
 	private static final int MAX_ALLIES = 20;
 
 	/** A hireable ally: its entity type plus the coin price to summon it. */
-	private record AllyDef(EntityType<? extends TdAllyEntity> type, int price) {
+	private record AllyDef(EntityType<? extends TdAllyEntity> type, int price, int wage,
+			int minWave, int startingMorale, String label) {
 	}
 
 	/** The ally storefront (insertion order = display order). */
 	private static final Map<String, AllyDef> ALLIES = new LinkedHashMap<>();
 
 	static {
-		ALLIES.put("footman", new AllyDef(ModEntities.ALLY_FOOTMAN, 15));
-		ALLIES.put("archer", new AllyDef(ModEntities.ALLY_ARCHER, 20));
-		ALLIES.put("knight", new AllyDef(ModEntities.ALLY_KNIGHT, 40));
+		ALLIES.put("footman", new AllyDef(ModEntities.ALLY_FOOTMAN, 15, 2, 0, 70, "Footman"));
+		ALLIES.put("archer", new AllyDef(ModEntities.ALLY_ARCHER, 20, 3, 0, 70, "Longbow"));
+		ALLIES.put("knight", new AllyDef(ModEntities.ALLY_KNIGHT, 40, 5, 0, 78, "Knight"));
+		ALLIES.put("captain", new AllyDef(ModEntities.ALLY_KNIGHT, 85, 7, 8, 90, "Banner Captain"));
 	}
 
 	/** Public, immutable view of a hireable ally (id + coin price) for client UIs. */
-	public record HireEntry(String id, int price) {
+	public record HireEntry(String id, int price, int wage, int minWave) {
 	}
 
 	/**
@@ -218,7 +221,8 @@ public final class TdCommand {
 	public static java.util.List<HireEntry> hireCatalogue() {
 		java.util.List<HireEntry> list = new java.util.ArrayList<>();
 		for (Map.Entry<String, AllyDef> e : ALLIES.entrySet()) {
-			list.add(new HireEntry(e.getKey(), e.getValue().price()));
+			list.add(new HireEntry(e.getKey(), e.getValue().price(), e.getValue().wage(),
+				e.getValue().minWave()));
 		}
 		return list;
 	}
@@ -272,6 +276,9 @@ public final class TdCommand {
 			.then(CommandManager.literal("hire")
 				.then(CommandManager.argument("type", StringArgumentType.word())
 					.executes(ctx -> hire(ctx, StringArgumentType.getString(ctx, "type")))))
+			.then(CommandManager.literal("army")
+				.executes(TdCommand::armyStatus)
+				.then(CommandManager.literal("rally").executes(TdCommand::armyRally)))
 			.then(CommandManager.literal("command")
 				.then(CommandManager.argument("order", StringArgumentType.word())
 					.executes(ctx -> command(ctx, StringArgumentType.getString(ctx, "order"), null))
@@ -353,7 +360,8 @@ public final class TdCommand {
 		line(src, "/td respec", "refund all your active class's skill points (costs essence)");
 		line(src, "/td essence", "show your essence balance and what to spend it on");
 		line(src, "/td essence buff", "spend " + ESSENCE_BUFF_COST + " essence for a 60s power surge");
-		line(src, "/td hire <type>", "spend coins to summon an allied soldier (footman/archer/knight)");
+		line(src, "/td hire <type>", "hire a standing-army unit (footman/archer/knight/captain)");
+		line(src, "/td army [rally]", "show wages/morale, or spend coins to rally morale");
 		line(src, "/td command <order> [flag]", "order your allies: hold/attack/follow/move (flag = anchor)");
 		line(src, "/td status", "show wave/Idol info (and the tower you're looking at)");
 		line(src, "/td restart", "reset then re-arena here for a fresh run (start with /td wave)");
@@ -388,12 +396,16 @@ public final class TdCommand {
 		int aFoot = ALLIES.get("footman").price();
 		int aArch = ALLIES.get("archer").price();
 		int aKnight = ALLIES.get("knight").price();
+		int aCaptain = ALLIES.get("captain").price();
 		line(src, "footman", aFoot + " coins — melee ally that charges the enemy");
 		line(src, "archer", aArch + " coins — ranged ally that shoots from afar");
 		line(src, "knight", aKnight + " coins — heavy melee ally, tanky front line");
+		line(src, "captain", aCaptain + " coins — wave-8 veteran with high starting morale");
 		body(src, "Hire with /td hire <type> (cap " + MAX_ALLIES + "). Orders via /td command:");
 		body(src, "hold = defend a spot, attack = advance on the wave, follow = trail you,");
 		body(src, "move [flag] = march to a flag/where you look, then hold there.");
+		body(src, "From wave 5, persistent hires draw wages. Paid survivors gain morale +");
+		body(src, "veterancy; unpaid or fallen squads lose morale. /td army [rally].");
 
 		header(src, "Economy");
 		body(src, "Kill enemies to drop coins; walk over them to pick them up. Spend");
@@ -627,7 +639,13 @@ public final class TdCommand {
 
 		AllyDef def = ALLIES.get(type);
 		if (def == null) {
-			src.sendError(Text.literal("Unknown ally '" + type + "'. Try footman, archer or knight."));
+			src.sendError(Text.literal("Unknown ally '" + type + "'. Try footman, archer, knight or captain."));
+			return 0;
+		}
+		TdArenaState arena = TdArenaState.get(src.getServer());
+		if (arena.currentWave < def.minWave()) {
+			src.sendError(Text.literal(def.label() + " unlocks after reaching wave " + def.minWave()
+				+ " (currently " + arena.currentWave + ")."));
 			return 0;
 		}
 		int existing = countAllies(world);
@@ -651,12 +669,30 @@ public final class TdCommand {
 		ally.setPersistent();
 		// Default order: trail the player who hired it.
 		ally.setOrder(TdAllyEntity.Order.FOLLOW, null, player.getUuid());
+		ally.configureArmy(def.label(), def.wage(), def.startingMorale());
 
 		removeCoins(player, def.price());
 		int remaining = coins - def.price();
 		src.sendFeedback(() -> Text.literal("Hired " + type + " for " + def.price()
-			+ " coins (" + remaining + " left). It will FOLLOW you — use /td command <hold|attack|follow|move>.")
+			+ " coins (" + remaining + " left), wage " + def.wage()
+			+ "/wave from wave 5. It will FOLLOW you — use /td command <hold|attack|follow|move>.")
 			.formatted(Formatting.GREEN), false);
+		return 1;
+	}
+
+	private static int armyStatus(CommandContext<ServerCommandSource> ctx)
+			throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+		ctx.getSource().sendFeedback(() -> ArmyManager.status(ctx.getSource().getWorld(),
+			player.getUuid()), false);
+		return 1;
+	}
+
+	private static int armyRally(CommandContext<ServerCommandSource> ctx)
+			throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+		ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+		Text result = ArmyManager.rally(ctx.getSource().getWorld(), player);
+		ctx.getSource().sendFeedback(() -> result, false);
 		return 1;
 	}
 
@@ -944,9 +980,12 @@ public final class TdCommand {
 		}
 		st.markDirty();
 		TdMarkers.placeSpawn(src.getWorld(), pos, st.spawnPoints.size());
+		boolean requirementMet = st.spawnPoints.size() >= st.requiredSpawnPoints;
 		src.sendFeedback(() -> Text.literal("Enemy spawn #" + st.spawnPoints.size()
 			+ " added at " + pos.toShortString() + ". "
-			+ (st.base == null ? "Now set the Idol with /td idol." : "Run /td wave to begin!"))
+			+ (st.base == null ? "Now set the Idol with /td idol."
+				: requirementMet ? "All required fronts are ready; the countdown can continue!"
+				: "Choose " + (st.requiredSpawnPoints - st.spawnPoints.size()) + " more front(s)."))
 			.formatted(Formatting.GREEN), false);
 		return 1;
 	}
@@ -1230,7 +1269,8 @@ public final class TdCommand {
 		src.sendFeedback(() -> Text.literal("  Idol HP: "
 			+ (st.base == null ? "no idol" : st.baseHp + "/" + st.baseMaxHp))
 			.formatted(Formatting.YELLOW), false);
-		src.sendFeedback(() -> Text.literal("  Enemy spawns: " + st.spawnPoints.size())
+		src.sendFeedback(() -> Text.literal("  Enemy spawns: " + st.spawnPoints.size()
+			+ "/" + st.requiredSpawnPoints + " required • dominance streak " + st.dominanceStreak)
 			.formatted(Formatting.YELLOW), false);
 		if (!st.gameOver && st.base != null) {
 			int next = st.currentWave + 1;
