@@ -107,7 +107,8 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/v1/jobs") return sendJson(response, 202, runner.submit(await readRequestJson(request)));
     if (request.method === "POST" && url.pathname === "/v1/notices") {
       const body = await readRequestJson(request);
-      const notice = publish("notice", { id: body.id || shortId("notice") }, body.text, { actions: body.actions || [] });
+      const type = body.channel === "dev" ? "dev.notice" : "notice";
+      const notice = publish(type, { id: body.id || shortId("notice") }, body.text, { actions: body.actions || [] });
       return sendJson(response, 202, notice);
     }
     if (request.method === "POST" && url.pathname === "/v1/deploy/postpone") {

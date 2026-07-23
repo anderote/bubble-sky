@@ -34,6 +34,10 @@ Useful recovery commands:
 ./scripts/station.mjs test
 ```
 
+When a user asks to continue something from Minecraft, follow [`DEVFLOW.md`](DEVFLOW.md):
+run `./scripts/station.mjs jobs`, then `./scripts/station.mjs handoff latest` (or the named
+job). Post concise progress back with `./scripts/station.mjs announce "..."` when requested.
+
 ## Development map
 
 - `mods/towerdefense/`: survival tower-defense/RPG mod and in-JVM HTTP agent bridge.

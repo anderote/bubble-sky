@@ -12,6 +12,9 @@ test("friendly Station helper advertises the setup and recovery commands", () =>
   assert.match(result.stdout, /setup andrew/);
   assert.match(result.stdout, /doctor/);
   assert.match(result.stdout, /pair-code/);
+  assert.match(result.stdout, /jobs/);
+  assert.match(result.stdout, /handoff latest/);
+  assert.match(result.stdout, /announce TEXT/);
   assert.match(result.stdout, /logs \[station\|chat\|release\]/);
 });
 
@@ -25,6 +28,7 @@ test("non-interactive setup creates a private Andrew configuration", () => {
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
   assert.equal(config.nodeId, "andrew-mac");
   assert.equal(config.providers[0].name, "claude");
+  assert.equal(config.minecraft.defaultProvider, "claude");
   assert.ok(config.roles.includes("server"));
   assert.ok(config.sharedToken.length >= 24);
   assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);

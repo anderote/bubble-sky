@@ -9,6 +9,7 @@ const stationUrl = `http://127.0.0.1:${config.listen.port}`;
 const bot = await createBot();
 const paired = new Map();
 const lastJob = new Map();
+const preferredProvider = new Map();
 const eventCursors = new Map();
 
 bot.once("spawn", () => {
@@ -45,7 +46,12 @@ async function handleMessage(speaker, raw, whispered) {
   const allowed = (mc.allowedPlayers || []).map((name) => name.toLowerCase());
   if (allowed.length && !allowed.includes(speaker.toLowerCase())) return;
   let command = raw.trim();
-  if (/^@dev\b/i.test(command)) command = command.replace(/^@dev\s*/i, "");
+  let directProvider = null;
+  const directlyAddressed = command.match(/^@(codex|claude)\b\s*(.*)$/i);
+  if (directlyAddressed) {
+    directProvider = directlyAddressed[1].toLowerCase();
+    command = directlyAddressed[2].trim();
+  } else if (/^@dev\b/i.test(command)) command = command.replace(/^@dev\s*/i, "");
   else if (!whispered) return;
 
   try {
@@ -53,11 +59,34 @@ async function handleMessage(speaker, raw, whispered) {
     if (pair) {
       const result = await api("/v1/pair", { method: "POST", body: { player: speaker, code: pair[1] } });
       paired.set(speaker.toLowerCase(), Date.parse(result.expiresAt));
-      return tell(speaker, "Paired for 12 hours. Try @dev agents or @dev ask codex hello.");
+      return tell(speaker, "Paired for 12 hours. Try @codex hello, @claude hello, or @dev help.");
     }
     if (!isPaired(speaker)) return tell(speaker, "Pair first: whisper DevStation 'pair <code shown on your laptop>'.");
     if (!command || command === "help") return showHelp(speaker);
 
+    if (directProvider) {
+      if (!command) return tell(speaker, `Add a question or change, e.g. @${directProvider} explain the bridge.`);
+      const work = command.match(/^(?:work|dev)\s+([\s\S]+)$/i);
+      const chat = command.match(/^(?:ask|chat)\s+([\s\S]+)$/i);
+      return submit(speaker, {
+        kind: work ? "dev" : "chat",
+        provider: directProvider,
+        prompt: work?.[1] || chat?.[1] || command,
+      });
+    }
+    const preference = command.match(/^(?:use|switch)(?:\s+to)?\s+(codex|claude)$/i);
+    if (preference) {
+      const provider = preference[1].toLowerCase();
+      const fleet = await api("/v1/fleet");
+      if (!fleet.nodes.some((node) => !node.offline && node.providers?.some((item) => item.name === provider))) {
+        return tell(speaker, `${provider} is not reachable right now. Use @dev agents to check the laptops.`);
+      }
+      preferredProvider.set(speaker.toLowerCase(), provider);
+      return tell(speaker, `Using ${provider}. Short forms now work: @dev ask <question> or @dev work <change>.`);
+    }
+    if (/^(?:current|agent)$/i.test(command)) {
+      return tell(speaker, `Your default is ${defaultProvider(speaker)}. Switch with @dev use codex or @dev use claude.`);
+    }
     if (/^(agents|fleet|who)$/i.test(command)) {
       const fleet = await api("/v1/fleet");
       for (const node of fleet.nodes) tell(speaker, node.offline ? `${node.nodeId}: offline` : `${node.displayName}: ${node.providers.map((p) => p.name).join(" + ") || "no agents"} [${node.roles.join(", ")}]`);
@@ -79,6 +108,11 @@ async function handleMessage(speaker, raw, whispered) {
       if (old.kind !== "chat") return tell(speaker, "Dev jobs are continued through their PR. Start a new @dev work request if needed.");
       return submit(speaker, { kind: "chat", provider: old.provider, targetNode: old.nodeId, prompt, continuationOf: parent });
     }
+    if (/^(?:handoff|app)(?:\s+(\S+))?$/i.test(command)) {
+      const id = command.match(/^(?:handoff|app)(?:\s+(\S+))?$/i)?.[1] || lastJob.get(speaker.toLowerCase());
+      if (!id) return tell(speaker, "No recent job to hand off.");
+      return tell(speaker, `Open Codex or Claude and say 'Continue Minecraft job ${id}', or run ./scripts/station.mjs handoff ${id}.`);
+    }
     if (/^(?:later|wait|postpone|delay)\b/i.test(command) || /\b(?:mins?|minutes?|hours?|hrs?|seconds?|secs?)\b/i.test(command)) {
       const minutes = parseDurationMinutes(command);
       if (!minutes) return tell(speaker, "Tell me how long, e.g. @dev later 10mins or @dev postpone for half an hour.");
@@ -87,6 +121,8 @@ async function handleMessage(speaker, raw, whispered) {
     }
     const directed = command.match(/^(ask|chat|work|dev)\s+(?:(\S+)\/)?(codex|claude)\s+([\s\S]+)$/i);
     if (directed) return submit(speaker, { kind: /^(work|dev)$/i.test(directed[1]) ? "dev" : "chat", targetNode: directed[2] || undefined, provider: directed[3].toLowerCase(), prompt: directed[4] });
+    const short = command.match(/^(ask|chat|work|dev)\s+([\s\S]+)$/i);
+    if (short) return submit(speaker, { kind: /^(work|dev)$/i.test(short[1]) ? "dev" : "chat", provider: defaultProvider(speaker), prompt: short[2] });
     tell(speaker, "I didn't understand. Try @dev help.");
   } catch (error) { tell(speaker, `Dev Station error: ${clip(error.message, 240)}`); }
 }
@@ -100,15 +136,19 @@ async function submit(speaker, payload) {
 function showHelp(player) {
   [
     "@dev agents — see Codex/Claude laptops",
-    "@dev ask codex <question> — conversational terminal",
-    "@dev work alli-mac/codex <change> — create a dev PR",
+    "@codex <question> / @claude <question> — ask either agent from Minecraft",
+    "@codex work <change> / @claude work <change> — create a dev PR",
+    "@dev use codex|claude — choose short-command default",
+    "@dev ask <question> / @dev work <change> — use your default",
     "@dev reply [job-id] <text> — continue a conversation",
+    "@dev handoff — continue the active job in a desktop chat app",
     "@dev status [job-id] — inspect work",
     "@dev later 10mins — postpone an announced deployment (natural durations work)",
   ].forEach((line) => tell(player, line));
 }
 
 function isPaired(player) { return (paired.get(player.toLowerCase()) || 0) > Date.now(); }
+function defaultProvider(player) { return preferredProvider.get(player.toLowerCase()) || mc.defaultProvider || config.providers[0]?.name || "codex"; }
 function api(route, options) { return fetchJson(`${stationUrl}${route}`, { token: config.sharedToken, ...options }); }
 
 async function pollEvents() {

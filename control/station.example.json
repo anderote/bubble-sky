@@ -17,6 +17,7 @@
     "host": "192.168.86.188",
     "port": 25565,
     "username": "DevStation",
+    "defaultProvider": "codex",
     "allowedPlayers": ["allibell", "claudebert"]
   },
   "deployment": {

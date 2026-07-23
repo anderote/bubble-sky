@@ -13,6 +13,9 @@ Andrew/Claude setting up a Mac? Start with [`CLAUDE.md`](CLAUDE.md), then run:
 ./scripts/station.mjs setup andrew
 ```
 
+Switching between Minecraft commands and the Codex/Claude desktop apps is documented in
+[`DEVFLOW.md`](DEVFLOW.md).
+
 Two collaborators build in parallel lanes on the same repo:
 
 | Who | Agent | Owns | What they build |

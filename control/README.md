@@ -62,17 +62,23 @@ Paired commands:
 
 ```text
 @dev agents
-@dev ask codex explain the current tower architecture
-@dev ask andrew-mac/claude review the bridge API
-@dev work codex add a bridge contract test
-@dev work andrew-mac/claude fix poison tower targeting
+@codex explain the current tower architecture
+@claude review the bridge API
+@codex work add a bridge contract test
+@claude work fix poison tower targeting
+@dev use claude
+@dev ask compare both approaches
 @dev reply chat-abc123 keep going and compare both approaches
+@dev handoff
 @dev status dev-abc123
 @dev later 10mins
 @dev postpone for half an hour
 ```
 
-`ask` preserves the agent session for `reply`. `work` starts from `origin/main` in a separate
+`@dev use codex|claude` selects a per-player default for the shorter `@dev ask` and `@dev work`
+forms. `ask` preserves the Station session for `reply`. `handoff` gives you the exact job ID to
+continue in either desktop chat app; see [`DEVFLOW.md`](../DEVFLOW.md). `work` starts from
+`origin/main` in a separate
 worktree, lets the selected agent implement and test the request, commits and pushes the result,
 opens a PR, and requests GitHub auto-merge. Branch protection remains the authority: CI and the
 other collaborator's approval must pass before merge.

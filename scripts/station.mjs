@@ -8,6 +8,7 @@ import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { expandHome, fetchJson, readJson, writeJson } from "../control/lib/common.mjs";
+import { formatJobHandoff } from "../control/lib/handoff.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -33,6 +34,9 @@ switch (command) {
   case "restart": runOrExit(path.join(root, "scripts/install-station.sh"), [], { env: { ...process.env, BUBBLE_STATION_CONFIG: configPath } }); break;
   case "logs": logs(args[0]); break;
   case "pair-code": pairCode(); break;
+  case "jobs": await jobs(); break;
+  case "handoff": await handoff(args[0] || "latest"); break;
+  case "announce": await announce(args.join(" ")); break;
   case "test": runOrExit(process.execPath, ["--test", "control/test/*.test.mjs"], { cwd: root, shell: true }); break;
   case "help":
   case "--help":
@@ -88,6 +92,7 @@ async function setup(profileName) {
         host: minecraftHost,
         port: 25565,
         username: minecraftUser,
+        defaultProvider: profile.provider,
         allowedPlayers: players.split(",").map((value) => value.trim()).filter(Boolean),
       },
       deployment: {
@@ -225,6 +230,71 @@ function pairCode() {
   console.log(`In Minecraft: /msg ${config.minecraft?.username || "DevStation"} pair ${pairing.code}`);
 }
 
+async function jobs() {
+  const config = stationConfig();
+  const found = await recentJobs(config);
+  if (!found.length) return console.log("No Station jobs found.");
+  for (const job of found.slice(0, 20)) {
+    const when = job.createdAt ? new Date(job.createdAt).toLocaleString() : "unknown time";
+    console.log(`${job.id}  ${job.status}  ${job.provider}@${job.nodeId}  ${job.kind}  ${when}`);
+    console.log(`  ${job.prompt || job.conversation?.at(-1)?.user || "(no prompt)"}`);
+  }
+}
+
+async function handoff(id) {
+  const config = stationConfig();
+  let job;
+  if (id === "latest") {
+    [job] = await recentJobs(config);
+  } else {
+    for (const endpoint of stationEndpoints(config)) {
+      try {
+        job = await fetchJson(`${endpoint.url}/v1/jobs/${encodeURIComponent(id)}`, { token: endpoint.token, timeoutMs: 3000 });
+        break;
+      } catch {}
+    }
+  }
+  if (!job) fail(id === "latest" ? "No Station jobs found." : `Station job ${id} was not found on a reachable Mac.`);
+  process.stdout.write(formatJobHandoff(job));
+}
+
+async function announce(message) {
+  if (!message) fail('Usage: ./scripts/station.mjs announce "short status for Minecraft"');
+  const config = stationConfig();
+  await fetchJson(`http://127.0.0.1:${config.listen?.port || 25880}/v1/notices`, {
+    token: config.sharedToken,
+    method: "POST",
+    body: { text: message, channel: "dev" },
+    timeoutMs: 3000,
+  });
+  console.log("Posted to Minecraft as a [DEV] update.");
+}
+
+async function recentJobs(config) {
+  const groups = await Promise.all(stationEndpoints(config).map(async (endpoint) => {
+    try {
+      const result = await fetchJson(`${endpoint.url}/v1/jobs`, { token: endpoint.token, timeoutMs: 3000 });
+      return result.jobs || [];
+    } catch (error) {
+      console.warn(`Could not read jobs from ${endpoint.id}: ${error.message}`);
+      return [];
+    }
+  }));
+  return groups.flat().sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+}
+
+function stationEndpoints(config) {
+  return [
+    { id: config.nodeId, url: `http://127.0.0.1:${config.listen?.port || 25880}`, token: config.sharedToken },
+    ...(config.peers || []).map((peer) => ({ id: peer.nodeId || peer.url, url: peer.url.replace(/\/$/, ""), token: peer.token || config.sharedToken })),
+  ];
+}
+
+function stationConfig() {
+  try { return readJson(configPath); }
+  catch (error) { fail(`No readable Station config at ${configPath}: ${error.message}`); }
+}
+
 function runOrExit(executable, commandArgs, options = {}) {
   const result = spawnSync(executable, commandArgs, { cwd: root, stdio: "inherit", ...options });
   if (result.error) fail(result.error.message);
@@ -258,6 +328,9 @@ Usage:
   ./scripts/station.mjs status         show this Station and its peer
   ./scripts/station.mjs restart        reinstall/restart background services
   ./scripts/station.mjs pair-code      show the current Minecraft pairing command
+  ./scripts/station.mjs jobs           list recent Minecraft agent jobs
+  ./scripts/station.mjs handoff latest print a job transcript for Codex/Claude apps
+  ./scripts/station.mjs announce TEXT  post a short status into Minecraft
   ./scripts/station.mjs logs [station|chat|release]
   ./scripts/station.mjs test
 
