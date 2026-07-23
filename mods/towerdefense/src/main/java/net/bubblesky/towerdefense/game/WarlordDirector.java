@@ -1,9 +1,11 @@
 package net.bubblesky.towerdefense.game;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.bubblesky.towerdefense.entity.TdEnemyEntity;
 import net.bubblesky.towerdefense.registry.ModEntities;
@@ -186,6 +188,10 @@ public final class WarlordDirector {
 	public static void register() {
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
 			if (!(entity.getWorld() instanceof ServerWorld)) {
+				return;
+			}
+			if (entity instanceof PlayerEntity) {
+				get().recordHeroDeath();
 				return;
 			}
 			if (!entity.getCommandTags().contains(WaveManager.ENEMY_TAG)) {
@@ -415,6 +421,31 @@ public final class WarlordDirector {
 	}
 
 	/**
+	 * Sample player health once per server tick. Positive drops are accumulated while healing
+	 * establishes a fresh baseline, so the Warlord can distinguish a flawless defence from a
+	 * frantic clear that consumed most of the party's health.
+	 */
+	public void recordHeroHealth(ServerWorld world) {
+		if (!live.active) {
+			return;
+		}
+		for (PlayerEntity player : world.getPlayers()) {
+			float now = player.getHealth();
+			Float before = live.heroHealth.put(player.getUuid(), now);
+			if (before != null && now < before) {
+				live.heroHealthLost += before - now;
+			}
+		}
+	}
+
+	/** Record a player down during the active wave. */
+	public void recordHeroDeath() {
+		if (live.active) {
+			live.heroDeaths++;
+		}
+	}
+
+	/**
 	 * Finalise the current wave's telemetry into an immutable {@link WaveTelemetry} snapshot,
 	 * update the adaptive {@link #escalation} factor from the wave's PRESSURE, publish the
 	 * snapshot as {@link #lastWave}, and return it. Called on wave clear.
@@ -432,8 +463,10 @@ public final class WarlordDirector {
 		int idolDamage = Math.max(0, live.idolHpAtStart - idolHpAtEnd);
 		WaveTelemetry snapshot = new WaveTelemetry(
 			wave, live.spawned, live.leaked, live.killedByTowers, live.killedByPlayers,
-			(int) Math.max(0L, worldTime - live.startTime), closest, idolDamage);
+			(int) Math.max(0L, worldTime - live.startTime), closest, idolDamage,
+			Math.round(live.heroHealthLost * 10.0f) / 10.0f, live.heroDeaths);
 		updateEscalation(closest, idolDamage, live.leaked);
+		live.active = false;
 		lastWave = snapshot;
 		return snapshot;
 	}
@@ -494,6 +527,24 @@ public final class WarlordDirector {
 	public int lastIdolDamage() {
 		WaveTelemetry lw = lastWave;
 		return lw == null ? 0 : lw.idolDamage();
+	}
+
+	/** Screenshot-friendly performance grade derived from pressure, party cost, and clear speed. */
+	public static String gradeFor(int spawned, int durationTicks, double closestApproach,
+			int idolDamage, int leaked, float heroHealthLost, int heroDeaths) {
+		return WavePerformance.grade(spawned, durationTicks, closestApproach, idolDamage,
+			leaked, heroHealthLost, heroDeaths);
+	}
+
+	/** A dominant wave is both highly graded and genuinely kept away from the Idol. */
+	public static boolean isDominant(WaveTelemetry wave) {
+		return WavePerformance.dominant(wave.grade(), wave.closestApproach(), wave.idolDamage(),
+			wave.leaked(), wave.heroHealthLost(), wave.heroDeaths());
+	}
+
+	/** Sustained dominance opens additional fronts, capped at four player-chosen gates. */
+	public static int requiredGatesForStreak(int streak) {
+		return WavePerformance.requiredGates(streak);
 	}
 
 	// ---- battlefield snapshot helpers (thread-safe) ------------------------
@@ -643,7 +694,12 @@ public final class WarlordDirector {
 	 */
 	public record WaveTelemetry(int number, int spawned, int leaked,
 			int killedByTowers, int killedByPlayers, int durationTicks,
-			double closestApproach, int idolDamage) {
+			double closestApproach, int idolDamage, float heroHealthLost, int heroDeaths) {
+
+		public String grade() {
+			return gradeFor(spawned, durationTicks, closestApproach, idolDamage, leaked,
+				heroHealthLost, heroDeaths);
+		}
 
 		/** JSON-serialisable view for the battlefield endpoint. */
 		public Map<String, Object> toJson() {
@@ -656,6 +712,10 @@ public final class WarlordDirector {
 			m.put("durationTicks", durationTicks);
 			m.put("closestApproach", closestApproach);
 			m.put("idolDamage", idolDamage);
+			m.put("heroHealthLost", heroHealthLost);
+			m.put("heroDeaths", heroDeaths);
+			m.put("grade", grade());
+			m.put("dominant", isDominant(this));
 			return m;
 		}
 	}
@@ -668,6 +728,10 @@ public final class WarlordDirector {
 		int killedByTowers;
 		int killedByPlayers;
 		int killedByOther;
+		float heroHealthLost;
+		int heroDeaths;
+		final Map<UUID, Float> heroHealth = new HashMap<>();
+		boolean active;
 		long startTime;
 		/** Idol HP captured at wave start, so {@link #finalizeWave} can derive idolDamage. */
 		int idolHpAtStart;
@@ -682,6 +746,10 @@ public final class WarlordDirector {
 			killedByTowers = 0;
 			killedByPlayers = 0;
 			killedByOther = 0;
+			heroHealthLost = 0.0f;
+			heroDeaths = 0;
+			heroHealth.clear();
+			active = true;
 			startTime = worldTime;
 			this.idolHpAtStart = idolHpAtStart;
 			closestApproach = Double.MAX_VALUE;

@@ -13,6 +13,7 @@ import net.minecraft.entity.ai.goal.LookAroundGoal;
 import net.minecraft.entity.ai.goal.LookAtEntityGoal;
 import net.minecraft.entity.ai.goal.SwimGoal;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
+import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.player.PlayerEntity;
@@ -20,6 +21,8 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.storage.ReadView;
 import net.minecraft.storage.WriteView;
+import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.LocalDifficulty;
@@ -76,6 +79,15 @@ public abstract class TdAllyEntity extends PathAwareEntity {
 	/** The player who hired / commands this ally (for FOLLOW). */
 	@Nullable
 	private UUID owner;
+	/** Standing-army state. Zero wage marks temporary spell summons, which are unmanaged. */
+	private int morale = 70;
+	private int wage = 0;
+	private int serviceWaves = 0;
+	private String armyRole = "Soldier";
+	private static final Identifier MORALE_ATTACK =
+		Identifier.of("towerdefense", "ally_morale_attack");
+	private static final Identifier MORALE_SPEED =
+		Identifier.of("towerdefense", "ally_morale_speed");
 
 	protected TdAllyEntity(EntityType<? extends TdAllyEntity> type, World world) {
 		super(type, world);
@@ -158,6 +170,53 @@ public abstract class TdAllyEntity extends PathAwareEntity {
 		this.getNavigation().stop();
 	}
 
+	/** Turn a newly hired entity into a persistent paid regiment member. */
+	public void configureArmy(String role, int wage, int startingMorale) {
+		this.armyRole = role;
+		this.wage = Math.max(0, wage);
+		this.morale = Math.clamp(startingMorale, 0, 100);
+		refreshArmyStats();
+	}
+
+	public int getMorale() { return morale; }
+	public int getWage() { return wage; }
+	public int getServiceWaves() { return serviceWaves; }
+	public String getArmyRole() { return armyRole; }
+	public boolean isStandingArmy() { return wage > 0; }
+
+	public void changeMorale(int amount) {
+		morale = Math.clamp(morale + amount, 0, 100);
+		refreshArmyStats();
+	}
+
+	public void completeServiceWave() {
+		serviceWaves++;
+		refreshArmyStats();
+	}
+
+	/** Morale visibly changes effectiveness; veterans add a small, capped attack bonus. */
+	public void refreshArmyStats() {
+		double moraleBonus = morale >= 75 ? 0.15 : morale >= 40 ? 0.0 : morale >= 20 ? -0.15 : -0.30;
+		double veteranBonus = Math.min(0.20, serviceWaves * 0.02);
+		applyModifier(EntityAttributes.ATTACK_DAMAGE, MORALE_ATTACK, moraleBonus + veteranBonus);
+		applyModifier(EntityAttributes.MOVEMENT_SPEED, MORALE_SPEED, moraleBonus * 0.5);
+		int stars = Math.min(5, serviceWaves / 3);
+		setCustomName(Text.literal(armyRole + " " + "★".repeat(stars)
+			+ (stars == 0 ? "" : " ") + "• Morale " + morale));
+		setCustomNameVisible(true);
+	}
+
+	private void applyModifier(net.minecraft.registry.entry.RegistryEntry<net.minecraft.entity.attribute.EntityAttribute> attribute,
+			Identifier id, double amount) {
+		EntityAttributeInstance instance = getAttributeInstance(attribute);
+		if (instance == null) return;
+		instance.removeModifier(id);
+		if (amount != 0.0) {
+			instance.addPersistentModifier(new EntityAttributeModifier(id, amount,
+				EntityAttributeModifier.Operation.ADD_MULTIPLIED_BASE));
+		}
+	}
+
 	/** Resolve the owning player if they are loaded in this world, else null. */
 	@Nullable
 	public PlayerEntity resolveOwner() {
@@ -170,7 +229,7 @@ public abstract class TdAllyEntity extends PathAwareEntity {
 	// ---- targeting helpers (shared with the ally goals) --------------------
 	/** True if this ally is currently allowed to engage {@code enemy} under its order. */
 	public boolean canEngage(LivingEntity enemy) {
-		if (enemy == null || !enemy.isAlive()) {
+		if (enemy == null || !enemy.isAlive() || (isStandingArmy() && morale <= 0)) {
 			return false;
 		}
 		switch (order) {
@@ -240,6 +299,10 @@ public abstract class TdAllyEntity extends PathAwareEntity {
 		if (owner != null) {
 			view.putString("TdOwner", owner.toString());
 		}
+		view.putInt("TdMorale", morale);
+		view.putInt("TdWage", wage);
+		view.putInt("TdServiceWaves", serviceWaves);
+		view.putString("TdArmyRole", armyRole);
 	}
 
 	@Override
@@ -261,6 +324,13 @@ public abstract class TdAllyEntity extends PathAwareEntity {
 				this.owner = null;
 			}
 		});
+		this.morale = Math.clamp(view.getInt("TdMorale", 70), 0, 100);
+		this.wage = Math.max(0, view.getInt("TdWage", 0));
+		this.serviceWaves = Math.max(0, view.getInt("TdServiceWaves", 0));
+		this.armyRole = view.getString("TdArmyRole", "Soldier");
+		if (isStandingArmy()) {
+			refreshArmyStats();
+		}
 	}
 
 	private static Order parseOrder(String name) {

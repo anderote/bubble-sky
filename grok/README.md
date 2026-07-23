@@ -47,6 +47,12 @@ tactic, and snarls one in-character taunt — then submits the plan. It's **addi
 graceful**: the mod keeps its procedural scaling and falls back to default waves if the
 Warlord is offline or errors, and it **clamps** any over-budget host.
 
+The battlefield snapshot also includes the prior wave's S–D grade, clear time, closest
+approach, Idol damage, hero HP lost/downs, dominance streak, and current/required player-chosen
+spawn gates. The Warlord uses those signals to distinguish an effortless clear from a costly one;
+the mod itself remains the bounded authority that scales pressure and pauses for a newly required
+gate.
+
 ```sh
 cd grok
 node warlord.js                 # main loop: poll /td/battlefield, plan each new wave

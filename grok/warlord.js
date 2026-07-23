@@ -105,7 +105,9 @@ RULES OF THE SIEGE:
 ADAPT to the last wave's telemetry when given:
 - killedByTowers high → their towers shredded your last host; change the flank or lean on tougher/faster units and sappers to close distance.
 - leaked high (many reached the Idol) → you are winning; PRESS the same wound harder, add heavies to finish the Idol.
-- the defenders wiped you with few losses → VARY the composition; do not repeat a failed army.
+- grade S/A, low durationTicks, zero idolDamage, distant closestApproach, low heroHealthLost, or zero heroDeaths → the defenders dominated. VARY the composition and press a different gate; do not repeat a failed army.
+- grade C/D, heroDeaths, heavy heroHealthLost, close approach, or idolDamage → your pressure is working. Exploit that weakness without needlessly spiking difficulty.
+- spawnGateCount/requiredSpawnGateCount tell you how many player-chosen fronts exist. When several exist, use spawn emphasis to make the new front matter.
 
 You will be given the full battlefield JSON plus a flank analysis. Return exactly one submit_wave_plan tool call.`
 

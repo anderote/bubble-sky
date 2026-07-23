@@ -143,6 +143,10 @@ final class BridgeHandlers {
 			inter.put("ticksLeft", st.intermissionCooldown);
 			out.put("intermission", inter);
 			out.put("gameOver", st.gameOver);
+			out.put("spawnGateCount", st.spawnPoints.size());
+			out.put("requiredSpawnGateCount", st.requiredSpawnPoints);
+			out.put("awaitingPlayerChosenGate", st.spawnPoints.size() < st.requiredSpawnPoints);
+			out.put("dominanceStreak", st.dominanceStreak);
 
 			// Idol (base) — position + health, or null if unset.
 			if (st.base != null) {
