@@ -12,13 +12,9 @@
 #   scripts/deploy-play.sh               # keep the existing world
 set -euo pipefail
 
-JAVA_HOME="${JAVA_HOME:-$HOME/.jdks/jdk-21.0.11+10/Contents/Home}"
-export JAVA_HOME
-if [ ! -x "$JAVA_HOME/bin/java" ]; then
-  echo "Java 21 not found at $JAVA_HOME" >&2; exit 1
-fi
-
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/java21.sh
+source "$ROOT/scripts/lib/java21.sh"
 SRV="$ROOT/server"
 MODPROJ="$ROOT/mods/towerdefense"
 PORT=25565

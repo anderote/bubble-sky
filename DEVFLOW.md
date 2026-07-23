@@ -5,6 +5,16 @@ They do not share a proprietary chat session, so Station uses a durable job tran
 handoff boundary. This keeps the switch explicit and makes it possible to inspect what an agent
 actually saw.
 
+Use the lightest door for the job:
+
+- Press **`B`** for exact, repeatable building (bridge, wall, flatten, tower pad, temporary
+  tower stairs, or kill lane). It is instant, visual, configurable, previewable, and undoable;
+  no agent or API key is involved.
+- Use Minecraft chat (`@codex`, `@claude`, or `@dev`) when you want an agent but want to stay
+  in the game.
+- Use the Codex/Claude desktop apps for longer implementation, debugging, review, and PR work.
+  Say “Pick up my latest Minecraft dev job” to bring the durable chat context with you.
+
 ## Start in Minecraft
 
 After pairing with DevStation:

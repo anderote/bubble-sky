@@ -87,7 +87,7 @@ public class TowerDefenseScreen extends Screen {
 		// The LEFT column still adapts its row step so all its rows fit without
 		// scrolling (it is short and fixed-size). The RIGHT column no longer factors
 		// into this: it scrolls instead of squeezing.
-		int leftRows = 9;                        // 6 controls + 3 orders (update if you add/remove)
+		int leftRows = 10;                       // 7 controls + 3 orders (update if you add/remove)
 		int avail = this.height - top - bottomReserve;
 		int step = Math.max(16, Math.min(BUTTON_H + GAP, avail / Math.max(1, leftRows)));
 		int rowH = step - 2;                     // button height slightly less than the step
@@ -111,6 +111,13 @@ public class TowerDefenseScreen extends Screen {
 		ly += step;
 		addButton(leftX, ly, colW, rowH, Text.literal("Help"),
 			b -> run("td help", false));
+		ly += step;
+		addButton(leftX, ly, colW, rowH, Text.literal("Build Spells (preview)"),
+			b -> {
+				if (this.client != null) {
+					this.client.setScreen(new ConstructionScreen());
+				}
+			});
 		ly += step;
 
 		// ---- left column: ally orders -------------------------------------

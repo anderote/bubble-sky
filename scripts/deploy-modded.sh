@@ -14,14 +14,9 @@
 # godmode bridge does not need it for this phase (see BRIDGE.md).
 set -euo pipefail
 
-JAVA_HOME="${JAVA_HOME:-$HOME/.jdks/jdk-21.0.11+10/Contents/Home}"
-export JAVA_HOME
-if [ ! -x "$JAVA_HOME/bin/java" ]; then
-  echo "Java 21 not found at $JAVA_HOME — see server/README.md" >&2
-  exit 1
-fi
-
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/java21.sh
+source "$ROOT/scripts/lib/java21.sh"
 MAIN="$ROOT/server"
 MODDED="$ROOT/server-modded"
 MODPROJ="$ROOT/mods/towerdefense"
@@ -37,6 +32,7 @@ LOG="$MODDED/logs/modded-live.log"
 FIFO="$MODDED/console.in"
 SERVER_PID="$MODDED/.server.pid"
 HOLDER_PID="$MODDED/.console-holder.pid"
+SCREEN_SESSION="bubble-sky-modded"
 
 log() { echo "[deploy-modded] $*"; }
 
@@ -101,15 +97,21 @@ log "synced mods: $(ls "$MODDED"/mods | tr '\n' ' ')"
 
 # ---- 4. stop any running modded server ----
 stop_server() {
-  if [ -f "$SERVER_PID" ] && kill -0 "$(cat "$SERVER_PID")" 2>/dev/null; then
-    log "stopping running modded server (pid $(cat "$SERVER_PID"))…"
+  local live_pid
+  live_pid="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
+  if [ -z "$live_pid" ] && [ -f "$SERVER_PID" ] && kill -0 "$(cat "$SERVER_PID")" 2>/dev/null; then
+    live_pid="$(cat "$SERVER_PID")"
+  fi
+  if [ -n "$live_pid" ]; then
+    log "stopping running modded server (pid $live_pid)…"
     [ -p "$FIFO" ] && echo "stop" > "$FIFO" || true
     for _ in $(seq 1 30); do
-      kill -0 "$(cat "$SERVER_PID")" 2>/dev/null || break
+      kill -0 "$live_pid" 2>/dev/null || break
       sleep 1
     done
-    kill "$(cat "$SERVER_PID")" 2>/dev/null || true
+    kill "$live_pid" 2>/dev/null || true
   fi
+  screen -S "$SCREEN_SESSION" -X quit >/dev/null 2>&1 || true
   if [ -f "$HOLDER_PID" ]; then kill "$(cat "$HOLDER_PID")" 2>/dev/null || true; fi
   rm -f "$SERVER_PID" "$HOLDER_PID"
 }
@@ -117,25 +119,36 @@ stop_server
 
 # ---- 5. start backgrounded with a FIFO console ----
 rm -f "$FIFO"; mkfifo "$FIFO"
-# Holder keeps the write end of the FIFO open so the server's stdin never EOFs.
-# Opening a FIFO for write blocks until a reader (the server) attaches, so this
-# background sleep both anchors the write end and survives for the session.
-( sleep 2147483647 > "$FIFO" ) &
-echo $! > "$HOLDER_PID"
-
 : > "$LOG"
-( cd "$MODDED" && exec "$JAVA_HOME/bin/java" -Xmx2G -Xms2G -jar fabric-server-launch.jar nogui ) < "$FIFO" >> "$LOG" 2>&1 &
-echo $! > "$SERVER_PID"
-log "modded server starting (pid $(cat "$SERVER_PID")), log: $LOG"
+if command -v screen >/dev/null 2>&1; then
+  # A detached screen survives terminals and agent command runners closing. The FIFO stays
+  # available for friendly console commands and graceful shutdowns.
+  screen -dmS "$SCREEN_SESSION" /bin/bash -c '
+    cd "$1"
+    ( sleep 2147483647 > "$2" ) &
+    echo $! > "$3"
+    exec "$4" -Xmx2G -Xms2G -jar fabric-server-launch.jar nogui < "$2" >> "$5" 2>&1
+  ' _ "$MODDED" "$FIFO" "$HOLDER_PID" "$JAVA_HOME/bin/java" "$LOG"
+  log "modded server starting in detached session '$SCREEN_SESSION', log: $LOG"
+else
+  # Holder keeps the write end of the FIFO open so the server's stdin never EOFs.
+  ( sleep 2147483647 > "$FIFO" ) &
+  echo $! > "$HOLDER_PID"
+  ( cd "$MODDED" && exec "$JAVA_HOME/bin/java" -Xmx2G -Xms2G -jar fabric-server-launch.jar nogui ) < "$FIFO" >> "$LOG" 2>&1 &
+  echo $! > "$SERVER_PID"
+  log "modded server starting (pid $(cat "$SERVER_PID")), log: $LOG"
+fi
 
 # ---- 6. bounded wait for readiness ----
 READY=0
 for _ in $(seq 1 150); do
   if grep -q 'Done (' "$LOG" 2>/dev/null; then READY=1; break; fi
-  if ! kill -0 "$(cat "$SERVER_PID")" 2>/dev/null; then break; fi
+  if [ -f "$SERVER_PID" ] && ! kill -0 "$(cat "$SERVER_PID")" 2>/dev/null; then break; fi
   sleep 1
 done
 if [ "$READY" = 1 ]; then
+  LIVE_PID="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
+  [ -n "$LIVE_PID" ] && echo "$LIVE_PID" > "$SERVER_PID"
   log "READY on :$PORT — bridge on http://127.0.0.1:$BRIDGE_PORT (X-Bridge-Token: $BUBBLESKY_BRIDGE_TOKEN)"
 else
   log "server not ready within timeout; tail of log:" && tail -20 "$LOG" >&2

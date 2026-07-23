@@ -59,9 +59,24 @@ the gate, now including **Guns++ guns + ammo that scale with the wave** (pistols
 snipers/Deagle late, with a guaranteed gun on boss waves). Earn **XP → levels → skill points** you
 spend in the **Character** screen.
 
-**Controls:** **J** menu · **H** hire · **I** inventory · **P** character · `/td` for everything.
-Also in the mod: the `acid` block and the **Layout Wand** (plant flags/regions Grok reads). Grok
-the AI builder listens to `claudebert`.
+**Controls:** **J** menu · **B** build spells · **H** hire · **I** inventory · **P** character ·
+`/td` for everything. The `B` menu gives you six no-LLM presets: bridge, wall, flatten, tower pad,
+tower stairs, and kill lane. Click a number and type the exact size, preview the full-height
+hologram, walk/turn to reposition it, then press **Enter** to build or **Backspace** to cancel.
+The menu can safely undo the most recent completed build. Also in the mod: the `acid` block and
+the **Layout Wand** (plant flags/regions Grok reads). Grok the AI builder listens to `claudebert`.
+
+For local development, the easiest complete loop is:
+
+```sh
+./scripts/dev-game.sh
+```
+
+It discovers Java 21, builds and tests, starts the isolated server on `:25566`, checksum-syncs
+the jar into Prism, and launches the game. Use
+`PRISM_INSTANCE=another-name ./scripts/dev-game.sh` when needed, and
+`PRISM_OFFLINE_NAME=LocalTester ./scripts/dev-game.sh` for a throwaway offline test identity.
+Run `./scripts/dev-game.sh stop` when finished.
 
 > **After each server redeploy, refresh your client jar too:** replace
 > `towerdefense-1.0.0.jar` in your instance's `.minecraft/mods/` with the freshly built one and

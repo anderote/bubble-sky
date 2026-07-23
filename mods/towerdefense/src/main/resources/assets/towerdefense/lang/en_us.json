@@ -72,6 +72,9 @@
 	"key.towerdefense.open_inventory": "Open Inventory (I)",
 	"key.towerdefense.open_towers": "Open My Towers (K)",
 	"key.towerdefense.toggle_enemy_outline": "Toggle Enemy Outline (N)",
+	"key.towerdefense.open_construction": "Open Build Spells (B)",
+	"key.towerdefense.confirm_construction": "Confirm Build Preview (Enter)",
+	"key.towerdefense.cancel_construction": "Cancel Build Preview (Backspace)",
 
 	"screen.towerdefense.character.title": "Character",
 	"screen.towerdefense.character.level": "Level",

@@ -34,6 +34,18 @@ Useful recovery commands:
 ./scripts/station.mjs test
 ```
 
+For the quickest local in-game mod loop:
+
+```sh
+./scripts/dev-game.sh
+# or: PRISM_INSTANCE=your-instance ./scripts/dev-game.sh
+./scripts/dev-game.sh stop
+```
+
+That command discovers Java 21, runs the mod tests/build, starts the isolated `:25566` server,
+checksum-syncs the same jar to Prism, and launches the client. In game, `B` opens the non-LLM
+construction spells; Minecraft agent commands and desktop-app handoff are in `DEVFLOW.md`.
+
 When a user asks to continue something from Minecraft, follow [`DEVFLOW.md`](DEVFLOW.md):
 run `./scripts/station.mjs jobs`, then `./scripts/station.mjs handoff latest` (or the named
 job). Post concise progress back with `./scripts/station.mjs announce "..."` when requested.

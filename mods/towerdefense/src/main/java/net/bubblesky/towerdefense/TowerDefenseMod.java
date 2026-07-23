@@ -118,6 +118,9 @@ public class TowerDefenseMod implements ModInitializer {
 
 		// My Towers panel: per-player roster + upgrade/sell networking (key K).
 		net.bubblesky.towerdefense.towerui.TowerUiEvents.register();
+		// Player-driven construction spells: six configurable 3D previews, batched
+		// server-authoritative placement, inventory-cost mode, and one-step undo.
+		net.bubblesky.towerdefense.construction.ConstructionEvents.register();
 
 		// Modded agent bridge: in-JVM HTTP API so AI agents can observe/act on the
 		// modded world without the vanilla protocol. Localhost-bound + token-gated;
