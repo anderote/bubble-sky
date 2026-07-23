@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "taskId": "fixture-keep-1",
+  "status": "building",
+  "structure": "fixture keep",
+  "origin": { "x": 10, "y": 64, "z": -5 },
+  "workers": ["Drone1"],
+  "jobs": [
+    { "id": "fixture-000001", "x": 10, "y": 64, "z": -5, "block": "stone_bricks", "phase": "foundation", "region": "foundation" },
+    { "id": "fixture-000002", "x": 11, "y": 64, "z": -5, "block": "stone_bricks", "phase": "foundation", "region": "foundation" }
+  ],
+  "claims": {}
+}

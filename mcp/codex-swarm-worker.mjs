@@ -4,6 +4,7 @@ import path from "node:path";
 import { Vec3 } from "vec3";
 import mineflayer from "../mindcraft/upstream/node_modules/mineflayer/index.js";
 import pathfinderPackage from "../mindcraft/upstream/node_modules/mineflayer-pathfinder/index.js";
+import { normalizeBuildState, normalizeWorkerProgress } from "../shared/build-protocol/index.mjs";
 
 const { pathfinder, Movements, goals } = pathfinderPackage;
 
@@ -216,7 +217,7 @@ function waitForPath(timeoutMs) {
 function readState() {
   try {
     if (!fs.existsSync(statePath)) return null;
-    return JSON.parse(fs.readFileSync(statePath, "utf8"));
+    return normalizeBuildState(JSON.parse(fs.readFileSync(statePath, "utf8")));
   } catch (error) {
     console.error(`${username}: failed to read state: ${error.message}`);
     return null;
@@ -226,7 +227,7 @@ function readState() {
 function readProgress(taskId) {
   try {
     if (!fs.existsSync(progressPath)) return { taskId, worker: username, doneIds: [], failedIds: [] };
-    const progress = JSON.parse(fs.readFileSync(progressPath, "utf8"));
+    const progress = normalizeWorkerProgress({ ...JSON.parse(fs.readFileSync(progressPath, "utf8")), worker: username });
     if (progress.taskId !== taskId) return { taskId, worker: username, doneIds: [], failedIds: [] };
     return progress;
   } catch (error) {
@@ -264,7 +265,7 @@ function nextAvailableJobs(state, completed) {
 
 function writeProgress(progress) {
   fs.mkdirSync(path.dirname(progressPath), { recursive: true });
-  fs.writeFileSync(progressPath, `${JSON.stringify(progress, null, 2)}\n`);
+  fs.writeFileSync(progressPath, `${JSON.stringify(normalizeWorkerProgress({ ...progress, worker: username }), null, 2)}\n`);
 }
 
 function ensureProgress(taskId) {

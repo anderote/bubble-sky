@@ -8,6 +8,7 @@
 const fs = require('fs')
 const path = require('path')
 const { slug } = require('./util')
+const { normalizeBuildState } = require('../../../shared/build-protocol/index.cjs')
 
 const STATE_PATH = path.join('.codex-runtime', 'swarm', 'state.json')
 
@@ -17,7 +18,7 @@ function buildState(diffResult, meta = {}) {
   const workers = meta.workers && meta.workers.length ? meta.workers : []
   const jobs = diffResult.jobs.map(j => ({ ...j }))
   if (workers.length) assignJobs(jobs, workers, meta.chunkSize || 32)
-  return {
+  return normalizeBuildState({
     taskId: `${slug(structure)}-${Date.now()}`,
     status: 'building',
     structure,
@@ -32,7 +33,7 @@ function buildState(diffResult, meta = {}) {
     jobs,
     claims: meta.claims || {},
     createdAt: new Date().toISOString()
-  }
+  })
 }
 
 // Round-robin workers across contiguous per-phase chunks (Codex parity).
@@ -74,12 +75,12 @@ function releaseRegion(state, region, agent) {
 
 function writeState(state, filePath = STATE_PATH) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
-  fs.writeFileSync(filePath, JSON.stringify(state, null, 2))
+  fs.writeFileSync(filePath, JSON.stringify(normalizeBuildState(state), null, 2))
   return filePath
 }
 
 function readState(filePath = STATE_PATH) {
-  try { return JSON.parse(fs.readFileSync(filePath, 'utf8')) } catch { return null }
+  try { return normalizeBuildState(JSON.parse(fs.readFileSync(filePath, 'utf8'))) } catch { return null }
 }
 
 module.exports = {

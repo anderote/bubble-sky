@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bubble-sky.dev/schemas/build-protocol/job-state.v1.schema.json",
+  "title": "Bubble Sky Build Job State v1",
+  "type": "object",
+  "required": ["schemaVersion", "taskId", "status", "structure", "jobs"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "minLength": 1 },
+    "structure": { "type": "string", "minLength": 1 },
+    "origin": { "$ref": "#/$defs/vec3" },
+    "workers": { "type": "array", "items": { "type": ["string", "integer"] }, "uniqueItems": true },
+    "jobs": { "type": "array", "items": { "$ref": "#/$defs/job" } },
+    "claims": {
+      "type": "object",
+      "description": "Optional coarse planning leases keyed by semantic region. Worker execution claims live in progress files.",
+      "additionalProperties": { "$ref": "#/$defs/regionClaim" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "vec3": {
+      "type": "object",
+      "required": ["x", "y", "z"],
+      "properties": { "x": { "type": "integer" }, "y": { "type": "integer" }, "z": { "type": "integer" } },
+      "additionalProperties": false
+    },
+    "job": {
+      "type": "object",
+      "required": ["id", "x", "y", "z", "block", "phase"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "x": { "type": "integer" }, "y": { "type": "integer" }, "z": { "type": "integer" },
+        "block": { "type": "string", "minLength": 1 },
+        "phase": { "type": "string", "minLength": 1 },
+        "region": { "type": "string", "minLength": 1 },
+        "worker": { "type": ["string", "integer"] }
+      },
+      "additionalProperties": false
+    },
+    "regionClaim": {
+      "type": "object",
+      "required": ["agent", "ts", "ttl"],
+      "properties": {
+        "agent": { "type": "string", "minLength": 1 },
+        "ts": { "type": "number" },
+        "ttl": { "type": "number", "exclusiveMinimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

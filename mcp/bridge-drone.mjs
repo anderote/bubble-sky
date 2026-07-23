@@ -36,6 +36,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeBridge } from "./bridge.mjs";
+import { normalizeBuildState, normalizeWorkerProgress } from "../shared/build-protocol/index.mjs";
 
 // ---------------------------------------------------------------------------
 // Config / CLI parsing
@@ -314,7 +315,7 @@ async function withLock(lockPath, fn, { timeoutMs = 10000, staleMs = 30000 } = {
 function readState(statePath) {
   try {
     if (!fs.existsSync(statePath)) return null;
-    return JSON.parse(fs.readFileSync(statePath, "utf8"));
+    return normalizeBuildState(JSON.parse(fs.readFileSync(statePath, "utf8")));
   } catch {
     return null;
   }
@@ -324,17 +325,17 @@ function readProgress(progressPath, taskId, name) {
   try {
     if (fs.existsSync(progressPath)) {
       const p = JSON.parse(fs.readFileSync(progressPath, "utf8"));
-      if (p.taskId === taskId) return p;
+      if (p.taskId === taskId) return normalizeWorkerProgress({ ...p, worker: p.worker || name });
     }
   } catch {
     // fall through to a fresh record
   }
-  return { taskId, worker: name, doneIds: [], failedIds: [], claimedIds: [] };
+  return normalizeWorkerProgress({ taskId, worker: name, doneIds: [], failedIds: [], claimedIds: [] });
 }
 
 function writeProgress(progressPath, progress) {
   fs.mkdirSync(path.dirname(progressPath), { recursive: true });
-  fs.writeFileSync(progressPath, `${JSON.stringify(progress, null, 2)}\n`);
+  fs.writeFileSync(progressPath, `${JSON.stringify(normalizeWorkerProgress(progress), null, 2)}\n`);
 }
 
 function ensureProgress(progressPath, taskId, name) {
