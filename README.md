@@ -7,6 +7,12 @@ One Fabric **1.21.6** world hosts custom mods (a tower-defense game, custom bloc
 > **Work in progress / personal project.** Nothing here is public-facing or supported;
 > expect rough edges and in-flight designs.
 
+Andrew/Claude setting up a Mac? Start with [`CLAUDE.md`](CLAUDE.md), then run:
+
+```sh
+./scripts/station.mjs setup andrew
+```
+
 Two collaborators build in parallel lanes on the same repo:
 
 | Who | Agent | Owns | What they build |

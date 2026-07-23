@@ -4,15 +4,25 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="${BUBBLE_STATION_CONFIG:-$HOME/.config/bubble-sky/station.json}"
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
-NODE="$(command -v node)"
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "Bubble Sky Station background services currently require macOS." >&2
+  exit 1
+fi
+if ! NODE="$(command -v node)" || [ -z "$NODE" ]; then
+  echo "Node.js 22+ is required. Install it, then rerun this command." >&2
+  exit 1
+fi
 
 mkdir -p "$(dirname "$CONFIG")" "$LAUNCH_AGENTS" "$HOME/Library/Logs/BubbleSky"
 if [ ! -f "$CONFIG" ]; then
-  cp "$ROOT/control/station.example.json" "$CONFIG"
-  chmod 600 "$CONFIG"
-  echo "Created $CONFIG. Set sharedToken, nodeId, providers, peers, and Minecraft names, then run this installer again." >&2
+  echo "No Station config found at $CONFIG." >&2
+  echo "Run the friendly setup first: $ROOT/scripts/station.mjs setup andrew" >&2
   exit 2
 fi
+chmod 600 "$CONFIG"
+
+"$NODE" "$ROOT/scripts/station.mjs" doctor --config "$CONFIG"
 
 write_plist() {
   local label="$1" program="$2" output="$3"
@@ -41,4 +51,8 @@ write_plist "dev.bubblesky.station" "$ROOT/control/station.mjs" "$HOME/Library/L
 write_plist "dev.bubblesky.minecraft-chat" "$ROOT/control/minecraft-dev-gateway.mjs" "$HOME/Library/Logs/BubbleSky/minecraft-chat.log"
 write_plist "dev.bubblesky.release-watcher" "$ROOT/control/release-watcher.mjs" "$HOME/Library/Logs/BubbleSky/release-watcher.log"
 
-echo "Bubble Sky Station installed. Pairing code: tail -f '$HOME/Library/Logs/BubbleSky/station.log'"
+echo
+echo "Bubble Sky Station installed and restarted."
+echo "Status:       $ROOT/scripts/station.mjs status"
+echo "Pair in game: $ROOT/scripts/station.mjs pair-code"
+echo "Live logs:    $ROOT/scripts/station.mjs logs station"

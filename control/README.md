@@ -6,21 +6,45 @@ peer over HTTP, reports progress into Minecraft, and stages checksum-locked play
 
 ## First-time setup on each Mac
 
-1. Copy `control/station.example.json` (Alli/Codex) or
-   `control/station.andrew.example.json` (Andrew/Claude) to
-   `~/.config/bubble-sky/station.json`.
-2. Generate one long random shared token and put the same token on both Macs. Keep this file
-   mode `0600`; never commit it.
-3. Set each peer URL to a `.local` LAN address or a stable Tailscale address. Port `25880`
-   must only be reachable over the trusted LAN/Tailscale network.
-4. Verify the configured provider command manually (`codex --version` or `claude --version`).
-   Prefer absolute provider paths. Template providers may define separate `chatArgs` and
-   `devArgs`; the Andrew example enables Claude's edit permission only for isolated dev jobs.
-5. Run `scripts/install-station.sh` on each Mac.
-6. A repository admin runs `scripts/configure-github-protection.sh` once. This enables
-   auto-merge and requires the control-plane check, both mod builds, one fresh partner approval,
-   resolved conversations, and linear history. A collaborator with only `WRITE` access cannot
-   configure this rule.
+On Andrew's Mac:
+
+```sh
+git pull --ff-only origin main
+./scripts/station.mjs setup andrew
+```
+
+On Alli's Mac, use `./scripts/station.mjs setup alli`. The guided setup finds the local agent
+CLI, asks for the Minecraft/peer addresses, writes a private mode-`0600` config, checks the
+machine, and offers to install the background services. Ask the already-configured collaborator
+for the shared Station token over a private channel; both Macs need the same value. To pass it
+without putting it in shell history:
+
+```sh
+read -rs BUBBLE_STATION_TOKEN && export BUBBLE_STATION_TOKEN
+./scripts/station.mjs setup andrew
+unset BUBBLE_STATION_TOKEN
+```
+
+The default `.local` peer names work on a shared LAN. Stable Tailscale addresses also work.
+Port `25880` must only be reachable over that trusted network. Run these any time:
+
+```sh
+./scripts/station.mjs doctor
+./scripts/station.mjs status
+./scripts/station.mjs pair-code
+./scripts/station.mjs logs station
+```
+
+For manual/custom configuration, start from `control/station.example.json` (Alli/Codex) or
+`control/station.andrew.example.json` (Andrew/Claude), save it as
+`~/.config/bubble-sky/station.json`, then run `scripts/install-station.sh`. Template providers
+may define separate `chatArgs` and `devArgs`; the Andrew example enables Claude's edit permission
+only for isolated dev jobs.
+
+A repository admin runs `scripts/configure-github-protection.sh` once. This enables
+auto-merge and requires the control-plane check, both mod builds, one fresh partner approval,
+resolved conversations, and linear history. A collaborator with only `WRITE` access cannot
+configure this rule.
 
 The installer creates three macOS LaunchAgents: Station, the Minecraft chat gateway, and the
 release watcher. Logs are in `~/Library/Logs/BubbleSky/`.

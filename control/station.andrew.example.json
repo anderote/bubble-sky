@@ -21,7 +21,11 @@
   },
   "deployment": {
     "releaseChannel": "play",
+    "noticeMinutes": 5,
     "prismInstance": "bubble-sky-1.21.6",
-    "serverAddress": "127.0.0.1:25565"
+    "serverAddress": "127.0.0.1:25565",
+    "serverDir": "~/Documents/bubble-sky/server",
+    "screenSession": "bubble-sky-play",
+    "agentRestartCommands": []
   }
 }
